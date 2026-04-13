@@ -141,12 +141,25 @@
             </div>
 
             <!-- Detail View (When result found or card clicked) -->
-            <div id="detail-view" class="hidden space-y-8 animate-fade-in">
                 <button onclick="backToDiscovery()" class="group flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-blue-400 transition-all">
                     <i class="fas fa-arrow-left group-hover:-translate-x-1 transition-transform"></i> Back to Discovery
                 </button>
 
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                <!-- Global Loading State -->
+                <div id="detail-loading-global" class="hidden flex flex-col items-center justify-center py-40 animate-fade-in">
+                    <div class="relative">
+                        <div class="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <i class="fas fa-satellite-dish text-blue-500 animate-pulse"></i>
+                        </div>
+                    </div>
+                    <div class="mt-8 space-y-2 text-center">
+                        <div class="text-[10px] font-black text-blue-500 uppercase tracking-[0.4em] animate-pulse">Establishing Uplink</div>
+                        <div class="text-[8px] font-black text-gray-600 uppercase tracking-widest">Bridging KKPhim & TMDB Metadata...</div>
+                    </div>
+                </div>
+
+                <div id="detail-grid" class="hidden grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     <!-- Column 1: Metadata (Sticky) -->
                     <div id="left-column" class="lg:col-span-4 lg:sticky lg:top-6 space-y-6">
                         <div id="posterArea" class="glass p-6 rounded-[40px] overflow-hidden border border-white/5 space-y-6">
@@ -192,7 +205,6 @@
                             </div>
                         </div>
 
-                        <div id="movieResult" class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start"></div>
                     </div>
                 </div>
             </div>
@@ -394,14 +406,9 @@
             document.getElementById('discovery-view').classList.add('hidden');
             document.getElementById('detail-view').classList.remove('hidden');
             
-            // Show skeleton, hide actual containers
-            document.getElementById('posterArea').classList.add('hidden');
-            document.getElementById('detail-skeleton').classList.remove('hidden');
-            document.getElementById('progressArea').classList.remove('hidden');
-            
-            // Show left column, restore right column size
-            document.getElementById('left-column').classList.remove('hidden');
-            document.getElementById('right-column').className = "lg:col-span-8 space-y-8";
+            // Show global loading, hide entire grid
+            document.getElementById('detail-loading-global').classList.remove('hidden');
+            document.getElementById('detail-grid').classList.add('hidden');
             
             if (push) history.pushState({ type: 'detail', slug }, "", "");
             
@@ -455,8 +462,10 @@
             const { metadata, links, local } = data;
             window.currentMetadata = metadata;
             
-            // Hide skeleton, show actual containers
-            document.getElementById('detail-skeleton').classList.add('hidden');
+            // Hide global loading, reveal full detail grid
+            document.getElementById('detail-loading-global').classList.add('hidden');
+            document.getElementById('detail-grid').classList.remove('hidden');
+
             document.getElementById('posterArea').classList.remove('hidden');
             document.getElementById('mainPoster').src = metadata.poster || "";
 
