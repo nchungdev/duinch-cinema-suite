@@ -1,0 +1,22 @@
+services:
+  backend:
+    image: ghcr.io/nchungdev/omv-jd-dashboard-api:latest
+    container_name: omv-jd-dashboard-api
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      - MYJD_EMAIL=${MYJD_EMAIL}
+      - MYJD_PASSWORD=${MYJD_PASSWORD}
+      - TMDB_READ_ACCESS_TOKEN=${TMDB_READ_ACCESS_TOKEN}
+      - STORAGE_PATH=/storage
+      - JD_DOWNLOAD_BASE=/storage
+      - JD_INTERNAL_PATH=/downloads
+    volumes:
+      - ${HOST_STORAGE_PATH}:/storage
+  frontend:
+    image: ghcr.io/nchungdev/omv-jd-dashboard-ui:latest
+    container_name: omv-jd-dashboard-ui
+    restart: unless-stopped
+    ports:
+      - "8087:80"
