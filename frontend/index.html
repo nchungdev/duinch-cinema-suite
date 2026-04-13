@@ -191,15 +191,6 @@
                         </div>
 
                         <div id="movieResult" class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start"></div>
-                        
-                        <!-- Player Area -->
-                        <div id="playerArea" class="hidden glass p-4 rounded-[40px] relative overflow-hidden transition-all border border-blue-500/20 shadow-2xl shadow-blue-500/10">
-                            <div class="flex justify-between items-center mb-4 px-4">
-                                <span class="text-[10px] font-black italic uppercase tracking-widest text-blue-400">Media Player</span>
-                                <button onclick="closePlayer()" class="bg-white/5 p-2 rounded-xl text-xs hover:bg-red-500 transition-colors"><i class="fas fa-times"></i></button>
-                            </div>
-                            <video id="videoPlayer" controls class="rounded-3xl w-full aspect-video bg-black shadow-inner"></video>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -662,25 +653,37 @@
             container.innerHTML = html;
         }
 
-        function playVideo(url, title) {
+        let hlsPlayer = null;
+        function playVideo(url, title = "Media Player") {
             const area = document.getElementById('playerArea');
             const video = document.getElementById('videoPlayer');
+            const playerTitle = document.getElementById('playerTitle');
+            
+            if (playerTitle) playerTitle.innerText = title;
             area.classList.remove('hidden');
-            area.scrollIntoView({behavior: 'smooth'});
+            document.body.style.overflow = 'hidden'; // Lock scroll
+            
             if (Hls.isSupported()) {
-                if(hls) hls.destroy();
-                hls = new Hls();
-                hls.loadSource(url);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+                if(hlsPlayer) hlsPlayer.destroy();
+                hlsPlayer = new Hls();
+                hlsPlayer.loadSource(url);
+                hlsPlayer.attachMedia(video);
+                hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => video.play());
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                 video.src = url; video.play();
             }
         }
 
         function closePlayer() {
-            document.getElementById('videoPlayer').pause();
+            const video = document.getElementById('videoPlayer');
+            video.pause();
+            video.src = "";
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+            }
             document.getElementById('playerArea').classList.add('hidden');
+            document.body.style.overflow = ''; // Restore scroll
         }
 
         function downloadToDevice(url) {
@@ -828,5 +831,26 @@
         setInterval(updateJDList, 5000);
         updateJDList();
     </script>
+
+    <!-- Player Overlay Modal -->
+    <div id="playerArea" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10 animate-fade-in">
+        <!-- Strictly no close on backdrop click as requested -->
+        <div class="absolute inset-0 bg-black/95 backdrop-blur-xl"></div>
+        
+        <div class="glass w-full max-w-5xl rounded-[40px] relative overflow-hidden transition-all border border-blue-500/20 shadow-[0_0_100px_rgba(59,130,246,0.2)]">
+            <div class="flex justify-between items-center p-6 px-10 border-b border-white/5 bg-white/[0.02]">
+                <div class="flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                    <span id="playerTitle" class="text-[10px] font-black italic uppercase tracking-[0.2em] text-blue-400">Media Player</span>
+                </div>
+                <button onclick="closePlayer()" class="bg-white/5 w-10 h-10 flex items-center justify-center rounded-2xl text-xs hover:bg-red-500 hover:text-white transition-all">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6 md:p-8">
+                <video id="videoPlayer" controls class="rounded-[24px] w-full aspect-video bg-black shadow-2xl overflow-hidden"></video>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
