@@ -128,16 +128,21 @@
                             <button onclick="changeCategory('hoat-hinh')" class="sub-tab hover:text-white transition-all relative py-1" data-cat="hoat-hinh">Hoạt Hình</button>
                             <button onclick="changeCategory('phim-chieu-rap')" class="sub-tab hover:text-white transition-all relative py-1" data-cat="phim-chieu-rap">Chiếu Rạp</button>
                         </div>
+                        </div>
                     </div>
-                    <div id="pagination-top" class="flex gap-2"></div>
                 </div>
                 
                 <div id="discovery-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <!-- Cards will be injected here -->
                 </div>
 
-                <!-- Footer Pagination -->
-                <div id="pagination-bottom" class="flex justify-center items-center gap-4 pt-10 border-t border-white/5"></div>
+                <!-- Infinite Scroll Sentinel -->
+                <div id="discovery-sentinel" class="py-20 flex flex-col items-center justify-center">
+                    <div id="discovery-loader" class="hidden flex flex-col items-center gap-4">
+                        <div class="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                        <p class="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">Deep scanning database...</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Detail View (When result found or card clicked) -->
@@ -251,16 +256,29 @@
         let hls = null;
         let currentDiscoveryPage = 1;
         let currentDiscoveryCategory = 'new';
+        let isDiscoveryLoading = false;
+        let maxDiscoveryPages = 0;
 
         // Initialization
         window.onload = () => {
             const initialState = { type: 'discovery', category: currentDiscoveryCategory, page: currentDiscoveryPage };
             history.replaceState(initialState, "", "");
             
+            setupInfiniteScroll();
             loadDiscovery(1, false);
             setInterval(updateJDList, 15000);
             updateJDList();
         };
+
+        function setupInfiniteScroll() {
+            const sentinel = document.getElementById('discovery-sentinel');
+            const observer = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && !isDiscoveryLoading && currentDiscoveryPage < maxDiscoveryPages) {
+                    loadDiscovery(currentDiscoveryPage + 1, true);
+                }
+            }, { threshold: 0.1 });
+            observer.observe(sentinel);
+        }
         // Navigation State Handling
         window.onpopstate = (event) => {
             if (event.state) restoreState(event.state);
@@ -312,24 +330,37 @@
             if (push) history.pushState({ type: 'discovery', category: currentDiscoveryCategory, page: currentDiscoveryPage }, "", "");
         }
 
-        async function loadDiscovery(page, push = true) {
+        async function loadDiscovery(page, isAppend = true) {
+            if (isDiscoveryLoading) return;
+            isDiscoveryLoading = true;
             currentDiscoveryPage = page;
-            if (push) history.pushState({ type: 'discovery', category: currentDiscoveryCategory, page: currentDiscoveryPage }, "", "");
             
+            const loader = document.getElementById('discovery-loader');
             const grid = document.getElementById('discovery-grid');
-            grid.innerHTML = `<div class="col-span-full py-20 text-center animate-pulse"><i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i><p class="text-[10px] font-black uppercase tracking-widest text-gray-500">Syncing with KKPhim...</p></div>`;
+            
+            if (!isAppend) {
+                grid.innerHTML = `<div class="col-span-full py-20 text-center animate-pulse"><i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i><p class="text-[10px] font-black uppercase tracking-widest text-gray-500">Establishing Primary Link...</p></div>`;
+            } else {
+                loader.classList.remove('hidden');
+            }
             
             try {
                 const res = await fetch(`${API_BASE}/discovery?category=${currentDiscoveryCategory}&page=${page}`);
                 const data = await res.json();
-                renderDiscovery(data);
-            } catch (e) { console.error(e); }
+                maxDiscoveryPages = data.pagination.totalPages;
+                renderDiscovery(data, isAppend);
+            } catch (e) { 
+                console.error(e); 
+            } finally {
+                isDiscoveryLoading = false;
+                loader.classList.add('hidden');
+            }
         }
 
         function changeCategory(cat) {
             currentDiscoveryCategory = cat;
             updateDiscoveryUI(cat);
-            loadDiscovery(1);
+            loadDiscovery(1, false);
         }
 
         function updateDiscoveryUI(cat) {
@@ -350,9 +381,9 @@
             document.getElementById('discovery-title').innerText = titles[cat] || 'Danh mục phim';
         }
 
-        function renderDiscovery(data) {
+        function renderDiscovery(data, isAppend) {
             const grid = document.getElementById('discovery-grid');
-            grid.innerHTML = data.items.map(item => `
+            const itemsHtml = data.items.map(item => `
                 <div onclick="viewMovie('${item.slug}')" 
                     class="flex gap-4 p-4 rounded-[28px] cursor-pointer bg-white/[0.02] hover:bg-blue-600/10 border border-white/5 hover:border-blue-500/20 transition-all items-center group">
                     <div class="relative w-16 aspect-[2/3] shrink-0 overflow-hidden rounded-xl shadow-2xl">
@@ -370,18 +401,11 @@
                 </div>
             `).join('');
 
-            // Pagination logic
-            const buildPagination = (elId) => {
-                const p = data.pagination;
-                const container = document.getElementById(elId);
-                let html = `
-                    <button onclick="loadDiscovery(${p.currentPage - 1})" ${p.currentPage === 1 ? 'disabled' : ''} class="px-4 py-2 rounded-xl glass text-[10px] font-black uppercase tracking-widest disabled:opacity-20 hover:bg-blue-600 trans-all">Prev</button>
-                    <button onclick="loadDiscovery(${p.currentPage + 1})" ${p.currentPage === p.totalPages ? 'disabled' : ''} class="px-4 py-2 rounded-xl glass text-[10px] font-black uppercase tracking-widest disabled:opacity-20 hover:bg-blue-600 trans-all">Next</button>
-                `;
-                container.innerHTML = html;
-            };
-            buildPagination('pagination-top');
-            buildPagination('pagination-bottom');
+            if (isAppend) {
+                grid.insertAdjacentHTML('beforeend', itemsHtml);
+            } else {
+                grid.innerHTML = itemsHtml;
+            }
         }
 
         function resetDetailView() {
