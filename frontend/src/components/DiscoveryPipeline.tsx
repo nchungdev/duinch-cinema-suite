@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Loader2, Sparkles } from 'lucide-react';
 import { api } from '../api/config';
 import type { MediaLink } from '../api/config';
@@ -23,7 +22,7 @@ const INITIAL_STEPS: Step[] = [
   { id: 'fshare', label: 'Phase 4: Fshare Discovery', status: 'pending' },
 ];
 
-export const DiscoveryPipeline: React.FC<DiscoveryPipelineProps> = ({ slug, title, onLinksFound }) => {
+export const DiscoveryPipeline = ({ slug, title, onLinksFound }: DiscoveryPipelineProps) => {
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
 
   const updateStep = (id: string, status: Step['status']) => {

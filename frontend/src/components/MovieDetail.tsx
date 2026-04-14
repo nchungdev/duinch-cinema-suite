@@ -10,7 +10,7 @@ interface MovieDetailProps {
   onBack: () => void;
 }
 
-export const MovieDetail: React.FC<MovieDetailProps> = ({ slug, onBack }) => {
+export const MovieDetail = ({ slug, onBack }: MovieDetailProps) => {
   const [data, setData] = useState<DetailResponse | null>(null);
   const [discoveredLinks, setDiscoveredLinks] = useState<MediaLink[]>([]);
   const [loading, setLoading] = useState(true);

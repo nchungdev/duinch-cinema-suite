@@ -9,7 +9,7 @@ interface DiscoveryGridProps {
   onMovieClick: (slug: string) => void;
 }
 
-export const DiscoveryGrid: React.FC<DiscoveryGridProps> = ({ category, onMovieClick }) => {
+export const DiscoveryGrid = ({ category, onMovieClick }: DiscoveryGridProps) => {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);

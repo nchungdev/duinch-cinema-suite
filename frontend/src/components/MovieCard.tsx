@@ -6,7 +6,7 @@ interface MovieCardProps {
   onClick: (slug: string) => void;
 }
 
-export const MovieCard: React.FC<MovieCardProps> = ({ item, onClick }) => {
+export const MovieCard = ({ item, onClick }: MovieCardProps) => {
   return (
     <motion.div
       layout
