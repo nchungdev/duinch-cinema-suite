@@ -132,8 +132,8 @@
                     </div>
                 </div>
                 
-                <div id="discovery-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <!-- Cards will be injected here -->
+                <div id="discovery-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-4 px-2">
+                    <!-- Cinematic cards will be injected here -->
                 </div>
 
                 <!-- Infinite Scroll Sentinel -->
@@ -187,6 +187,7 @@
                                 <div id="s-tmdb" class="flex items-center gap-4 text-gray-600"><i class="fas fa-circle icon text-[6px]"></i> <span>Phase 1: TMDB Sync</span></div>
                                 <div id="s-kkphim" class="flex items-center gap-4 text-gray-600"><i class="fas fa-circle icon text-[6px]"></i> <span>Phase 2: KKPhim Stream</span></div>
                                 <div id="s-local" class="flex items-center gap-4 text-gray-600"><i class="fas fa-circle icon text-[6px]"></i> <span>Phase 3: Storage Audit</span></div>
+                                <div id="s-fshare" class="flex items-center gap-4 text-gray-600"><i class="fas fa-circle icon text-[6px]"></i> <span>Phase 4: Fshare Discovery</span></div>
                             </div>
                         </div>
                     </div>
@@ -339,16 +340,23 @@
             const grid = document.getElementById('discovery-grid');
             
             if (!isAppend) {
-                grid.innerHTML = `<div class="col-span-full py-20 text-center animate-pulse"><i class="fas fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i><p class="text-[10px] font-black uppercase tracking-widest text-gray-500">Establishing Primary Link...</p></div>`;
+                grid.innerHTML = `<div class="col-span-full py-40 text-center animate-pulse"><i class="fas fa-satellite-dish fa-spin text-4xl text-blue-500 mb-6"></i><p class="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500">Syncing Cinematic Database...</p></div>`;
             } else {
                 loader.classList.remove('hidden');
             }
             
             try {
-                const res = await fetch(`${API_BASE}/discovery?category=${currentDiscoveryCategory}&page=${page}`);
-                const data = await res.json();
-                maxDiscoveryPages = data.pagination.totalPages;
-                renderDiscovery(data, isAppend);
+                // Batch fetch: Since KKPhim returns 10 items, fetch 3 pages at once to fill the grid
+                const pagesToFetch = isAppend ? [page] : [page, page + 1, page + 2];
+                const results = await Promise.all(pagesToFetch.map(p => 
+                    fetch(`${API_BASE}/discovery?category=${currentDiscoveryCategory}&page=${p}`).then(r => r.json())
+                ));
+                
+                const combinedItems = results.flatMap(r => r.items);
+                maxDiscoveryPages = results[0].pagination.totalPages;
+                if (!isAppend) currentDiscoveryPage = page + 2; // Advance current page pointer
+
+                renderDiscovery({ items: combinedItems }, isAppend);
             } catch (e) { 
                 console.error(e); 
             } finally {
@@ -385,18 +393,24 @@
             const grid = document.getElementById('discovery-grid');
             const itemsHtml = data.items.map(item => `
                 <div onclick="viewMovie('${item.slug}')" 
-                    class="flex gap-4 p-4 rounded-[28px] cursor-pointer bg-white/[0.02] hover:bg-blue-600/10 border border-white/5 hover:border-blue-500/20 transition-all items-center group">
-                    <div class="relative w-16 aspect-[2/3] shrink-0 overflow-hidden rounded-xl shadow-2xl">
-                        <img src="${item.poster}" class="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-700" loading="lazy">
-                        <div class="absolute top-1.5 right-1.5">
-                            <span class="text-[6px] font-black px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-gray-300 uppercase border border-white/10">${item.year}</span>
+                    class="relative aspect-[2/3] rounded-2xl overflow-hidden cursor-pointer group bg-white/5 border border-white/5 hover:border-blue-500/50 transition-all duration-500 shadow-2xl">
+                    <img src="${item.poster}" class="w-full h-full object-cover transform group-hover:scale-110 group-hover:blur-[2px] transition-all duration-700" loading="lazy">
+                    
+                    <!-- Hover Overlay -->
+                    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex flex-col justify-end p-4 translate-y-4 group-hover:translate-y-0">
+                        <div class="space-y-1">
+                            <div class="font-black text-white uppercase italic leading-none tracking-tighter text-[10px] line-clamp-2">${item.title}</div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[7px] font-black text-blue-400 uppercase tracking-widest">${item.year}</span>
+                                <span class="w-1 h-1 bg-white/20 rounded-full"></span>
+                                <span class="text-[7px] font-black text-gray-400 uppercase tracking-widest">${item.media_type === 'tv' ? 'SERIES' : 'MOVIE'}</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="flex-1 min-w-0 space-y-1">
-                        <div class="font-black text-gray-100 uppercase italic leading-tight group-hover:text-blue-400 transition-colors truncate text-[11px]">${item.title}</div>
-                        <div class="flex flex-wrap gap-1.5 items-center">
-                            <span class="text-[8px] font-black text-blue-500 uppercase tracking-widest bg-blue-500/10 px-1.5 py-0.5 rounded-md">${item.media_type === 'tv' ? 'TV SERIES' : 'MOVIE'}</span>
-                        </div>
+
+                    <!-- Static Tag (Optional) -->
+                    <div class="absolute top-2 right-2 opacity-100 group-hover:opacity-0 transition-opacity">
+                        <span class="text-[6px] font-black px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-gray-300 uppercase border border-white/10 tracking-widest">${item.year}</span>
                     </div>
                 </div>
             `).join('');
@@ -415,12 +429,13 @@
             document.getElementById('mainPoster').src = "";
             document.getElementById('movieResult').innerHTML = "";
             document.getElementById('playerArea').classList.add('hidden');
-            ['tmdb', 'kkphim', 'local'].forEach(id => {
+            ['tmdb', 'kkphim', 'local', 'fshare'].forEach(id => {
                 const el = document.getElementById(`s-${id}`);
                 if(el) {
                     el.className = "flex items-center gap-3 text-gray-600";
                     el.querySelector('.icon').className = "fas fa-circle icon text-[6px]";
-                    el.querySelector('span').innerText = `Phase ${id === 'tmdb' ? '1' : id === 'kkphim' ? '2' : '3'}: ...`;
+                    let phaseText = id === 'tmdb' ? '1: TMDB Sync' : id === 'kkphim' ? '2: KKPhim Stream' : id === 'local' ? '3: Storage Audit' : '4: Fshare Discovery';
+                    el.querySelector('span').innerText = `Phase ${phaseText}...`;
                 }
             });
         }
@@ -441,9 +456,59 @@
                 const res = await fetch(`${API_BASE}/metadata/${slug}`);
                 const data = await res.json();
                 renderMovieDetail(data);
+                
+                // Background Fshare Discovery
+                discoverFshareLinks(slug, data.metadata.title);
             } catch (e) {
                 updateStep('tmdb', 'done', '❌ Connection Failed');
             }
+        }
+
+        async function discoverFshareLinks(slug, title) {
+            document.getElementById('progressArea').classList.remove('hidden');
+            updateStep('fshare', 'active', 'Uplink: Scanning Thư Viện Cine & Google...');
+            
+            try {
+                const res = await fetch(`${API_BASE}/lookup/fshare-discovery/${slug}?title=${encodeURIComponent(title)}`);
+                const data = await res.json();
+                
+                if (data.fshare && data.fshare.length > 0) {
+                    updateStep('fshare', 'done', `Found ${data.fshare.length} premium sources`);
+                    injectFshareLinks(data.fshare);
+                } else {
+                    updateStep('fshare', 'done', 'No premium links found');
+                }
+            } catch (e) {
+                updateStep('fshare', 'done', 'Discovery aborted');
+            }
+        }
+
+        function injectFshareLinks(links) {
+            const body = document.getElementById('fshare-discovery-body');
+            const placeholder = document.getElementById('no-discovery-links');
+            if (!body) return;
+            
+            if (placeholder) placeholder.classList.add('hidden');
+            
+            const mediaType = window.currentMetadata?.media_type || 'movie';
+            
+            links.forEach(link => {
+                const row = document.createElement('tr');
+                row.className = "border-t border-white/5 hover:bg-white/[0.02] transition-colors group";
+                row.innerHTML = `
+                    <td class="py-4">
+                        <div class="font-black italic text-[10px] text-gray-100 group-hover:text-blue-400 transition-colors uppercase tracking-tight">${link.name}</div>
+                        <div class="text-[7px] font-black text-purple-400 uppercase tracking-widest opacity-60 mt-0.5">Discovered Source</div>
+                    </td>
+                    <td class="py-4 text-right">
+                        <div class="flex justify-end gap-2 text-center">
+                            <button onclick="downloadToDevice('${link.url}')" class="w-8 h-8 rounded-lg bg-white/5 text-gray-500 hover:bg-white/10 hover:text-white transition-all text-[9px]"><i class="fas fa-download"></i></button>
+                            <button onclick="sendToOMV('${link.url}', '${link.name}', '${mediaType}', this)" class="w-8 h-8 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white transition-all text-[9px]"><i class="fas fa-cloud-arrow-down"></i></button>
+                        </div>
+                    </td>
+                `;
+                body.appendChild(row);
+            });
         }
 
         let currentSearchResults = [];
@@ -669,38 +734,54 @@
                 });
             }
 
-            if(links.fshare?.length || links.web?.length) {
-                html += `
-                    <div class="glass p-8 rounded-[40px] border border-white/5 h-fit">
-                        <div class="flex items-center gap-3 mb-8">
-                            <div class="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
-                            <h3 class="text-[10px] font-black text-white uppercase tracking-[0.2em]">Alternative Links</h3>
+                    <div class="glass p-8 rounded-[40px] border border-white/5 h-fit relative overflow-hidden">
+                        <!-- Background Glow for Discovery -->
+                        <div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/10 blur-[80px] rounded-full"></div>
+                        
+                        <div class="flex items-center justify-between mb-8 relative z-10">
+                            <div class="flex items-center gap-3">
+                                <div class="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
+                                <h3 class="text-[10px] font-black text-white uppercase tracking-[0.2em]">External Discovery</h3>
+                            </div>
                         </div>
-                        <div class="grid grid-cols-1 gap-3">
-                            ${(links.fshare || []).map(link => `
-                                <div class="bg-white/[0.02] p-4 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-all group">
-                                    <div class="flex-1 min-w-0 pr-4">
-                                        <div class="font-black text-gray-400 text-[9px] truncate italic uppercase tracking-wider mb-1" title="${link.title}">${link.title}</div>
-                                        <div class="text-[7px] font-black text-purple-400 uppercase tracking-widest opacity-60">Fshare Premium</div>
-                                    </div>
-                                    <div class="flex gap-2 shrink-0">
-                                        <button onclick="downloadToDevice('${link.url}')" class="w-8 h-8 rounded-lg bg-white/5 text-gray-500 hover:bg-white/10 hover:text-white transition-all text-[9px]"><i class="fas fa-download"></i></button>
-                                        <button onclick="sendToOMV('${link.url}', 'Fshare', '${mediaType}', this)" class="w-8 h-8 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white transition-all text-[9px]"><i class="fas fa-cloud-arrow-down"></i></button>
-                                    </div>
-                                </div>
-                            `).join('')}
-                            ${(links.web || []).map(link => `
-                                <div class="bg-white/[0.02] p-4 rounded-2xl flex items-center justify-between hover:bg-white/5 transition-all group">
-                                    <div class="flex-1 min-w-0 pr-4">
-                                        <div class="font-black text-gray-500 text-[9px] truncate italic uppercase tracking-wider mb-1" title="${link.title}">${link.title}</div>
-                                        <div class="text-[7px] font-black text-blue-400 uppercase tracking-widest opacity-60">Web Source</div>
-                                    </div>
-                                    <div class="flex gap-2 shrink-0">
-                                        <button onclick="downloadToDevice('${link.url}')" class="w-8 h-8 rounded-lg bg-white/5 text-gray-500 hover:bg-white/10 hover:text-white transition-all text-[9px]"><i class="fas fa-download"></i></button>
-                                        <button onclick="sendToOMV('${link.url}', 'Web', '${mediaType}', this)" class="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-all text-[9px]"><i class="fas fa-cloud-arrow-down"></i></button>
-                                    </div>
-                                </div>
-                            `).join('')}
+
+                        <div class="relative z-10">
+                            <table class="w-full">
+                                <tbody id="fshare-discovery-body">
+                                    ${(links.fshare || []).map(link => `
+                                        <tr class="border-t border-white/5 hover:bg-white/[0.02] transition-colors group">
+                                            <td class="py-4">
+                                                <div class="font-black italic text-[10px] text-gray-100 group-hover:text-blue-400 transition-colors uppercase tracking-tight">${link.name}</div>
+                                                <div class="text-[7px] font-black text-purple-400 uppercase tracking-widest opacity-60 mt-0.5">Fshare Premium</div>
+                                            </td>
+                                            <td class="py-4 text-right">
+                                                <div class="flex justify-end gap-2 text-center">
+                                                    <button onclick="downloadToDevice('${link.url}')" class="w-8 h-8 rounded-lg bg-white/5 text-gray-500 hover:bg-white/10 hover:text-white transition-all text-[9px]"><i class="fas fa-download"></i></button>
+                                                    <button onclick="sendToOMV('${link.url}', '${link.name}', '${mediaType}', this)" class="w-8 h-8 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white transition-all text-[9px]"><i class="fas fa-cloud-arrow-down"></i></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                    ${(links.web || []).map(link => `
+                                        <tr class="border-t border-white/5 hover:bg-white/[0.02] transition-colors group">
+                                            <td class="py-4">
+                                                <div class="font-black italic text-[10px] text-gray-400 group-hover:text-blue-400 transition-colors uppercase tracking-tight">${link.title}</div>
+                                                <div class="text-[7px] font-black text-gray-500 uppercase tracking-widest opacity-60 mt-0.5">Web Source</div>
+                                            </td>
+                                            <td class="py-4 text-right">
+                                                <div class="flex justify-end gap-2 text-center">
+                                                    <button onclick="downloadToDevice('${link.url}')" class="w-8 h-8 rounded-lg bg-white/5 text-gray-500 hover:bg-white/10 hover:text-white transition-all text-[9px]"><i class="fas fa-download"></i></button>
+                                                    <button onclick="sendToOMV('${link.url}', 'Web', '${mediaType}', this)" class="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition-all text-[9px]"><i class="fas fa-cloud-arrow-down"></i></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                            
+                            <div id="no-discovery-links" class="${(links.fshare?.length || links.web?.length) ? 'hidden' : ''} py-10 text-center">
+                                <p class="text-[10px] font-black text-gray-600 uppercase tracking-widest italic animate-pulse">Initializing background scanners...</p>
+                            </div>
                         </div>
                     </div>
                 `;

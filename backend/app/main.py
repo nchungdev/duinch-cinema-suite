@@ -11,6 +11,8 @@ import re
 from typing import Optional, List
 from duckduckgo_search import DDGS
 import time
+from app.scripts.thuviencine_lookup import lookup_thuviencine
+from app.scripts.google_search_lookup import lookup_google_fshare
 
 # --- Configuration ---
 STORAGE_PATH = os.getenv("STORAGE_PATH", "/storage")
@@ -373,29 +375,43 @@ async def get_movie_metadata(slug: str):
         if "error" in metadata:
             return {"error": metadata["error"]}
 
-        # Parallel fetching of links and local status
+        # Check local storage only (Google/ThuVienCine moved to discovery endpoint)
         title = metadata["title"]
-        tasks = [
-            fetch_google_links(title),
-            asyncio.to_thread(check_local_storage_sync, title, metadata.get("type", "movie"))
-        ]
-        
-        results = await asyncio.gather(*tasks)
-        google_data = results[0]
-        local_res = results[1]
+        local_res = await asyncio.to_thread(check_local_storage_sync, title, metadata.get("type", "movie"))
         
         return {
             "metadata": metadata,
             "links": {
                 "streaming": metadata.get("links", []),
-                "fshare": google_data["fshare"],
-                "web": google_data["web"]
+                "fshare": [], # Initially empty, filled by discovery
+                "web": []
             },
             "local": local_res,
             "type": "detail"
         }
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/lookup/fshare-discovery/{slug}")
+async def fshare_discovery(slug: str, title: str):
+    """
+    Search for extended Fshare links in the background from ThuVienCine and Google.
+    """
+    try:
+        # Start both scrapers concurrently
+        t_cine = lookup_thuviencine(title)
+        t_google = lookup_google_fshare(title)
+        
+        results = await asyncio.gather(t_cine, t_google)
+        
+        combined_fshare = results[0] + results[1]
+        
+        return {
+            "fshare": combined_fshare,
+            "success": True
+        }
+    except Exception as e:
+        return {"error": str(e), "success": False}
 
 @app.get("/jd/list")
 async def jd_list():
