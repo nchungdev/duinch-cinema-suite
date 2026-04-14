@@ -27,9 +27,9 @@ app.add_middleware(
 )
 
 # Routes
-app.include_router(discovery.router, tags=["Discovery"])
-app.include_router(media.router, tags=["Media"])
-app.include_router(download.router, tags=["Downloads"])
+app.include_router(discovery.router, prefix="/api", tags=["Discovery"])
+app.include_router(media.router, prefix="/api", tags=["Media"])
+app.include_router(download.router, prefix="/api", tags=["Downloads"])
 
 if __name__ == "__main__":
     import uvicorn

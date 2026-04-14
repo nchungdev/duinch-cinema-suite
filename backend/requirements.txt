@@ -3,3 +3,4 @@ uvicorn
 myjdapi
 httpx
 duckduckgo-search
+beautifulsoup4

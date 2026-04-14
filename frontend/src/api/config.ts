@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 // Dynamically determine API Base based on location
-const API_BASE_HOST = window.location.hostname === 'localhost' ? '192.168.1.37' : window.location.hostname;
-export const API_BASE = `http://${API_BASE_HOST}:8086`;
+const API_BASE_HOST = window.location.hostname === 'localhost' ? '192.168.1.37:8086' : window.location.host;
+export const API_BASE = window.location.hostname === 'localhost' ? `http://${API_BASE_HOST}/api` : `http://${API_BASE_HOST}/api`;
 
 export const api = axios.create({
   baseURL: API_BASE,
