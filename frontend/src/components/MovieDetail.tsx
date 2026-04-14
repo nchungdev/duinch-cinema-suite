@@ -1,24 +1,50 @@
-import { useState, useEffect } from 'react';
-import { ChevronLeft, Play, CloudDownload, Database } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/config';
-import type { DetailResponse, MediaLink } from '../api/config';
+import { ChevronLeft, Calendar, Clock, Play, Shield, Star, Info, Users, Tag, Layout, CloudDownload, Globe, HardDrive, Activity } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
-import { startDownload } from '../services/DownloadService';
 
-interface MovieDetailProps {
+interface MetaData {
+  title: string;
+  origin_name: string;
+  thumb_url: string;
+  poster: string;
+  poster_url: string;
+  content: string;
+  year: number;
+  time: string;
+  quality: string;
+  lang: string;
+  type: string;
+  category: { name: string }[];
+  actor: string[];
+}
+
+interface DetailResponse {
+  metadata: MetaData;
+  local: { exists: boolean; path?: string };
+  links?: {
+    streaming?: any[];
+    fshare?: any[];
+    web?: any[];
+  }
+}
+
+interface Props {
   slug: string;
   onBack: () => void;
 }
 
-export const MovieDetail = ({ slug, onBack }: MovieDetailProps) => {
+export function MovieDetail({ slug, onBack }: Props) {
   const [data, setData] = useState<DetailResponse | null>(null);
-  const [discoveredLinks, setDiscoveredLinks] = useState<MediaLink[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
+  const [activeServerIdx, setActiveServerIdx] = useState(0);
+  const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
 
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const res = await api.get<DetailResponse>(`/metadata/${slug}/`);
+        const res = await api.get<DetailResponse>(`/metadata/${slug}`);
         setData(res.data);
       } catch (err) {
         console.error('Fetch detail failed:', err);
@@ -29,136 +55,324 @@ export const MovieDetail = ({ slug, onBack }: MovieDetailProps) => {
     fetchDetail();
   }, [slug]);
 
-  if (loading || !data) {
-    return (
-      <div className="flex flex-col items-center justify-center py-60 space-y-8 animate-pulse">
-        <div className="w-16 h-16 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+  // Sync embed when server/episode changes or on first load
+  useEffect(() => {
+     if (data?.links?.streaming?.[activeServerIdx]?.server_data?.[activeEpisodeIdx]) {
+         const ep = data.links.streaming[activeServerIdx].server_data[activeEpisodeIdx];
+         if (ep.embed) {
+             setActiveEmbed(ep.embed);
+         }
+     }
+  }, [data, activeServerIdx, activeEpisodeIdx]);
+
+  if (loading) return (
+    <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
+      <div className="w-16 h-16 border-2 border-blue-500/10 border-t-blue-500 rounded-full animate-spin shadow-[0_0_30px_rgba(37,99,235,0.2)]"></div>
+      <span className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500/60 animate-pulse">Synchronizing Metadata</span>
+    </div>
+  );
+
+  if (!data) return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
+        <Info className="w-12 h-12 text-red-500/50" />
         <div className="text-center space-y-2">
-          <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.4em]">Establishing Uplink</p>
-          <p className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Hydrating Media Metadata...</p>
+            <h2 className="text-2xl font-black uppercase italic tracking-tighter">Transmission Failed</h2>
+            <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">Resource not found in the current sector</p>
         </div>
-      </div>
-    );
-  }
+        <button onClick={onBack} className="mt-4 px-8 py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Return to Command</button>
+    </div>
+  );
 
   const { metadata, local } = data;
 
   return (
-    <div className="animate-cinema-fade space-y-12">
-      {/* Back Button */}
-      <button 
-        onClick={onBack}
-        className="group flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-all"
-      >
-        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Back to Discovery
-      </button>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Column 1: Metadata Card */}
-        <div className="lg:col-span-4 lg:sticky lg:top-24 space-y-6">
-          <div className="glass-card p-6 space-y-6 overflow-hidden">
-            <div className="flex gap-6 items-center">
-              <img 
-                src={metadata.poster} 
-                className="w-32 rounded-2xl shadow-2xl aspect-[2/3] object-cover"
-                alt={metadata.title}
-              />
-              <div className="flex-1 space-y-3">
-                <h2 className="text-3xl font-black italic tracking-tighter uppercase leading-[0.9]">{metadata.title}</h2>
-                <div className="flex items-center gap-3">
-                  <span className="text-blue-500 font-black text-[9px] tracking-widest uppercase">{metadata.year}</span>
-                  <span className="w-1 h-1 bg-white/20 rounded-full"></span>
-                  <span className="text-gray-500 font-black text-[9px] tracking-widest uppercase">{metadata.media_type}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="pt-6 border-t border-white/5">
-              <p className="text-gray-400 text-xs leading-relaxed opacity-80">{metadata.overview}</p>
-            </div>
-
-            {local.exists && (
-              <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl flex items-center gap-3">
-                <Database className="w-4 h-4 text-green-500" />
-                <div className="flex-1 overflow-hidden">
-                  <p className="text-[8px] font-black text-green-500 uppercase">Available Locally</p>
-                  <p className="text-[7px] text-green-500/50 truncate tracking-tight">{local.path}</p>
-                </div>
-              </div>
-            )}
+    <div className="relative animate-cinema-fade space-y-16 pb-24">
+      {/* Top Header Return Button */}
+      <div className="w-full flex justify-start -mt-4 px-4 md:px-10 mb-8 max-w-screen-2xl mx-auto">
+        <button 
+          onClick={onBack}
+          className="group/back flex items-center gap-3 text-blue-500/80 hover:text-blue-400 transition-all font-black uppercase tracking-[0.3em] text-[10px]"
+        >
+          <div className="w-8 h-8 rounded-full border border-blue-500/20 flex items-center justify-center group-hover/back:bg-blue-500/10 transition-all">
+              <ChevronLeft className="w-4 h-4" />
           </div>
+          Return to Galaxy
+        </button>
+      </div>
 
-          <DiscoveryPipeline 
-            slug={slug} 
-            title={metadata.title} 
-            onLinksFound={(links) => setDiscoveredLinks(prev => [...prev, ...links])} 
-          />
+      {/* Main VOD Stage (Player + Episodes) */}
+      {data.links?.streaming && data.links.streaming.length > 0 ? (
+        <div className="flex flex-col xl:flex-row gap-8 w-full max-w-screen-2xl mx-auto px-4 md:px-10">
+           {/* Left/Top: Native Player */}
+           <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative aspect-video flex items-center justify-center group">
+              {activeEmbed ? (
+                 <iframe src={activeEmbed} allowFullScreen className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" />
+              ) : (
+                 <div className="flex flex-col items-center gap-4 text-gray-500">
+                    <Play className="w-16 h-16 opacity-30" />
+                    <span className="text-[10px] uppercase tracking-[0.2em] font-black">Standing By</span>
+                 </div>
+              )}
+           </div>
+
+           {/* Right/Bottom: Optimized Episode Selector */}
+           <div className="w-full xl:w-[400px] flex flex-col gap-6 max-h-[85vh] overflow-y-auto custom-scrollbar pr-2 pb-4 relative">
+              {/* Active Server Content */}
+              {data.links.streaming[activeServerIdx] && (
+                 <div className="space-y-4 p-5 rounded-[2rem] bg-white/5 border border-white/10">
+                    <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2 truncate pr-2">
+                           <Globe className="w-3 h-3 text-blue-500/50 shrink-0" /> {data.links.streaming[activeServerIdx].server_name}
+                        </span>
+                        <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20 hover:scale-105 transition-all text-[8px] font-black uppercase tracking-widest shrink-0 shadow-lg hover:shadow-green-500/20">
+                            <Activity className="w-3 h-3" /> Send All to JD
+                        </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                        {data.links.streaming[activeServerIdx].server_data.map((ep: any, epIdx: number) => {
+                            const epName = ep.name.toLowerCase().startsWith('tập') ? ep.name : `Tập ${ep.name}`;
+                            const isPlaying = activeEpisodeIdx === epIdx;
+                            
+                            return (
+                                <div key={epIdx} className={`flex items-stretch rounded-xl border transition-all group/stream shadow-sm ${isPlaying ? 'bg-blue-600/20 border-blue-500/50 shadow-blue-500/20' : 'bg-black/40 border-white/10 hover:border-blue-500/40 hover:bg-black/60'}`}>
+                                    <button 
+                                        onClick={() => {
+                                           setActiveEpisodeIdx(epIdx);
+                                           if (!ep.embed) {
+                                              window.open(ep.m3u8 || ep.link_m3u8, '_blank');
+                                           }
+                                        }}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 hover:bg-blue-600/10 transition-all rounded-l-xl overflow-hidden"
+                                    >
+                                        {isPlaying && <Play className="w-2.5 h-2.5 text-blue-400 fill-blue-400 animate-pulse shrink-0" />}
+                                        <span className={`text-[10px] font-bold transition-colors truncate ${isPlaying ? 'text-white' : 'text-gray-400 group-hover/stream:text-white'}`}>
+                                            {epName}
+                                        </span>
+                                    </button>
+                                    
+                                    <div className="w-px bg-white/5 group-hover/stream:bg-blue-500/20 transition-colors" />
+                                    
+                                    <button 
+                                        title="Send to JDownloader"
+                                        className="px-2.5 hover:bg-green-500/20 transition-all rounded-r-xl flex items-center justify-center group/dl shrink-0"
+                                    >
+                                        <HardDrive className="w-3 h-3 text-gray-600 group-hover/dl:text-green-400 transition-colors" />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                 </div>
+              )}
+           </div>
+        </div>
+      ) : (
+        /* Cinematic Hero Section (Fallback when no stream links are available) */
+        <div className="relative h-[65vh] -mx-10 -mt-20 overflow-hidden border-b border-white/5">
+          <div className="absolute inset-0">
+            <img 
+              src={metadata.thumb_url || metadata.poster_url || metadata.poster} 
+              className="w-full h-full object-cover scale-110 blur-3xl opacity-25 grayscale-[0.3]" 
+              alt="backdrop" 
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/60 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-transparent to-transparent" />
+          </div>
+        </div>
+      )}
+
+      {/* Detail Grid Layout */}
+      <div className="max-w-screen-2xl mx-auto px-4 md:px-10 flex flex-col gap-10 pt-4">
+        
+        {/* Layer 2: Movie Profile + Personnel */}
+        <div className="flex flex-col xl:flex-row gap-8 w-full items-stretch">
+          <section className="flex-1 glass-dark p-8 md:p-12 rounded-[3.5rem] border border-white/5 shadow-inner animate-cinema-fade">
+            <div className="flex flex-col md:flex-row gap-10 items-start">
+              {/* Restored Hero Poster */}
+              <div className="hidden md:block w-48 shrink-0 aspect-[2/3] rounded-[2rem] overflow-hidden shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8)] border border-white/10 group bg-[#050505]">
+                <img 
+                  src={metadata.poster_url || metadata.poster || metadata.thumb_url} 
+                  className="w-full h-full object-cover transition-transform duration-[2s] group-hover:scale-110" 
+                  alt="poster"
+                  onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/500x750?text=No+Poster'; }}
+                />
+              </div>
+
+              {/* Metadata */}
+              <div className="flex-1 space-y-6">
+                <div className="space-y-4">
+                   <div className="flex items-center gap-4">
+                      <span className="px-3 py-1 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 text-[10px] font-black uppercase tracking-widest">{metadata.quality || 'HD'}</span>
+                      <div className="h-0.5 w-12 bg-white/10 rounded-full" />
+                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em]">{metadata.type || 'Movie'}</span>
+                   </div>
+                   
+                   <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-black italic uppercase tracking-tighter leading-[0.9] text-gradient font-outfit drop-shadow-2xl">
+                      {metadata.title}
+                   </h1>
+                   
+                   <p className="text-lg font-bold text-gray-500 uppercase tracking-[0.25em] opacity-60 font-inter">
+                      {metadata.origin_name}
+                   </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                   <HeroBadge icon={<Calendar className="text-blue-500" />} text={metadata.year?.toString() || 'Unknown'} />
+                   <HeroBadge icon={<Clock className="text-purple-500" />} text={metadata.time || 'N/A'} />
+                   <HeroBadge icon={<Star className="text-yellow-500" />} text={metadata.lang || 'N/A'} />
+                   <HeroBadge icon={<Shield className="text-green-500" />} text="Official Source" />
+                </div>
+
+                {/* Manifest Summary (Now inline next to poster on large screens) */}
+                <div className="pt-4 space-y-4">
+                   <div className="flex items-center gap-4">
+                      <div className="w-1.5 h-6 bg-blue-600 rounded-full shadow-[0_0_15px_#3b82f6]" />
+                      <h2 className="text-xl font-black uppercase tracking-[0.2em] font-outfit text-gray-300">Manifest Summary</h2>
+                   </div>
+                   <p className="text-gray-400 leading-relaxed text-sm md:text-base font-medium font-inter opacity-90 text-justify" dangerouslySetInnerHTML={{ __html: metadata.content || 'No manifest content available.' }} />
+                   
+                   <div className="pt-2 flex flex-wrap gap-3">
+                      {(metadata.category || []).map(cat => (
+                        <div key={cat.name} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors cursor-crosshair">
+                          {cat.name}
+                        </div>
+                      ))}
+                   </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Right Side: Personnel Manifest (Cast) & Quick Specs */}
+          <div className="w-full xl:w-[400px] shrink-0 h-full flex flex-col gap-8">
+              <div className="glass-dark p-8 md:p-10 rounded-[3.5rem] border border-white/5 space-y-8 flex-1 bg-[#030303]/40">
+                  <div className="flex items-center gap-3">
+                      <Users className="w-5 h-5 text-blue-500/50" />
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500">Personnel Manifest</h3>
+                  </div>
+                  <div className="space-y-4">
+                      {(metadata.actor || []).slice(0, 5).map(a => (
+                          <div key={a} className="flex items-center gap-4 group cursor-pointer transition-all">
+                              <div className="w-10 h-10 rounded-[1rem] bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black group-hover:bg-blue-600/30 group-hover:text-blue-200 transition-all duration-500 shadow-md">
+                                  {a.charAt(0)}
+                              </div>
+                              <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-gray-300 group-hover:text-white transition-colors">{a}</span>
+                                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-600 group-hover:text-blue-500/60 transition-colors">Agent / Class A</span>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+
+              {/* Server Tabs */}
+              {(data?.links?.streaming?.length ?? 0) > 1 && (
+                 <div className="flex gap-2 overflow-x-auto custom-scrollbar">
+                    {data.links?.streaming?.map((server, idx) => (
+                       <button 
+                          key={idx}
+                          onClick={() => setActiveServerIdx(idx)} 
+                          className={`px-4 py-3 rounded-[1rem] flex-1 text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
+                            idx === activeServerIdx 
+                              ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 shadow-[0_0_15px_rgba(37,99,235,0.2)]' 
+                              : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 border-transparent hover:border-white/10'
+                          }`}
+                       >
+                           {server.server_name}
+                       </button>
+                    ))}
+                 </div>
+              )}
+
+              {/* Quick Specs */}
+              <div className="glass p-8 rounded-[3rem] border border-white/5 grid grid-cols-2 gap-6 bg-[#030303]/40">
+                  <SpecItem icon={<Tag />} label="Format" value={metadata.type} />
+                  <SpecItem icon={<Layout />} label="Display" value={metadata.quality} />
+              </div>
+          </div>
         </div>
 
-        {/* Column 2: Sources & Actions */}
-        <div className="lg:col-span-8 space-y-10">
-          {/* Streaming Sources */}
-          {data.links.streaming.map((server, sIdx) => (
-            <div key={sIdx} className="glass-card p-8 space-y-8">
-              <div className="flex items-center gap-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
-                <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">
-                  {metadata.media_type === 'tv' ? 'Episodes' : 'Movie'} • {server.server_name}
-                </h3>
+        {/* Layer 3: System Tooling (Discovery Core + Storage Node) */}
+        <div className="flex flex-col xl:flex-row gap-8 w-full items-stretch">
+          
+          {/* Left Side: Discovery Core */}
+          <div className="flex-1">
+            <DiscoveryPipeline 
+              slug={slug} 
+              title={metadata.origin_name || metadata.title}
+            />
+          </div>
+
+          {/* Right Side: Storage Controller */}
+          <div className="w-full xl:w-[400px] shrink-0 space-y-10">
+            {/* Storage Node Status */}
+            <div className={`glass-dark p-10 rounded-[3rem] border ${local.exists ? 'border-green-500/20 shadow-green-900/10 shadow-2xl' : 'border-blue-500/10 shadow-blue-900/10 shadow-2xl'} space-y-8 relative overflow-hidden group`}>
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/20 to-transparent" />
+              
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-600">Storage Controller</span>
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${local.exists ? 'bg-green-500/20 text-green-500' : 'bg-blue-500/20 text-blue-500'}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${local.exists ? 'bg-green-500' : 'bg-blue-500'}`} />
+                    {local.exists ? 'Synced' : 'Remote'}
+                </div>
               </div>
               
-              <div className="flex flex-wrap gap-2.5">
-                {server.server_data.map((ep, eIdx) => (
-                  <div key={eIdx} className="group relative flex flex-col items-center justify-center p-2.5 px-4 rounded-2xl bg-white/5 border border-white/5 hover:border-blue-500/30 transition-all h-10 w-fit">
-                    <span className="font-black text-[10px] italic">{ep.name.replace('Tập ', '')}</span>
-                    
-                    {/* Bead Actions Menu (Hidden by default, shown on focus/hover) */}
-                    <div className="absolute inset-x-0 -bottom-10 opacity-0 group-hover:opacity-100 transition-all flex justify-center gap-1 z-20 pointer-events-none group-hover:pointer-events-auto">
-                      <button className="w-8 h-8 rounded-lg bg-blue-600 text-white shadow-lg flex items-center justify-center"><Play className="w-3 h-3 fill-white" /></button>
-                      <button 
-                        onClick={() => startDownload({ name: `${metadata.title} - ${ep.name}`, url: ep.m3u8, source: 'Streaming' }, metadata)}
-                        className="w-8 h-8 rounded-lg bg-white text-black shadow-lg flex items-center justify-center"
-                      >
-                        <CloudDownload className="w-3 h-3" />
-                      </button>
-                    </div>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                    <h3 className="text-2xl font-black uppercase italic font-outfit">
+                    {local.exists ? 'Local Node' : 'Cloud Entry'}
+                    </h3>
+                    <p className="text-xs text-gray-500 font-bold uppercase tracking-widest opacity-60 leading-relaxed">
+                        {local.exists ? 'Resource available in primary high-speed raid array.' : 'Resource identified in external cloud database. Retrieval required.'}
+                    </p>
+                </div>
+
+                {local.exists && (
+                  <div className="p-4 rounded-xl bg-black/40 border border-white/5 font-mono text-[9px] text-gray-500 break-all leading-tight">
+                      {local.path}
                   </div>
-                ))}
+                )}
+
+                <button className={`w-full py-3.5 rounded-xl font-black uppercase tracking-[0.2em] text-[10px] transition-all duration-500 flex items-center justify-center gap-3 group/btn ${
+                  local.exists 
+                    ? 'bg-transparent text-green-400 border border-green-500/30 hover:bg-green-500/10' 
+                    : 'bg-gradient-to-r from-blue-700 to-blue-500 text-white shadow-xl shadow-blue-900/30 hover:scale-[1.02] hover:shadow-blue-500/40 border border-blue-400/20'
+                }`}>
+                  {local.exists ? <Play className="w-4 h-4 fill-green-400" /> : <CloudDownload className="w-4 h-4 text-white drop-shadow-md" />}
+                  {local.exists ? 'Execute Local Playback' : 'Initialize Retrieval'}
+                </button>
               </div>
             </div>
-          ))}
 
-          {/* Discovery Results */}
-          {(data.links.fshare.length > 0 || discoveredLinks.length > 0) && (
-            <div className="glass-card p-8 relative overflow-hidden">
-               <div className="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/10 blur-[80px] rounded-full"></div>
-               <div className="flex items-center gap-3 mb-8">
-                  <div className="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]"></div>
-                  <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em]">External Discovery</h3>
-               </div>
-
-               <div className="space-y-1">
-                  {[...data.links.fshare, ...discoveredLinks].map((link, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-white/[0.02] border-t border-white/5 hover:bg-white/5 transition-all group rounded-xl">
-                      <div>
-                        <p className="font-black italic text-[10px] text-gray-100 group-hover:text-blue-400 transition-colors uppercase tracking-tight">{link.name}</p>
-                        <p className="text-[7px] font-black text-purple-400 uppercase tracking-widest opacity-60 mt-0.5">{link.source || 'Fshare Premium'}</p>
-                      </div>
-                      <div className="flex gap-2">
-                         <button 
-                          onClick={() => startDownload(link, metadata)}
-                          className="px-3 py-1.5 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600 hover:text-white transition-all text-[8px] font-black uppercase tracking-widest"
-                         >
-                            Gửi JDownloader
-                         </button>
-                      </div>
-                    </div>
-                  ))}
-               </div>
+            {/* Quick Specs */}
+            <div className="glass p-8 rounded-[3rem] border border-white/5 grid grid-cols-2 gap-6 bg-[#030303]/40">
+                <SpecItem icon={<Tag />} label="Format" value={metadata.type} />
+                <SpecItem icon={<Layout />} label="Display" value={metadata.quality} />
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
-};
+}
+
+function HeroBadge({ icon, text }: { icon: any, text: string }) {
+  return (
+    <div className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-widest backdrop-blur-xl hover:bg-white/10 transition-all cursor-default">
+      <span className="opacity-80 scale-110">{icon}</span>
+      <span className="text-gray-200">{text}</span>
+    </div>
+  );
+}
+
+function SpecItem({ icon, label, value }: { icon: any, label: string, value: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-gray-600">
+            {icon} {label}
+        </div>
+        <div className="text-[10px] font-black uppercase tracking-wider text-gray-300">{value}</div>
+    </div>
+  );
+}
