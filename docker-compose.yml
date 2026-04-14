@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/nchungdev/omv-jd-dashboard-api:latest
+    image: ghcr.io/nchungdev/omv-jdownloader-dashboard-api:latest
     container_name: omv-jd-dashboard-api
     restart: unless-stopped
     ports:
@@ -15,7 +15,7 @@ services:
     volumes:
       - ${HOST_STORAGE_PATH}:/storage
   frontend:
-    image: ghcr.io/nchungdev/omv-jd-dashboard-ui:latest
+    image: ghcr.io/nchungdev/omv-jdownloader-dashboard-ui:latest
     container_name: omv-jd-dashboard-ui
     restart: unless-stopped
     ports:
