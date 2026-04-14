@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # Routes
-app.include_router(discovery.router, prefix="/api", tags=["Discovery"])
+app.include_router(discovery.router, prefix="/api/discovery", tags=["Discovery"])
 app.include_router(media.router, prefix="/api", tags=["Media"])
 app.include_router(download.router, prefix="/api", tags=["Downloads"])
 
