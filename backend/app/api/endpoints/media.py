@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Request
-from typing import List
 import asyncio
 import json
 import os
 from app.core import config
-from app.services import media_service, cache_manager
+from app.services import media_service
 # Assuming scrapers moved to app/services/scrapers (per mkdir command)
 from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
 from app.services.scrapers.google_search_lookup import lookup_google_fshare
@@ -12,16 +11,19 @@ from app.services.scrapers.google_search_lookup import lookup_google_fshare
 router = APIRouter()
 
 def find_existing_path(title: str, media_type: str):
-    if not title or not title.strip(): return None
+    if not title or not title.strip():
+        return None
     base = os.path.join(config.STORAGE_PATH, "Movies" if media_type == "movie" else "TV Shows")
-    if not os.path.exists(base): return None
+    if not os.path.exists(base):
+        return None
     title_clean = title.lower().strip()
     for root, dirs, files in os.walk(base):
         for d in dirs:
             if title_clean == d.lower().strip() or f"({title_clean})" in d.lower(): 
                 return os.path.join(root, d)
         for f in files:
-            if title_clean in f.lower(): return root
+            if title_clean in f.lower():
+                return root
     return None
 
 def check_local_storage_sync(title: str, media_type: str):
@@ -41,7 +43,8 @@ async def fast_search(request: Request, query: str, media_type: str = "all"):
     seen = set()
     for item in meta_results:
         clean_title = item["title"].lower().strip()
-        if clean_title in kk_map: item["slug"] = kk_map[clean_title]
+        if clean_title in kk_map:
+            item["slug"] = kk_map[clean_title]
         combined.append(item)
         seen.add(clean_title)
         
@@ -51,7 +54,8 @@ async def fast_search(request: Request, query: str, media_type: str = "all"):
             combined.append(item)
             seen.add(clean_title)
 
-    if not combined: return {"error": "No results found"}
+    if not combined:
+        return {"error": "No results found"}
     return {"results": combined, "type": "list"}
 
 @router.get("/metadata/{slug}")
@@ -66,7 +70,8 @@ async def get_movie_metadata(slug: str):
         )
         stdout, stderr = await proc.communicate()
         metadata = json.loads(stdout.decode())
-        if "error" in metadata: return {"error": metadata["error"]}
+        if "error" in metadata:
+            return {"error": metadata["error"]}
 
         title = metadata["title"]
         local_res = await asyncio.to_thread(check_local_storage_sync, title, metadata.get("type", "movie"))

@@ -40,7 +40,7 @@ async def lookup_google_fshare(title: str) -> List[Dict[str, str]]:
                     # Try to get a clean name from the title or surrounding text
                     # Usually the text inside the <a> is the title
                     name = el.get_text(strip=True) or "Fshare Content"
-                    if url not in [l['url'] for l in links]:
+                    if url not in [link['url'] for link in links]:
                         links.append({
                             "name": f"GOOGLE | {name[:50]}...",
                             "url": url,

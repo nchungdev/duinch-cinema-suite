@@ -56,7 +56,7 @@ async def lookup_thuviencine(title: str) -> List[Dict[str, str]]:
             for el in fshare_els:
                 url = el.get('href')
                 name = el.get_text(strip=True) or "Fshare Link (ThuVienCine)"
-                if url not in [l['url'] for l in links]:
+                if url not in [link['url'] for link in links]:
                     links.append({
                         "name": f"THUVIENCINE | {name}",
                         "url": url,

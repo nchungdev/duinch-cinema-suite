@@ -1,7 +1,6 @@
 import json
 import os
 import time
-from app.core import config
 
 def load_cache(filename):
     if not os.path.exists(filename):

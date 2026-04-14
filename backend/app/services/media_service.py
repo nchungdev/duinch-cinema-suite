@@ -22,7 +22,8 @@ async def fetch_tmdb_metadata(client: httpx.AsyncClient, query: str, media_type:
         for item in raw_results:
             item_type = item.get("media_type")
             if media_type == "all":
-                if item_type not in ["movie", "tv"]: continue
+                if item_type not in ["movie", "tv"]:
+                    continue
             elif item_type != media_type:
                 continue
                 
