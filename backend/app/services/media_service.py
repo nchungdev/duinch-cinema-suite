@@ -1,5 +1,4 @@
 import httpx
-from typing import List, Dict, Optional
 from app.core import config
 from app.services import cache_manager
 

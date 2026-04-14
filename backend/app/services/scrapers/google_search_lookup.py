@@ -1,7 +1,6 @@
 import httpx
 from bs4 import BeautifulSoup
 import asyncio
-import re
 from typing import List, Dict
 
 async def lookup_google_fshare(title: str) -> List[Dict[str, str]]:

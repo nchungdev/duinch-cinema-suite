@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request
 from app.core import config
 from app.services import cache_manager
-import time
 
 router = APIRouter()
 

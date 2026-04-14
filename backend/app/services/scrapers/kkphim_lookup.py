@@ -3,6 +3,7 @@ import json
 import urllib.request
 import urllib.parse
 import os
+import re
 
 TMDB_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")
 
@@ -75,7 +76,6 @@ def kkphim_get_details(slug):
     poster = tmdb_info.get("poster") or movie.get("poster_url")
 
     # Trích xuất Season từ tên phim (nếu có)
-    import re
     season = 1
     s_match = re.search(r'([Pp]hần|[Ss]eason|[Ss])\s*(\d+)', movie.get("name", ""), re.IGNORECASE)
     if s_match:

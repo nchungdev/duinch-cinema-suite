@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Request, HTTPException
-from typing import Optional, List
+from fastapi import APIRouter, Request
+from typing import List
 import asyncio
 import json
 import os
