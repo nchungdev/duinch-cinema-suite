@@ -26,16 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routes (Dual-support for transition)
-# Modern path
+# Routes
 app.include_router(discovery.router, prefix="/api", tags=["Discovery"])
 app.include_router(media.router, prefix="/api", tags=["Media"])
 app.include_router(download.router, prefix="/api", tags=["Downloads"])
-
-# Legacy fallback (to be removed after React UI is stable)
-app.include_router(discovery.router, tags=["Legacy-Discovery"])
-app.include_router(media.router, tags=["Legacy-Media"])
-app.include_router(download.router, tags=["Legacy-Downloads"])
 
 if __name__ == "__main__":
     import uvicorn
