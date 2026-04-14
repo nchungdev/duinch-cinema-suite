@@ -1,23 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0c;
-  --color-surface: #111114;
+  --color-background: #050505;
+  --color-surface: #0f0f12;
+  --color-surface-hover: #16161c;
   --color-primary: #3b82f6;
+  --color-primary-glow: rgba(59, 130, 246, 0.5);
   --color-accent: #a855f7;
+  --color-accent-glow: rgba(168, 85, 247, 0.5);
   
-  --animate-cinema-fade: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  --animate-fade-in: fadeIn 0.5s ease-out forwards;
-  --animate-slide-up: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  --animate-pulse-slow: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-cinema-fade: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-glow: glow 4s ease-in-out infinite;
 
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(20px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
-  @keyframes slideUp {
-    0% { transform: translateY(20px); opacity: 0; }
-    100% { transform: translateY(0); opacity: 1; }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes glow {
+    0%, 100% { opacity: 0.3; filter: blur(80px); }
+    50% { opacity: 0.6; filter: blur(100px); }
   }
 }
 
@@ -27,26 +33,38 @@
 
 body {
   background-color: var(--color-background);
-  color: white;
-  @apply font-sans selection:bg-blue-500/30 overflow-x-hidden;
+  color: #f8fafc;
+  @apply font-sans selection:bg-blue-500/40 overflow-x-hidden antialiased;
+  background-attachment: fixed;
 }
 
-/* Glassmorphism primitives */
+/* UI-UX PRO MAX: Advanced Glassmorphism */
 @utility glass {
-  background-color: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(24px);
+  background: rgba(20, 20, 25, 0.4);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+@utility glass-dark {
+  background: rgba(10, 10, 12, 0.8);
+  backdrop-filter: blur(25px) saturate(200%);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-@utility glass-card {
-  @apply glass;
-  border-radius: 40px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+.card-hover {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-hover:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -54,17 +72,52 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.1), transparent);
   border-radius: 9999px;
-  transition: background-color 0.3s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Cinematic Effects */
+/* Premium Typography */
+h1, h2, h3 {
+  @apply tracking-tight font-black uppercase italic;
+  font-family: 'Outfit', sans-serif;
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.4) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .aspect-cinema {
   aspect-ratio: 2 / 3;
 }
 
+/* Hero Background Elements */
+.bg-ambience {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -10;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.blob {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.15;
+  animation: float 10s ease-in-out infinite;
+}
+
+.blob-blue { background: #3b82f6; top: -10%; right: -5%; animation-delay: 0s; }
+.blob-purple { background: #a855f7; bottom: -10%; left: -5%; animation-delay: -5s; }
+.blob-indigo { background: #6366f1; top: 30%; left: 20%; animation-delay: -2s; opacity: 0.05; }

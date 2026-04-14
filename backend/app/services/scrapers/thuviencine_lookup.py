@@ -3,12 +3,14 @@ from bs4 import BeautifulSoup
 import asyncio
 from typing import List, Dict
 
+import urllib.parse
+
 async def lookup_thuviencine(title: str) -> List[Dict[str, str]]:
     """
     Searches ThuVienCine for Fshare links based on a movie title.
     Flow: Search -> Detail Page -> Download Page -> Extract Fshare links
     """
-    search_url = f"https://thuviencine.com/?s={httpx.utils.quote(title)}"
+    search_url = f"https://thuviencine.com/?s={urllib.parse.quote(title)}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }

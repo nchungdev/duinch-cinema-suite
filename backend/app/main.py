@@ -15,7 +15,8 @@ app = FastAPI(
     title="OMV JDownloader Dashboard API",
     description="Modular API for OMV media management",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    redirect_slashes=False
 )
 
 # Middleware

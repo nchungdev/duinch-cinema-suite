@@ -4,7 +4,7 @@ from app.services import cache_manager
 
 router = APIRouter()
 
-@router.get("/")
+@router.get("")
 async def discovery_list(request: Request, category: str = "new", page: int = 1):
     http_client = request.app.state.http_client
     
@@ -26,6 +26,16 @@ async def discovery_list(request: Request, category: str = "new", page: int = 1)
         raw_items = data.get("items", []) or data.get("data", {}).get("items", [])
         raw_pagination = data.get("pagination") or data.get("data", {}).get("params", {}).get("pagination", {})
         
+        def get_media_type(item, cat):
+            itype = item.get("type")
+            if itype in ["series", "tvshows", "tv"]: return "tv"
+            if item.get("tmdb") and item.get("tmdb", {}).get("type") == "tv": return "tv"
+            if cat in ["phim-bo", "tv-shows"]: return "tv"
+            name = item.get("name", "")
+            if name and ("(Phần" in name or "Season" in name): return "tv"
+            if "Tập " in item.get("episode_current", "") or "/tập" in item.get("time", ""): return "tv"
+            return "movie"
+
         for item in raw_items:
             img_prefix = "https://phimimg.com/" if not item.get("poster_url", "").startswith("http") else ""
             items.append({
@@ -34,7 +44,7 @@ async def discovery_list(request: Request, category: str = "new", page: int = 1)
                 "slug": item.get("slug"),
                 "poster": img_prefix + item.get("poster_url") if item.get("poster_url") else None,
                 "year": item.get("year"),
-                "media_type": "tv" if "(Phần" in item.get("name") or "Season" in item.get("name") or category in ["phim-bo", "tv-shows"] else "movie"
+                "media_type": get_media_type(item, category)
             })
             
         res_data = {

@@ -59,13 +59,21 @@ async def fetch_kkphim_search(client: httpx.AsyncClient, query: str, media_type:
         results = []
         for item in items:
             img_prefix = "https://phimimg.com/" if not item.get("poster_url", "").startswith("http") else ""
+            itype = item.get("type")
+            name = item.get("name", "")
+            is_tv = itype in ["series", "tvshows", "tv"] \
+                    or "(Phần" in name or "Season" in name \
+                    or "Tập " in item.get("episode_current", "") \
+                    or "/tập" in item.get("time", "")
+            parsed_media_type = "tv" if is_tv else "movie"
+            
             results.append({
                 "title": item.get("name"),
                 "origin_name": item.get("origin_name"),
                 "slug": item.get("slug"),
                 "poster": img_prefix + item.get("poster_url") if item.get("poster_url") else None,
                 "year": item.get("year"),
-                "media_type": media_type,
+                "media_type": parsed_media_type,
                 "source": "kkphim"
             })
 
