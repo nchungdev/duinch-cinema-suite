@@ -24,7 +24,7 @@ export const DiscoveryGrid = ({ category, onMovieClick }: DiscoveryGridProps) =>
       // Batch fetch logic: Fetch 3 pages for initial load to fill the high-density grid
       const pagesToFetch = isInitial ? [1, 2, 3] : [pageNum];
       const results = await Promise.all(
-        pagesToFetch.map(p => api.get<DiscoveryResponse>(`/discovery?category=${category}&page=${p}`))
+        pagesToFetch.map(p => api.get<DiscoveryResponse>(`/discovery/?category=${category}&page=${p}`))
       );
 
       const newItems = results.flatMap(res => res.data.items);

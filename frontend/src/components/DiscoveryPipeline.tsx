@@ -41,7 +41,7 @@ export const DiscoveryPipeline = ({ slug, title, onLinksFound }: DiscoveryPipeli
       updateStep('fshare', 'active');
       try {
         const res = await api.get<{ fshare: MediaLink[], success: boolean }>(
-          `/lookup/fshare-discovery/${slug}?title=${encodeURIComponent(title)}`
+          `/lookup/fshare-discovery/${slug}/?title=${encodeURIComponent(title)}`
         );
         if (res.data.success) {
           onLinksFound(res.data.fshare);

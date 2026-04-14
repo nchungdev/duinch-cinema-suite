@@ -18,7 +18,7 @@ export const MovieDetail = ({ slug, onBack }: MovieDetailProps) => {
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const res = await api.get<DetailResponse>(`/metadata/${slug}`);
+        const res = await api.get<DetailResponse>(`/metadata/${slug}/`);
         setData(res.data);
       } catch (err) {
         console.error('Fetch detail failed:', err);
