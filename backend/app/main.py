@@ -2,8 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
+from dotenv import load_dotenv, find_dotenv
 from app.api.endpoints import discovery, media, download
 from app.services import cache_manager
+
+load_dotenv(find_dotenv(), override=False)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

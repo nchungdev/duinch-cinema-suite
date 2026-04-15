@@ -4,3 +4,4 @@ myjdapi
 httpx
 duckduckgo-search
 beautifulsoup4
+python-dotenv
