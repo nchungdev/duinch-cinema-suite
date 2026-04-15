@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/config';
-import { ChevronLeft, Calendar, Clock, Play, Shield, Star, Info, Users, Tag, Layout, CloudDownload, Globe, HardDrive, Activity } from 'lucide-react';
+import { ChevronLeft, Calendar, Clock, Play, Shield, Star, Info, Users, Tag, Layout, CloudDownload, Globe, HardDrive, Activity, ChevronDown } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 interface MetaData {
@@ -17,6 +17,7 @@ interface MetaData {
   type: string;
   category: { name: string }[];
   actor: string[];
+  tmdb_seasons?: { season_number: number; name: string; episode_count: number }[];
 }
 
 interface DetailResponse {
@@ -40,6 +41,8 @@ export function MovieDetail({ slug, onBack }: Props) {
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
+  const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
+  const [seasonDropdownOpen, setSeasonDropdownOpen] = useState(false);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -85,6 +88,21 @@ export function MovieDetail({ slug, onBack }: Props) {
 
   const { metadata, local } = data;
 
+  // Compute season boundaries from TMDB seasons
+  const tmdbSeasons = metadata.tmdb_seasons || [];
+  const seasonBoundaries = tmdbSeasons.reduce<{ start: number; end: number; name: string; num: number }[]>((acc, s) => {
+    const start = acc.length > 0 ? acc[acc.length - 1].end : 0;
+    acc.push({ start, end: start + s.episode_count, name: s.name, num: s.season_number });
+    return acc;
+  }, []);
+  const currentSeason = seasonBoundaries[activeSeasonIdx];
+
+  // Get episodes for current season (or all if no TMDB seasons)
+  const getSeasonEpisodes = (serverData: any[]) => {
+    if (!currentSeason || seasonBoundaries.length === 0) return serverData;
+    return serverData.slice(currentSeason.start, currentSeason.end);
+  };
+
   return (
     <div className="relative animate-cinema-fade space-y-16 pb-24">
       {/* Top Header Return Button */}
@@ -116,9 +134,57 @@ export function MovieDetail({ slug, onBack }: Props) {
            </div>
 
            {/* Right/Bottom: Optimized Episode Selector */}
-           <div className="w-full xl:w-[400px] flex flex-col gap-6 max-h-[85vh] overflow-y-auto custom-scrollbar pr-2 pb-4 relative">
+           <div className="w-full xl:w-[400px] flex flex-col gap-4 max-h-[85vh] overflow-y-auto custom-scrollbar pr-2 pb-4 relative">
+              {/* Season Selector (only if TMDB seasons exist) */}
+              {seasonBoundaries.length > 1 && (
+                <div className="relative">
+                  <button 
+                    onClick={() => setSeasonDropdownOpen(!seasonDropdownOpen)}
+                    className="w-full flex items-center justify-between px-5 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-blue-500/30 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                        S{currentSeason?.num || 1}
+                      </span>
+                      <span className="text-xs font-bold text-gray-300 truncate">
+                        {currentSeason?.name || 'Season 1'}
+                      </span>
+                      <span className="text-[9px] text-gray-600 font-bold">
+                        ({currentSeason ? currentSeason.end - currentSeason.start : 0} tập)
+                      </span>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${seasonDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {seasonDropdownOpen && (
+                    <div className="absolute z-20 top-full mt-2 w-full max-h-[300px] overflow-y-auto custom-scrollbar rounded-xl bg-[#0a0a0a] border border-white/10 shadow-2xl">
+                      {seasonBoundaries.map((s, idx) => (
+                        <button
+                          key={s.num}
+                          onClick={() => { setActiveSeasonIdx(idx); setSeasonDropdownOpen(false); setActiveEpisodeIdx(0); }}
+                          className={`w-full text-left px-5 py-3 flex items-center gap-3 transition-all border-b border-white/5 last:border-0 ${
+                            idx === activeSeasonIdx 
+                              ? 'bg-blue-600/10 text-blue-400' 
+                              : 'hover:bg-white/5 text-gray-400'
+                          }`}
+                        >
+                          <span className="text-[10px] font-black uppercase tracking-widest w-8 shrink-0">S{s.num}</span>
+                          <span className="text-xs font-bold truncate flex-1">{s.name}</span>
+                          <span className="text-[9px] text-gray-600 font-bold shrink-0">{s.end - s.start} tập</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Active Server Content */}
-              {data.links.streaming[activeServerIdx] && (
+              {data.links.streaming[activeServerIdx] && (() => {
+                const allEps = data.links.streaming[activeServerIdx].server_data;
+                const filteredEps = getSeasonEpisodes(allEps);
+                const offsetStart = currentSeason?.start || 0;
+                
+                return (
                  <div className="space-y-4 p-5 rounded-[2rem] bg-white/5 border border-white/10">
                     <div className="flex items-center justify-between border-b border-white/5 pb-4">
                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2 truncate pr-2">
@@ -130,15 +196,16 @@ export function MovieDetail({ slug, onBack }: Props) {
                     </div>
                     
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                        {data.links.streaming[activeServerIdx].server_data.map((ep: any, epIdx: number) => {
+                        {filteredEps.map((ep: any, localIdx: number) => {
+                            const globalIdx = offsetStart + localIdx;
                             const epName = ep.name.toLowerCase().startsWith('tập') ? ep.name : `Tập ${ep.name}`;
-                            const isPlaying = activeEpisodeIdx === epIdx;
+                            const isPlaying = activeEpisodeIdx === globalIdx;
                             
                             return (
-                                <div key={epIdx} className={`flex items-stretch rounded-xl border transition-all group/stream shadow-sm ${isPlaying ? 'bg-blue-600/20 border-blue-500/50 shadow-blue-500/20' : 'bg-black/40 border-white/10 hover:border-blue-500/40 hover:bg-black/60'}`}>
+                                <div key={globalIdx} className={`flex items-stretch rounded-xl border transition-all group/stream shadow-sm ${isPlaying ? 'bg-blue-600/20 border-blue-500/50 shadow-blue-500/20' : 'bg-black/40 border-white/10 hover:border-blue-500/40 hover:bg-black/60'}`}>
                                     <button 
                                         onClick={() => {
-                                           setActiveEpisodeIdx(epIdx);
+                                           setActiveEpisodeIdx(globalIdx);
                                            if (!ep.embed) {
                                               window.open(ep.m3u8 || ep.link_m3u8, '_blank');
                                            }
@@ -164,7 +231,8 @@ export function MovieDetail({ slug, onBack }: Props) {
                         })}
                     </div>
                  </div>
-              )}
+                );
+              })()}
            </div>
         </div>
       ) : (

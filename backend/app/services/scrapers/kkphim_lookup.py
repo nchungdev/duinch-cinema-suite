@@ -24,12 +24,42 @@ def kkphim_get_by_tmdb(media_type, tmdb_id):
     url = f"https://phimapi.com/tmdb/{api_type}/{tmdb_id}"
     return kkphim_api_call(url)
 
+def tmdb_search_by_title(title, media_type="tv", is_anime=False):
+    """Fallback: search TMDB by title to find tmdb_id when KKPhim doesn't provide it."""
+    if not TMDB_TOKEN or not title:
+        return None
+    
+    encoded = urllib.parse.quote(title)
+    url = f"https://api.themoviedb.org/3/search/{media_type}?query={encoded}&language=en-US&page=1"
+    
+    try:
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"Bearer {TMDB_TOKEN}")
+        req.add_header("accept", "application/json")
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            results = data.get("results", [])
+            if not results:
+                return None
+            
+            # For anime, prefer results with animation genre (16)
+            if is_anime:
+                for r in results:
+                    if 16 in r.get("genre_ids", []):
+                        return str(r.get("id"))
+            
+            # Default: return first result
+            return str(results[0].get("id"))
+    except Exception:
+        pass
+    return None
+
 def tmdb_get_info(media_type, tmdb_id):
     if not TMDB_TOKEN or not tmdb_id:
         return {}
     
     # Mapping for TMDB
-    tmdb_type = "movie" if media_type in ["movie", "hoathinh"] else "tv"
+    tmdb_type = "movie" if media_type in ["movie"] else "tv"
     url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}?language=vi-VN"
     
     try:
@@ -39,12 +69,26 @@ def tmdb_get_info(media_type, tmdb_id):
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode())
             poster_path = data.get("poster_path")
+            
+            # Extract seasons for TV shows
+            seasons = []
+            if tmdb_type == "tv":
+                for s in data.get("seasons", []):
+                    if s.get("season_number", 0) == 0:
+                        continue  # Skip "Specials"
+                    seasons.append({
+                        "season_number": s.get("season_number"),
+                        "name": s.get("name"),
+                        "episode_count": s.get("episode_count", 0)
+                    })
+            
             return {
                 "poster": f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None,
                 "total_seasons": data.get("number_of_seasons"),
                 "total_episodes": data.get("number_of_episodes"),
                 "status": data.get("status"),
-                "overview": data.get("overview")
+                "overview": data.get("overview"),
+                "tmdb_seasons": seasons if seasons else None
             }
     except Exception:
         pass
@@ -67,8 +111,15 @@ def kkphim_get_details(slug):
     movie = data.get("movie", {})
     episodes = data.get("episodes", [])
     
-    tmdb_id = str(movie.get("tmdb", {}).get("id")) if movie.get("tmdb") else None
+    tmdb_id = str(movie.get("tmdb", {}).get("id")) if movie.get("tmdb", {}).get("id") else None
     tmdb_info = {}
+    
+    # Fallback: if KKPhim doesn't have tmdb_id, search TMDB by title
+    if not tmdb_id and movie.get("type") not in ["movie"]:
+        origin_name = movie.get("origin_name") or movie.get("name")
+        is_anime = movie.get("type") == "hoathinh"
+        tmdb_id = tmdb_search_by_title(origin_name, "tv", is_anime=is_anime)
+    
     if tmdb_id:
         tmdb_info = tmdb_get_info(movie.get("type"), tmdb_id)
     
@@ -104,6 +155,7 @@ def kkphim_get_details(slug):
         "season": season,
         "total_seasons": tmdb_info.get("total_seasons"),
         "total_episodes": tmdb_info.get("total_episodes"),
+        "tmdb_seasons": tmdb_info.get("tmdb_seasons"),
         "overview": movie.get("content") or tmdb_info.get("overview"),
         "links": []
     }
