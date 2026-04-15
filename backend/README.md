@@ -90,9 +90,50 @@ export HOST_STORAGE_PATH="/path/to/host/storage"
 - `GET /api/discovery?category=phim-bo&page=1` - Get TV shows
 - `GET /api/discovery?category=hoat-hinh&page=1` - Get anime
 
-### Media Search
+### Media Search & Lookup
 
-- `POST /api/search` - Search for media (TMDB + KKPhim)
+- `GET /api/search?q=keyword&media_type=movie` - Search for media metadata (TMDB)
+- `GET /api/lookup/sources?tmdb_id=123&media_type=movie&title=Name&year=2024` - Lookup streaming and download sources for a specific entity.
+
+#### Lookup Sources Details
+
+**Request Parameters:**
+- `tmdb_id` (optional): The authoritative TMDB ID. If provided, lookup is strictly tied to this ID.
+- `media_type` (required): `movie` or `tv`.
+- `title` (required): The title to resolve if `tmdb_id` is missing.
+- `year` (optional): The release year to refine resolution.
+- `season` / `episode` (optional): For TV shows, filters results to specific content.
+
+**Response Schema (Simplified):**
+```json
+{
+  "sources": [
+    {
+      "provider": "kkphim",
+      "links": [
+        {
+          "name": "Tập 01",
+          "url": "https://...",
+          "format": "m3u8",
+          "server": "Vietsub #1",
+          "season": 1,
+          "episode": 1
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "title": "Official Title",
+    "tmdb_id": 123,
+    "media_type": "movie",
+    "year": "2024",
+    "poster": "https://...",
+    "backdrop": "https://...",
+    "overview": "Summary..."
+  },
+  "success": true
+}
+```
 
 ### Downloads
 

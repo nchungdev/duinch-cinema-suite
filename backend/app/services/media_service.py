@@ -1,6 +1,7 @@
 import httpx
 from app.core import config
 from app.services import cache_manager
+import urllib.parse
 
 async def fetch_tmdb_metadata(client: httpx.AsyncClient, query: str, media_type: str = "movie"):
     if not config.TMDB_READ_ACCESS_TOKEN:
@@ -13,7 +14,7 @@ async def fetch_tmdb_metadata(client: httpx.AsyncClient, query: str, media_type:
     if cached:
         return cached
 
-    url = f"https://api.themoviedb.org/3/search/multi?query={query}&include_adult=false&language=vi-VN&page=1"
+    url = f"https://api.themoviedb.org/3/search/multi?query={urllib.parse.quote(query)}&include_adult=false&language=vi-VN&page=1"
     headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
     try:
         resp = await client.get(url, headers=headers)
@@ -53,7 +54,7 @@ async def fetch_kkphim_search(client: httpx.AsyncClient, query: str, media_type:
         return cached
 
     try:
-        resp = await client.get(f"https://phimapi.com/v1/api/tim-kiem?keyword={query}&limit=10")
+        resp = await client.get(f"https://phimapi.com/v1/api/tim-kiem?keyword={urllib.parse.quote(query)}&limit=10")
         items = resp.json().get("data", {}).get("items", [])
         
         results = []

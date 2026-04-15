@@ -1,12 +1,15 @@
+from dotenv import load_dotenv, find_dotenv
+
+# PHẢI load trước khi import bất kỳ app module nào,
+# vì config.py evaluate os.getenv() tại thời điểm import.
+load_dotenv(find_dotenv(), override=False)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from dotenv import load_dotenv, find_dotenv
-from app.api.endpoints import discovery, media, download
+from app.api.endpoints import media, download, tmdb, proxy
 from app.services import cache_manager
-
-load_dotenv(find_dotenv(), override=False)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,9 +36,10 @@ app.add_middleware(
 )
 
 # Routes
-app.include_router(discovery.router, prefix="/api/discovery", tags=["Discovery"])
 app.include_router(media.router, prefix="/api", tags=["Media"])
 app.include_router(download.router, prefix="/api", tags=["Downloads"])
+app.include_router(tmdb.router, prefix="/api/tmdb", tags=["TMDB"])
+app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])
 
 if __name__ == "__main__":
     import uvicorn

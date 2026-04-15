@@ -7,11 +7,14 @@ import re
 
 TMDB_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")
 
+import ssl
+
 def kkphim_api_call(url):
     try:
+        ctx = ssl._create_unverified_context()
         req = urllib.request.Request(url)
         req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
             return json.loads(response.read().decode())
     except Exception as e:
         return {"error": f"API Error: {str(e)}"}
@@ -175,6 +178,135 @@ def kkphim_get_details(slug):
             })
         output["links"].append(server)
     return output
+
+def extract_kkphim_streaming(details: dict, media_type: str, season: int = None, episode: int = None):
+    """Unified extractor for KKPhim streaming links."""
+    results = []
+    links = details.get("links", [])
+    
+    # If it's a detail object from kkphim_get_details, it has 'links' which is a list of servers
+    for server in links:
+        server_name = server.get("server_name")
+        server_data = server.get("server_data", [])
+        
+        for ep in server_data:
+            ep_name = ep.get("name")
+            m3u8 = ep.get("m3u8")
+            embed = ep.get("embed")
+            
+            is_match = False
+            if media_type == "movie":
+                is_match = True
+            else:
+                # TV Show: try to match episode
+                # ep_name could be "1", "01", "Tập 1", etc.
+                try:
+                    # Extract number from ep_name
+                    nums = re.findall(r'\d+', ep_name)
+                    current_ep = int(nums[0]) if nums else None
+                    
+                    if episode is not None:
+                        if current_ep == episode:
+                            is_match = True
+                    else:
+                        is_match = True # Return all episodes if none specified
+                except (ValueError, IndexError):
+                    if episode is None:
+                        is_match = True
+                    elif str(episode) in ep_name:
+                        is_match = True
+
+            if is_match:
+                # Parse episode number từ ep_name ("1", "01", "Tập 1", ...)
+                nums = re.findall(r'\d+', ep_name or "")
+                parsed_ep = int(nums[0]) if nums else None
+                results.append({
+                    "type": "streaming",
+                    "provider": "kkphim",
+                    "season": season or details.get("season", 1),
+                    "episode": parsed_ep,
+                    "name": ep_name,
+                    "m3u8": m3u8,
+                    "embed": embed,
+                    "server": server_name
+                })
+    return results
+
+async def lookup_kkphim(client, tmdb_id: str = None, title: str = None, media_type: str = "movie", season: int = None, episode: int = None):
+    """Async wrapper for KKPhim lookup with TMDB priority."""
+    import asyncio
+    
+    details = None
+    # Ưu tiên 1: Tra cứu trực tiếp bằng TMDB ID (chính xác nhất)
+    if tmdb_id:
+        def _get_by_tmdb():
+            res = kkphim_get_by_tmdb(media_type, tmdb_id)
+            if res and not res.get("error") and res.get("movie"):
+                slug = res.get("movie", {}).get("slug")
+                if slug:
+                    return kkphim_get_details(slug)
+            return None
+        details = await asyncio.to_thread(_get_by_tmdb)
+    
+    # Ưu tiên 2: Tìm kiếm theo Title nếu chưa có kết quả (hoặc ko có tmdb_id)
+    if not details and title:
+        def _get_by_title():
+            # Chiến lược search: Thử từ cụ thể đến tổng quát
+            search_attempts = [title]
+            # Nếu title dài (> 2 từ), thêm variant rút gọn
+            words = title.split()
+            if len(words) > 2:
+                search_attempts.append(" ".join(words[:3])) # Thử 3 từ đầu
+                search_attempts.append(words[0]) # Thử từ đầu tiên (rất rộng)
+            
+            items = []
+            for q in search_attempts:
+                items = kkphim_search(q)
+                if items: break
+            
+            if items:
+                target_slug = None
+                clean_title = title.lower().strip()
+                
+                # 1. Match chính xác TMDB ID
+                if tmdb_id:
+                    for item in items:
+                        item_tmdb = item.get("tmdb", {})
+                        if item_tmdb and str(item_tmdb.get("id")) == str(tmdb_id):
+                            target_slug = item.get("slug")
+                            break
+
+                # 2. Match chính xác Title hoặc Origin Name
+                if not target_slug:
+                    for item in items:
+                        name = item.get("name", "").lower().strip()
+                        origin_name = item.get("origin_name", "").lower().strip()
+                        if clean_title == name or clean_title == origin_name:
+                            target_slug = item.get("slug")
+                            break
+                
+                # 3. Match theo "chứa" title (độ ưu tiên thấp hơn)
+                if not target_slug:
+                    for item in items:
+                        name = item.get("name", "").lower().strip()
+                        origin_name = item.get("origin_name", "").lower().strip()
+                        if clean_title in name or clean_title in origin_name:
+                            target_slug = item.get("slug")
+                            break
+
+                # 4. Fallback item đầu tiên nếu search kết quả rất ít (độ tin cậy cao)
+                if not target_slug and len(items) <= 3:
+                    target_slug = items[0].get("slug")
+                    
+                if target_slug:
+                    return kkphim_get_details(target_slug)
+            return None
+        details = await asyncio.to_thread(_get_by_title)
+            
+    if not details:
+        return []
+        
+    return extract_kkphim_streaming(details, media_type, season, episode)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
