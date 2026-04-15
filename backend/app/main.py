@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
 from app.api.endpoints import discovery, media, download
+from app.services import cache_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -10,6 +11,7 @@ async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=10)
     yield
     await app.state.http_client.aclose()
+    cache_manager.save_all_caches()
 
 app = FastAPI(
     title="OMV JDownloader Dashboard API",
