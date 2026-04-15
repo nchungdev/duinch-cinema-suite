@@ -1,19 +1,15 @@
 from dotenv import load_dotenv, find_dotenv
-
-# PHẢI load trước khi import bất kỳ app module nào,
-# vì config.py evaluate os.getenv() tại thời điểm import.
 load_dotenv(find_dotenv(), override=False)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from app.api.endpoints import media, download, tmdb, proxy
+from app.api.endpoints import search, media, recommended, downloader, proxy
 from app.services import cache_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize global async client for services
     app.state.http_client = httpx.AsyncClient(timeout=10)
     yield
     await app.state.http_client.aclose()
@@ -21,13 +17,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="OMV JDownloader Dashboard API",
-    description="Modular API for OMV media management",
-    version="2.0.0",
+    description="Business-Logic focused API Architecture",
+    version="4.0.0",
     lifespan=lifespan,
     redirect_slashes=False
 )
 
-# Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,9 +31,10 @@ app.add_middleware(
 )
 
 # Routes
-app.include_router(media.router, prefix="/api", tags=["Media"])
-app.include_router(download.router, prefix="/api", tags=["Downloads"])
-app.include_router(tmdb.router, prefix="/api/tmdb", tags=["TMDB"])
+app.include_router(search.router, prefix="/api/search", tags=["Search"])
+app.include_router(media.router, prefix="/api/media", tags=["Media"])
+app.include_router(recommended.router, prefix="/api/recommended", tags=["Recommended"])
+app.include_router(downloader.router, prefix="/api/downloader", tags=["Downloader"])
 app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])
 
 if __name__ == "__main__":

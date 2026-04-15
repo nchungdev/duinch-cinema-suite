@@ -20,8 +20,9 @@ def extract_season(text: str):
             return int(match.group(1))
     return 1
 
-@router.get("/jd/list")
+@router.get("/list")
 async def jd_list():
+    """List current download packages."""
     try:
         device = await jd_manager.get_device()
         pkgs = device.downloads.query_packages([{"bytesLoaded": True, "bytesTotal": True, "running": True, "status": True, "speed": True, "eta": True, "uuid": True, "enabled": True}])
@@ -39,8 +40,9 @@ async def jd_list():
     except Exception:
         return []
 
-@router.post("/jd/control")
+@router.post("/control")
 async def jd_control(action: str, uuids: List[str] = Query([])):
+    """Control download process (START, STOP, REMOVE, etc.)."""
     try:
         device = await jd_manager.get_device()
         if action == "START":
@@ -57,12 +59,13 @@ async def jd_control(action: str, uuids: List[str] = Query([])):
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/download")
+@router.post("/add")
 async def jd_download(
     url: str, name: str, title: str, 
     origin_name: Optional[str] = None, year: Optional[str] = None,
     media_type: str = "movie", collection: Optional[str] = None, season: Optional[int] = None
 ):
+    """Add a new download task to JDownloader."""
     try:
         device = await jd_manager.get_device()
         jd_base = config.JD_INTERNAL_PATH
