@@ -26,7 +26,7 @@ async def jd_list():
     try:
         device = await jd_manager.get_device()
         pkgs = device.downloads.query_packages([{"bytesLoaded": True, "bytesTotal": True, "running": True, "status": True, "speed": True, "eta": True, "uuid": True, "enabled": True}])
-        return [{
+        data = [{
             "uuid": p.get("uuid"),
             "name": p.get("name"),
             "bytesLoaded": p.get("bytesLoaded", 0),
@@ -37,8 +37,17 @@ async def jd_list():
             "running": p.get("running", False),
             "enabled": p.get("enabled", True)
         } for p in pkgs]
-    except Exception:
-        return []
+        return {
+            "data": data,
+            "error_code": 0,
+            "error_msg": ""
+        }
+    except Exception as e:
+        return {
+            "data": [],
+            "error_code": 500,
+            "error_msg": str(e)
+        }
 
 @router.post("/control")
 async def jd_control(action: str, uuids: List[str] = Query([])):
@@ -55,9 +64,17 @@ async def jd_control(action: str, uuids: List[str] = Query([])):
             device.downloads.id_enabled(False, uuids, [])
         elif action == "REMOVE_JOB":
             device.downloads.remove_downloads(uuids, [])
-        return {"success": True}
+        return {
+            "data": {"success": True},
+            "error_code": 0,
+            "error_msg": ""
+        }
     except Exception as e:
-        return {"error": str(e)}
+        return {
+            "data": {"success": False},
+            "error_code": 500,
+            "error_msg": str(e)
+        }
 
 @router.post("/add")
 async def jd_download(
@@ -96,9 +113,17 @@ async def jd_download(
             "links": url, "downloadFolder": download_path, "packageName": package_name,
             "destinationFilename": filename, "autostart": True, "autoConfirm": True
         }])
-        return {"success": True, "path": download_path, "package": package_name}
+        return {
+            "data": {"path": download_path, "package": package_name},
+            "error_code": 0,
+            "error_msg": ""
+        }
     except Exception as e:
-        return {"error": str(e)}
+        return {
+            "data": None,
+            "error_code": 500,
+            "error_msg": str(e)
+        }
 
 @router.get("/proxy-download")
 async def proxy_download(url: str):

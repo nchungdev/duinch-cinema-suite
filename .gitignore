@@ -3,4 +3,10 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-backend/kkphim_cache.json
+*.log
+*.json
+!package.json
+!tsconfig.json
+!plugin.json
+!manifest.json
+!docker-compose.yml

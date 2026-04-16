@@ -46,7 +46,12 @@ async def discovery_list(request: Request, category: str = "new", page: int = 1)
     http_client = request.app.state.http_client
     cache_key = f"discovery_{category}_{page}"
     cached = cache_manager.get_from_cache(config.KKPHIM_CACHE, cache_key, config.DISCOVERY_CACHE_EXPIRE)
-    if cached: return cached
+    if cached:
+        return {
+            "data": cached,
+            "error_code": 0,
+            "error_msg": ""
+        }
 
     try:
         url = f"https://phimapi.com/danh-sach/phim-moi-cap-nhat?page={page}" if category == "new" else f"https://phimapi.com/v1/api/danh-sach/{category}?page={page}"
@@ -63,35 +68,72 @@ async def discovery_list(request: Request, category: str = "new", page: int = 1)
                 "poster": img_prefix + item.get("poster_url") if item.get("poster_url") else None,
                 "media_type": "tv" if category in ["phim-bo", "tv-shows"] or "Tập" in item.get("episode_current", "") else "movie"
             })
-        res_data = {"items": items, "pagination": data.get("pagination") or data.get("data", {}).get("params", {}).get("pagination", {}), "success": True}
+        
+        res_data = {
+            "results": items, 
+            "pagination": data.get("pagination") or data.get("data", {}).get("params", {}).get("pagination", {})
+        }
         cache_manager.set_to_cache(config.KKPHIM_CACHE, cache_key, res_data)
-        return res_data
-    except Exception as e: return {"error": str(e), "success": False}
+        return {
+            "data": res_data,
+            "error_code": 0,
+            "error_msg": ""
+        }
+    except Exception as e:
+        return {
+            "data": None,
+            "error_code": 500,
+            "error_msg": str(e)
+        }
 
 @router.get("/trending")
 async def tmdb_trending(request: Request, media_type: str = "all", time_window: str = "day", page: int = 1):
     """TMDB Trending."""
     client = request.app.state.http_client
     data = await _tmdb_get(client, f"/trending/{media_type}/{time_window}", {"page": page, "language": "vi-VN"})
-    return {"results": [_fmt_tmdb(i) for i in data.get("results", [])], "success": True}
+    if "error" in data:
+        return {"data": None, "error_code": 500, "error_msg": data["error"]}
+    return {
+        "data": {"results": [_fmt_tmdb(i) for i in data.get("results", [])]},
+        "error_code": 0,
+        "error_msg": ""
+    }
 
 @router.get("/movies")
 async def tmdb_movies(request: Request, category: str = "popular", page: int = 1):
     """TMDB Movies by category (popular, top_rated, now_playing, upcoming)."""
     client = request.app.state.http_client
     data = await _tmdb_get(client, f"/movie/{category}", {"page": page, "language": "vi-VN", "region": "VN"})
-    return {"results": [_fmt_tmdb(i, "movie") for i in data.get("results", [])], "success": True}
+    if "error" in data:
+        return {"data": None, "error_code": 500, "error_msg": data["error"]}
+    return {
+        "data": {"results": [_fmt_tmdb(i, "movie") for i in data.get("results", [])]},
+        "error_code": 0,
+        "error_msg": ""
+    }
 
 @router.get("/tvs")
 async def tmdb_tvs(request: Request, category: str = "popular", page: int = 1):
     """TMDB TV Shows by category (popular, top_rated, on_the_air, airing_today)."""
     client = request.app.state.http_client
     data = await _tmdb_get(client, f"/tv/{category}", {"page": page, "language": "vi-VN"})
-    return {"results": [_fmt_tmdb(i, "tv") for i in data.get("results", [])], "success": True}
+    if "error" in data:
+        return {"data": None, "error_code": 500, "error_msg": data["error"]}
+    return {
+        "data": {"results": [_fmt_tmdb(i, "tv") for i in data.get("results", [])]},
+        "error_code": 0,
+        "error_msg": ""
+    }
 
 @router.get("/similar/{media_type}/{tmdb_id}")
 async def tmdb_similar(request: Request, media_type: str, tmdb_id: int, page: int = 1):
     """Similar media from TMDB."""
     client = request.app.state.http_client
     data = await _tmdb_get(client, f"/{media_type}/{tmdb_id}/similar", {"page": page, "language": "vi-VN"})
-    return {"results": [_fmt_tmdb(i, media_type) for i in data.get("results", [])], "success": True}
+    if "error" in data:
+        return {"data": None, "error_code": 500, "error_msg": data["error"]}
+    return {
+        "data": {"results": [_fmt_tmdb(i, media_type) for i in data.get("results", [])]},
+        "error_code": 0,
+        "error_msg": ""
+    }

@@ -1,1 +1,1 @@
-from . import search, media, recommended, downloader, proxy
+from . import search, media, recommended, downloader, proxy, metadata

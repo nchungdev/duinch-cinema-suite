@@ -7,6 +7,22 @@ export const api = axios.create({
   baseURL: API_BASE,
 });
 
+// Response interceptor to handle the new { data, error_code, error_msg } format
+api.interceptors.response.use(
+  (response) => {
+    const { data, error_code, error_msg } = response.data;
+    if (error_code !== 0) {
+      console.error(`API Error (${error_code}): ${error_msg}`);
+      return Promise.reject(new Error(error_msg || 'Unknown API Error'));
+    }
+    // Return only the inner data to keep component logic simple
+    return { ...response, data };
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export interface MediaItem {
   title: string;
   origin_name?: string;
@@ -25,6 +41,7 @@ export interface MediaLink {
 export interface StreamingEpisode {
   name: string;
   m3u8: string;
+  embed?: string;
 }
 
 export interface StreamingServer {
@@ -42,27 +59,36 @@ export interface MovieMetadata {
   poster: string;
   type?: string;
   links?: StreamingServer[];
+  tmdb_seasons?: { season_number: number; name: string; episode_count: number }[];
+  content?: string;
+  thumb_url?: string;
+  poster_url?: string;
+  time?: string;
+  quality?: string;
+  lang?: string;
+  category?: { name: string }[];
+  actor?: string[];
 }
 
 
 export interface DiscoveryResponse {
-  items: MediaItem[];
+  results: MediaItem[];
   pagination: {
     totalPages: number;
     currentPage: number;
   };
-  success: boolean;
 }
 
 export interface DetailResponse {
   metadata: MovieMetadata;
-  links: {
-    streaming: StreamingServer[];
-    fshare: MediaLink[];
-    web: MediaLink[];
-  };
   local: {
     exists: boolean;
     path?: string;
   };
+  links?: {
+    streaming?: StreamingServer[];
+    fshare?: any[];
+    web?: any[];
+  };
 }
+

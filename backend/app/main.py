@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from app.api.endpoints import search, media, recommended, downloader, proxy
+from app.api.endpoints import search, media, recommended, downloader, proxy, metadata
 from app.services import cache_manager
 
 @asynccontextmanager
@@ -33,7 +33,8 @@ app.add_middleware(
 # Routes
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(media.router, prefix="/api/media", tags=["Media"])
-app.include_router(recommended.router, prefix="/api/recommended", tags=["Recommended"])
+app.include_router(metadata.router, prefix="/api/metadata", tags=["Metadata"])
+app.include_router(recommended.router, prefix="/api", tags=["Recommended"])
 app.include_router(downloader.router, prefix="/api/downloader", tags=["Downloader"])
 app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])
 

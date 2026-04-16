@@ -111,10 +111,22 @@ def kkphim_get_details(slug):
     if "error" in data:
         return data
     
-    movie = data.get("movie", {})
-    episodes = data.get("episodes", [])
+    if not data.get("status", True):
+        return {"error": data.get("msg", "Movie not found")}
     
-    tmdb_id = str(movie.get("tmdb", {}).get("id")) if movie.get("tmdb", {}).get("id") else None
+    movie = data.get("movie")
+    if not isinstance(movie, dict):
+        return {"error": "Invalid movie data"}
+        
+    episodes = data.get("episodes", [])
+    if not isinstance(episodes, list):
+        episodes = []
+    
+    tmdb_data = movie.get("tmdb")
+    tmdb_id = None
+    if isinstance(tmdb_data, dict):
+        tmdb_id = str(tmdb_data.get("id")) if tmdb_data.get("id") else None
+    
     tmdb_info = {}
     
     # Fallback: if KKPhim doesn't have tmdb_id, search TMDB by title

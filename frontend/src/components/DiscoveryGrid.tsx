@@ -12,7 +12,7 @@ interface DiscoveryItem {
 }
 
 interface DiscoveryResponse {
-  items: DiscoveryItem[];
+  results: DiscoveryItem[];
   pagination: any;
 }
 
@@ -34,7 +34,7 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
     try {
       const res = await api.get<DiscoveryResponse>(`/discovery?category=${category}&page=${page}`);
       
-      const newItems = res.data.items;
+      const newItems = res.data?.results || [];
       setItems(prev => isInitial ? newItems : [...prev, ...newItems]);
       
       if (newItems.length < 5) setHasMore(false);

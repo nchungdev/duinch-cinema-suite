@@ -28,14 +28,11 @@ function App() {
       const mappedCategory = category === 'new' || category === 'phim-chieu-rap' ? 'movie' : 
                              category === 'phim-bo' || category === 'hoat-hinh' ? 'tv' : 'all';
       const res = await api.get(`/search/${encodeURIComponent(searchQuery)}?media_type=${mappedCategory}`);
-      if (res.data.results) {
-        setSearchResults(res.data.results);
-        setView('discovery');
-        setSlug(null);
-        window.scrollTo({ top: 0, behavior: 'instant' });
-      } else {
-        setSearchResults([]);
-      }
+      const results = res.data?.results || [];
+      setSearchResults(results);
+      setView('discovery');
+      setSlug(null);
+      window.scrollTo({ top: 0, behavior: 'instant' });
     } catch (err) {
       console.error('Search failed:', err);
       setSearchResults([]);

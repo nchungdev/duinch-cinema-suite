@@ -19,7 +19,11 @@ async def media_detail(request: Request, media_type: str, tmdb_id: int):
     """Get full details for a movie or tv show from TMDB."""
     client = request.app.state.http_client
     details = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
-    return {"details": details, "success": True}
+    return {
+        "data": details,
+        "error_code": 0,
+        "error_msg": ""
+    }
 
 @router.get("/lookup")
 async def lookup_sources(
@@ -46,7 +50,11 @@ async def lookup_sources(
     else:
         tmdb_results = await media_service.fetch_tmdb_metadata(client, title, media_type)
         if not tmdb_results:
-            return {"error": f"Không tìm thấy phim '{title}' trên TMDB.", "success": False}
+            return {
+                "data": None,
+                "error_code": 404,
+                "error_msg": f"Không tìm thấy phim '{title}' trên TMDB."
+            }
         
         match = None
         clean_query = title.lower().strip()
@@ -55,12 +63,20 @@ async def lookup_sources(
         if not match:
             match = next((item for item in tmdb_results if item.get("title", "").lower() == clean_query or item.get("origin_name", "").lower() == clean_query), None)
         if not match:
-            return {"error": f"Không tìm thấy phim khớp chính xác '{title}'.", "success": False}
+            return {
+                "data": None,
+                "error_code": 404,
+                "error_msg": f"Không tìm thấy phim khớp chính xác '{title}'."
+            }
         tmdb_id = match.get("tmdb_id")
         details = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
 
     if not details or not tmdb_id:
-        return {"error": "Failed to fetch authoritative metadata.", "success": False}
+        return {
+            "data": None,
+            "error_code": 500,
+            "error_msg": "Failed to fetch authoritative metadata."
+        }
 
     target_title = details.get("title") or details.get("name")
     target_origin = details.get("original_title") or details.get("original_name")
@@ -150,7 +166,14 @@ async def lookup_sources(
             provider_links.append({k: v for k, v in link_obj.items() if v is not None})
         final_sources.append({"provider": p_name, "links": provider_links})
 
-    return {"sources": final_sources, "metadata": metadata_response, "success": True}
+    return {
+        "data": {
+            "sources": final_sources,
+            "metadata": metadata_response
+        },
+        "error_code": 0,
+        "error_msg": ""
+    }
 
 @router.get("/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
@@ -159,7 +182,19 @@ async def folder_expand(request: Request, url: str, provider: str = "fshare"):
         client = request.app.state.http_client
         if provider == "fshare":
             files = await resolve_fshare_url(url, client)
-            return {"results": files, "success": True}
-        return {"error": f"Provider {provider} not supported", "success": False}
+            return {
+                "data": {"results": files},
+                "error_code": 0,
+                "error_msg": ""
+            }
+        return {
+            "data": None,
+            "error_code": 400,
+            "error_msg": f"Provider {provider} not supported"
+        }
     except Exception as e:
-        return {"error": str(e), "success": False}
+        return {
+            "data": None,
+            "error_code": 500,
+            "error_msg": str(e)
+        }

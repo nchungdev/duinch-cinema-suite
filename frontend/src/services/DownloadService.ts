@@ -3,7 +3,7 @@ import type { MovieMetadata, MediaLink } from '../api/config';
 
 export const startDownload = async (link: MediaLink, metadata: MovieMetadata) => {
   try {
-    const res = await api.post('/download', {
+    const res = await api.post('/downloader/add', {
       url: link.url,
       name: link.name,
       title: metadata.title,

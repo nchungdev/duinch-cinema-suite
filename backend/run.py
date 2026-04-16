@@ -1,5 +1,13 @@
+import os
 import sys
-sys.path.insert(0, '/Users/lap16792/Personal/omv-jdownloader-dashboard')
+
+# Get the absolute path of the current file's directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the parent directory of backend (the project root)
+project_root = os.path.dirname(current_dir)
+sys.path.insert(0, project_root)
+sys.path.insert(0, current_dir)
+
 import uvicorn
 
 if __name__ == '__main__':
