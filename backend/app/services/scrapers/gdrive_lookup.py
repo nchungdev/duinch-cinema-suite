@@ -36,7 +36,7 @@ async def lookup_gdrive(title_query: str) -> List[Dict[str, Any]]:
                 gdrive_links = re.findall(r'https?://drive\.google\.com/(?:drive/folders/|file/d/)[a-zA-Z0-9_-]+', resp.text)
                 for link in gdrive_links:
                     results.append({
-                        "type": "download", "provider": "gdrive",
+                        "type": "downloadable", "provider": "gdrive",
                         "url": link, "name": f"GDRIVE | {clean_title}", "source": "search"
                     })
                 
