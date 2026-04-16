@@ -74,7 +74,8 @@ body {
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -82,7 +83,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.1), transparent);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 9999px;
 }
 
@@ -99,6 +100,7 @@ h1, h2, h3 {
 .text-gradient {
   background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.4) 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -131,3 +133,12 @@ h1, h2, h3 {
 .blob-blue { background: #3b82f6; top: -10%; right: -5%; animation-delay: 0s; }
 .blob-purple { background: #a855f7; bottom: -10%; left: -5%; animation-delay: -5s; }
 .blob-indigo { background: #6366f1; top: 30%; left: 20%; animation-delay: -2s; opacity: 0.05; }
+
+/* Utility: Hide Scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

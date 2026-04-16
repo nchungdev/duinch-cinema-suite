@@ -12,3 +12,7 @@ __pycache__/
 !docker-compose.yml
 backend/data
 .gitnexus
+
+# Cache and logs
+backend/*.log
+backend/*_cache.json

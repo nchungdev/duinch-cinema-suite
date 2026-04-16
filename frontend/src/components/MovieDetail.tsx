@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { api, getProxiedImageUrl } from '../api/config';
-import { ChevronLeft, Calendar, Clock, Play, Shield, Star, Users, Tag, Layout, Globe, HardDrive, Activity } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 interface MetaData {
@@ -47,15 +47,80 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
   const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
-  // Streaming links populated by DiscoveryPipeline callback (not from detail fetch)
+  const [isInternalScrolling, setIsInternalScrolling] = useState(false);
+  const isInternalScrollingRef = useRef(false);
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
-
-  // Mini player sticky-scroll tracking
-  const miniPlayerSentinelRef = useRef<HTMLDivElement>(null);
   const [miniPlayerFloating, setMiniPlayerFloating] = useState(false);
 
+  const episodeListRef = useRef<HTMLDivElement>(null);
+  const seasonRibbonRef = useRef<HTMLDivElement>(null);
+  const seasonRibbonButtonsRef = useRef<{ [key: number]: HTMLButtonElement | null }>({});
+  const serverRibbonRef = useRef<HTMLDivElement>(null);
+  const serverRibbonButtonsRef = useRef<{ [key: number]: HTMLButtonElement | null }>({});
+  const seasonRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  const episodeRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  const miniPlayerSentinelRef = useRef<HTMLDivElement>(null);
+
+  const totalEpisodes = streamingLinks?.[0]?.server_data?.length ?? 0;
+
+  const seasonBoundaries = useMemo(() => {
+    const rawBoundaries = (data?.metadata.tmdb_seasons || []).reduce((acc: any[], s: any) => {
+      const last = acc[acc.length - 1];
+      const start = last ? last.end : 0;
+      acc.push({ start, end: start + s.episode_count, name: s.name, num: s.season_number });
+      return acc;
+    }, []);
+    return rawBoundaries.length > 0
+      ? rawBoundaries
+      : totalEpisodes > 0
+        ? [{ start: 0, end: totalEpisodes, name: 'Season 1', num: 1 }]
+        : [];
+  }, [data, totalEpisodes]);
+
+  const scrollToSeason = (idx: number) => {
+      const target = seasonRefs.current[idx];
+      const container = episodeListRef.current;
+      if (target && container) {
+          isInternalScrollingRef.current = true;
+          setIsInternalScrolling(true);
+          setActiveSeasonIdx(idx);
+          const top = target.offsetTop;
+          container.scrollTo({ top, behavior: 'smooth' });
+          setTimeout(() => {
+              isInternalScrollingRef.current = false;
+              setIsInternalScrolling(false);
+          }, 800);
+      }
+  };
+
   useEffect(() => {
-    const HEADER_H = 96; // h-20 (80px) + 16px gap
+    const container = episodeListRef.current;
+    if (!container) return;
+
+    const onScroll = () => {
+      if (isInternalScrollingRef.current) return;
+      if (seasonBoundaries.length === 0) return;
+
+      const scrollTop = container.scrollTop;
+
+      let newSeasonIdx = 0;
+      for (let i = seasonBoundaries.length - 1; i >= 0; i--) {
+        const el = seasonRefs.current[i];
+        if (el && el.offsetTop <= scrollTop + 10) {
+          newSeasonIdx = i;
+          break;
+        }
+      }
+
+      setActiveSeasonIdx(prev => prev !== newSeasonIdx ? newSeasonIdx : prev);
+    };
+
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
+  }, [seasonBoundaries]);
+
+  useEffect(() => {
+    const HEADER_H = 96;
     const onScroll = () => {
       if (!miniPlayerSentinelRef.current) return;
       const top = miniPlayerSentinelRef.current.getBoundingClientRect().top;
@@ -68,7 +133,6 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        // /api/movie/:id or /api/tv/:id — media_type baked into path, never wrong
         const res = await api.get<DetailResponse>(`/${mediaType}/${slug}`);
         const detailData = res.data;
         setData(detailData);
@@ -91,7 +155,37 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     fetchDetail();
   }, [slug, mediaType]);
 
-  // MASTER SYNC: Keep URL updated with state
+  useEffect(() => {
+    const target = episodeRefs.current[activeEpisodeIdx];
+    const container = episodeListRef.current;
+    if (target && container && !isInternalScrolling) {
+        const top = target.offsetTop - (container.offsetHeight / 2) + (target.offsetHeight / 2);
+        container.scrollTo({ top, behavior: 'smooth' });
+    }
+  }, [activeEpisodeIdx]);
+
+  // Auto-focus active season tab in the ribbon
+  useEffect(() => {
+      if (seasonRibbonButtonsRef.current[activeSeasonIdx]) {
+          seasonRibbonButtonsRef.current[activeSeasonIdx]?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'nearest',
+              inline: 'center'
+          });
+      }
+  }, [activeSeasonIdx]);
+
+  // Auto-focus active server tab in the sidebar
+  useEffect(() => {
+      if (serverRibbonButtonsRef.current[activeServerIdx]) {
+          serverRibbonButtonsRef.current[activeServerIdx]?.scrollIntoView({
+              behavior: 'smooth',
+              block: 'center',
+              inline: 'nearest'
+          });
+      }
+  }, [activeServerIdx]);
+
   useEffect(() => {
     if (!data) return;
     const sNum = data.metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number;
@@ -139,33 +233,17 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     </div>
   );
 
-  const { metadata, local } = data;
-  const tmdbSeasons = metadata.tmdb_seasons || [];
-  const totalEpisodes = streamingLinks?.[0]?.server_data?.length ?? 0;
-  const rawBoundaries = tmdbSeasons.reduce<{ start: number; end: number; name: string; num: number }[]>((acc, s) => {
-    const start = acc.length > 0 ? acc[acc.length - 1].end : 0;
-    acc.push({ start, end: start + s.episode_count, name: s.name, num: s.season_number });
-    return acc;
-  }, []);
-  // Fallback: nếu không có tmdb_seasons nhưng có episodes → tạo Season 1
-  const seasonBoundaries = rawBoundaries.length > 0
-    ? rawBoundaries
-    : totalEpisodes > 0
-      ? [{ start: 0, end: totalEpisodes, name: 'Season 1', num: 1 }]
-      : [];
-  const currentSeason = seasonBoundaries[activeSeasonIdx];
+  const { metadata } = data;
 
-  // Which season contains the currently playing episode?
-  const playingSeasonIdx = activeEmbed
-    ? seasonBoundaries.findIndex(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end)
-    : -1;
-  const playingEpRelative = playingSeasonIdx !== -1
-    ? activeEpisodeIdx - (seasonBoundaries[playingSeasonIdx]?.start ?? 0) + 1
-    : null;
+  const scrollSeasonRibbon = (dir: 'l' | 'r') => {
+      if (seasonRibbonRef.current) {
+          const amount = dir === 'l' ? -200 : 200;
+          seasonRibbonRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+      }
+  };
 
   return (
     <div className="relative animate-cinema-fade space-y-16 pb-24">
-
       <div className="w-full flex justify-start -mt-4 px-4 md:px-10 mb-8 max-w-screen-2xl mx-auto">
         <button onClick={onBack} className="group/back flex items-center gap-3 text-blue-500/80 hover:text-blue-400 transition-all font-black uppercase tracking-[0.3em] text-[10px]">
           <div className="w-8 h-8 rounded-full border border-blue-500/20 flex items-center justify-center group-hover/back:bg-blue-500/10 transition-all">
@@ -187,20 +265,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
             )}
          </div>
 
-         {/* Right column: Mini Player + Episode Panel stacked */}
-         <div className="w-full xl:w-[400px] flex flex-col gap-3 min-h-0">
-
-           {/* ── Mini Control Player ── standalone card */}
+         <div className="w-full xl:w-fit flex flex-col gap-3 min-h-0">
            {(() => {
              const playingServer = streamingLinks[activeServerIdx]?.server_name;
              const hasPlayback = !!activeEmbed;
-             const playingSeason = playingSeasonIdx !== -1 ? seasonBoundaries[playingSeasonIdx] : null;
-             const totalServerEps = streamingLinks[activeServerIdx]?.server_data?.length ?? 0;
-             const maxIdx = (totalServerEps > 0 ? totalServerEps : seasonBoundaries[seasonBoundaries.length - 1]?.end ?? 1) - 1;
-             const canPrev = activeEpisodeIdx > 0;
-             const canNext = activeEpisodeIdx < maxIdx;
-             const goEp = (dir: 1 | -1) => setActiveEpisodeIdx(i => Math.max(0, Math.min(maxIdx, i + dir)));
-
              const cardCls = `rounded-2xl border overflow-hidden transition-all duration-500 ${
                hasPlayback
                  ? 'bg-[#0a1a0f] border-green-500/30 shadow-[0_0_30px_rgba(74,222,128,0.1)]'
@@ -210,53 +278,32 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
              const cardContent = (
                <>
                  <div className="flex items-stretch gap-0">
-                   {/* Poster strip */}
                    <div className="w-16 shrink-0 relative overflow-hidden">
                      <img src={getProxiedImageUrl(metadata.poster_url || metadata.poster || metadata.thumb_url)}
                        className="w-full h-full object-cover" alt=""
                        onError={e => { e.currentTarget.style.display = 'none'; }} />
                      <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#0a1a0f]/80" />
                    </div>
-
-                   {/* Info + controls */}
                    <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3">
                      {hasPlayback ? (
                        <>
-                         <div className="flex items-end gap-[2px] h-6 shrink-0 self-center">
-                           {[0.0, 0.25, 0.1, 0.35].map((delay, i) => (
-                             <span key={i} className="w-[3px] rounded-full bg-green-400 origin-bottom"
-                               style={{ height: '100%', animation: `eqBar 0.65s ease-in-out ${delay}s infinite alternate` }} />
-                           ))}
-                         </div>
                          <div className="flex-1 min-w-0">
-                           <span className="text-[7px] font-black uppercase tracking-[0.25em] text-green-500/70 block leading-none mb-0.5">Now Playing</span>
-                           <span className="text-[12px] font-black text-white truncate block leading-tight">
-                             {mediaType === 'tv' && playingSeason
-                               ? <>{playingSeason.name || `Season ${playingSeason.num}`}<span className="text-green-500/50 mx-1.5 font-normal">·</span>Tập {String(playingEpRelative).padStart(2, '0')}</>
-                               : metadata.title}
-                           </span>
+                           <div className="flex items-center gap-2 mb-0.5">
+                             <span className="text-[7px] font-black uppercase tracking-[0.25em] text-green-500/70 block leading-none">Now Playing</span>
+                             <div className="flex items-end gap-[1.5px] h-2.5">
+                               {[0, 0.2, 0.4, 0.1].map((d, i) => (
+                                 <span key={i} className="w-[1.5px] bg-green-500/50 rounded-full origin-bottom"
+                                   style={{ height: '100%', animation: `eqBar 0.6s ease-in-out ${d}s infinite alternate` }} />
+                               ))}
+                             </div>
+                           </div>
+                           <span className="text-[12px] font-black text-white truncate block leading-tight">{metadata.title}</span>
                            {playingServer && (
                              <span className="text-[9px] text-gray-500 truncate flex items-center gap-1 mt-0.5">
                                <Globe className="w-2.5 h-2.5 shrink-0" />{playingServer}
                              </span>
                            )}
                          </div>
-                         {mediaType === 'tv' ? (
-                           <div className="flex items-center gap-1.5 shrink-0">
-                             <button onClick={() => goEp(-1)} disabled={!canPrev}
-                               className="w-8 h-8 rounded-xl flex items-center justify-center bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-90">
-                               <ChevronLeft className="w-4 h-4 text-gray-300" />
-                             </button>
-                             <button onClick={() => goEp(1)} disabled={!canNext}
-                               className="w-8 h-8 rounded-xl flex items-center justify-center bg-green-500/20 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-20 disabled:cursor-not-allowed transition-all active:scale-90">
-                               <ChevronLeft className="w-4 h-4 text-green-300 rotate-180" />
-                             </button>
-                           </div>
-                         ) : (
-                           <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-green-500/20 border border-green-500/30 shrink-0">
-                             <Play className="w-3.5 h-3.5 text-green-400 fill-green-400" />
-                           </div>
-                         )}
                        </>
                      ) : (
                        <>
@@ -266,9 +313,6 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                          <div className="flex-1 min-w-0">
                            <span className="text-[7px] font-black uppercase tracking-[0.25em] text-gray-600 block leading-none mb-0.5">Standing By</span>
                            <span className="text-[11px] font-black text-gray-400 truncate block leading-tight">{metadata.title}</span>
-                           <span className="text-[9px] text-gray-600 block mt-0.5">
-                             {mediaType === 'tv' ? 'Chọn tập để bắt đầu' : 'Chọn server để phát'}
-                           </span>
                          </div>
                        </>
                      )}
@@ -280,15 +324,11 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
              return (
                <>
-                 {/* Natural position card */}
-                 <div className="shrink-0">
-                   <div className={cardCls}>{cardContent}</div>
-                 </div>
-
-                 {/* Fixed clone — appears only after scrolling past the whole top section */}
+                  <div className="xl:w-[400px] shrink-0">
+                    <div className={cardCls}>{cardContent}</div>
+                  </div>
                  {miniPlayerFloating && (
-                   <div className={`${cardCls} fixed top-[88px] right-4 xl:right-10 w-[min(400px,calc(100vw-2rem))] z-50
-                                    shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-slide-up`}>
+                   <div className={`${cardCls} fixed top-[88px] right-4 xl:right-10 w-[min(400px,calc(100vw-2rem))] z-50 shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-slide-up`}>
                      {cardContent}
                    </div>
                  )}
@@ -296,131 +336,135 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
              );
            })()}
 
-           {/* Episode Panel */}
-           <div className="flex flex-col min-h-0 max-h-[calc(85vh-88px)] rounded-2xl bg-white/5 border border-white/10 overflow-hidden">
+            <div className="relative group/panel">
+              <div className="w-full xl:w-[400px] max-h-[500px] flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10">
+                {seasonBoundaries.length > 0 && (
+                  <div className="shrink-0 bg-white/[0.03] border-b border-white/10 flex items-center h-11 relative group/ribbon">
+                    <button onClick={() => scrollSeasonRibbon('l')} className="absolute left-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-r border-white/5">
+                        <ChevronLeft className="w-4 h-4 text-gray-400" />
+                    </button>
+                    <div ref={seasonRibbonRef} className="flex-1 flex overflow-x-auto no-scrollbar h-full scroll-smooth px-12">
+                        {seasonBoundaries.map((s, idx) => {
+                        const isActive = idx === activeSeasonIdx;
+                        return (
+                            <button key={s.num}
+                            ref={el => { seasonRibbonButtonsRef.current[idx] = el; }}
+                            onClick={() => scrollToSeason(idx)}
+                            className={`px-8 h-full shrink-0 flex items-center justify-center gap-2 transition-all relative ${
+                                isActive
+                                ? 'bg-blue-600/20 text-blue-400 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-blue-500 shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]'
+                                : 'text-gray-500 hover:bg-white/5 hover:text-gray-300'
+                            }`}>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-center">Season {s.num}</span>
+                            <span className={`text-[8px] font-bold ${isActive ? 'text-blue-500' : 'opacity-30'}`}>({s.end - s.start})</span>
+                            </button>
+                        );
+                        })}
+                    </div>
+                    <button onClick={() => scrollSeasonRibbon('r')} className="absolute right-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-l border-white/5">
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                )}
 
-           {/* Season Tabs */}
-           {seasonBoundaries.length > 0 && (
-             <div className="flex gap-1.5 overflow-x-auto custom-scrollbar px-3 pt-3 pb-2 border-b border-white/5 shrink-0">
-               {seasonBoundaries.map((s, idx) => {
-                 const isActive = idx === activeSeasonIdx;
-                 return (
-                   <button key={s.num}
-                     onClick={() => setActiveSeasonIdx(idx)}
-                     className={`flex items-center gap-1.5 px-4 py-2 rounded-xl shrink-0 text-[9px] font-black uppercase tracking-widest transition-all border ${
-                       isActive
-                         ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 shadow-[0_0_12px_rgba(37,99,235,0.2)]'
-                         : 'bg-black/30 text-gray-500 border-transparent hover:bg-white/10 hover:text-gray-300'
-                     }`}>
-                     <span>{s.name || `Season ${s.num}`}</span>
-                     <span className="text-[7px] opacity-50">({s.end - s.start})</span>
-                   </button>
-                 );
-               })}
-             </div>
-           )}
+                {/* Unified Continuous Episode List Container */}
+                <div ref={episodeListRef} className="flex-1 overflow-y-auto custom-scrollbar relative">
+                  {seasonBoundaries.length > 0 ? (
+                      <div className="flex flex-col bg-white/[0.01]">
+                        {seasonBoundaries.map((s, sIdx) => {
+                            const seasonEpCount = s.end - s.start;
+                            const offsetStart = s.start;
+                            const serverData: any[] = streamingLinks?.[activeServerIdx]?.server_data ?? [];
+                            const extractNum = (name: string) => { const m = name?.match(/\d+/); return m ? parseInt(m[0]) : null; };
+                            const findEp = (epNum: number) => serverData.find(ep => extractNum(ep.name) === epNum);
 
-           {/* Server Sub-Tabs */}
-           {streamingLinks.length > 0 && (
-             <div className="flex gap-1.5 overflow-x-auto custom-scrollbar px-3 pt-2 pb-2 border-b border-white/5 shrink-0">
-               {streamingLinks.map((server: any, idx: number) => (
-                 <button key={idx}
-                   onClick={() => { setActiveServerIdx(idx); setActiveEpisodeIdx(currentSeason?.start || 0); }}
-                   className={`flex items-center gap-2 px-4 py-2 rounded-xl shrink-0 text-[9px] font-black uppercase tracking-widest transition-all border ${
-                     idx === activeServerIdx
-                       ? 'bg-blue-600/20 text-blue-400 border-blue-500/50 shadow-[0_0_12px_rgba(37,99,235,0.2)]'
-                       : 'bg-black/30 text-gray-500 border-transparent hover:bg-white/10 hover:text-gray-300'
-                   }`}>
-                   <Globe className="w-2.5 h-2.5 shrink-0" />
-                   <span>{server.server_name}</span>
-                 </button>
-               ))}
-             </div>
-           )}
+                            return (
+                                <div key={sIdx} ref={el => { seasonRefs.current[sIdx] = el; }} data-season={sIdx} className="flex flex-col">
+                                    {/* Sticky Season Header (Full Name) */}
+                                    <div className="sticky top-0 z-20 px-5 py-2.5 bg-[#0a0a0c]/90 backdrop-blur-md border-y border-white/5 flex items-center justify-between shadow-lg">
+                                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-500/80 truncate pr-4">{s.name}</span>
+                                        <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest shrink-0">{seasonEpCount} Episodes</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        {Array.from({ length: seasonEpCount }, (_, localIdx) => {
+                                            const epNum = localIdx + 1;
+                                            const globalIdx = offsetStart + localIdx;
+                                            const ep = findEp(epNum);
+                                            const hasLink = !!(ep?.m3u8 || ep?.embed || ep?.link_m3u8);
+                                            const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
+                                            const isPlaying = activeEpisodeIdx === globalIdx;
+                                            return (
+                                                <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
+                                                    <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
+                                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
+                                                        <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
+                                                    </div>
+                                                    <span className={`text-[11px] font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}>
+                                                        {epLabel}
+                                                    </span>
+                                                    </button>
+                                                    <div className="flex items-center px-2.5 gap-0.5">
+                                                        <button disabled={!hasLink} title="Download" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-blue-500/20 text-gray-600 hover:enabled:text-blue-400"><Download className="w-3 h-3" /></button>
+                                                        <button disabled={!hasLink} title="Cloud" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-purple-500/20 text-gray-600 hover:enabled:text-purple-400"><Cloud className="w-3 h-3" /></button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                      </div>
+               ) : (
+                      <div className="h-full flex flex-col items-center justify-center p-12 text-center gap-6">
+                        <Globe className="w-10 h-10 text-gray-600 animate-pulse" />
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Đang tìm nguồn...</p>
+                        </div>
+                      </div>
+                    )}
+                </div>
+              </div>
 
-           {/* Episode Grid */}
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pb-2">
-             {seasonBoundaries.length > 0 ? (() => {
-               const seasonEpCount = currentSeason ? currentSeason.end - currentSeason.start : 0;
-               const offsetStart = currentSeason?.start || 0;
-               const serverData: any[] = streamingLinks?.[activeServerIdx]?.server_data ?? [];
-
-               // Match by episode number (not position) — KKPhim may only return
-               // current season's episodes, so offset-slicing breaks on season change.
-               const extractNum = (name: string) => {
-                 const m = name?.match(/\d+/);
-                 return m ? parseInt(m[0]) : null;
-               };
-               const findEp = (epNum: number) =>
-                 serverData.find(ep => extractNum(ep.name) === epNum) ?? null;
-
-               const hasAnyStream = Array.from({ length: seasonEpCount }, (_, i) => findEp(i + 1))
-                 .some(ep => ep?.m3u8 || ep?.embed || ep?.link_m3u8);
-
-               return (
-                 <div className="space-y-3">
-                   {hasAnyStream && (
-                     <div className="flex justify-end">
-                       <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20 hover:scale-105 transition-all text-[8px] font-black uppercase tracking-widest">
-                         <Activity className="w-3 h-3" /> Send All to JD
-                       </button>
-                     </div>
-                   )}
-                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                     {Array.from({ length: seasonEpCount }, (_, localIdx) => {
-                       const epNum = localIdx + 1;
-                       const globalIdx = offsetStart + localIdx;
-                       const ep = findEp(epNum);
-                       const hasLink = !!(ep?.m3u8 || ep?.embed || ep?.link_m3u8);
-                       const epLabel = `Tập ${String(epNum).padStart(2, '0')}`;
-                       const isPlaying = activeEpisodeIdx === globalIdx;
-
-                       return (
-                         <div key={globalIdx} className={`flex items-stretch rounded-xl border transition-all shadow-sm ${
-                           !hasLink ? 'opacity-35 bg-black/20 border-white/5' : isPlaying ? 'bg-blue-600/20 border-blue-500/50 group/stream' : 'bg-black/40 border-white/10 hover:border-blue-500/40 hover:bg-black/60 group/stream'
-                         }`}>
-                           <button disabled={!hasLink}
-                             onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }}
-                             className="flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 transition-all rounded-l-xl overflow-hidden disabled:cursor-not-allowed hover:enabled:bg-blue-600/10">
-                             {isPlaying && <Play className="w-2.5 h-2.5 text-blue-400 fill-blue-400 animate-pulse shrink-0" />}
-                             <span className={`text-[10px] font-bold transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-400 group-hover/stream:text-white'}`}>
-                               {epLabel}
-                             </span>
-                           </button>
-                           <div className="w-px bg-white/5 group-hover/stream:bg-blue-500/20 transition-colors" />
-                           <button disabled={!hasLink} title={hasLink ? 'Send to JD' : 'No link'}
-                             className="px-2.5 transition-all rounded-r-xl flex items-center justify-center group/dl shrink-0 disabled:cursor-not-allowed hover:enabled:bg-green-500/20">
-                             <HardDrive className={`w-3 h-3 transition-colors ${hasLink ? 'text-gray-600 group-hover/dl:text-green-400' : 'text-gray-700'}`} />
-                           </button>
-                         </div>
-                       );
-                     })}
-                   </div>
-                 </div>
-               );
-             })() : (
-               <div className="h-full flex flex-col items-center justify-center p-10 text-center gap-4">
-                 <Globe className="w-10 h-10 text-gray-600 animate-pulse" />
-                 <div className="space-y-1">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Đang tìm nguồn...</p>
-                   <p className="text-[8px] font-bold text-gray-600 uppercase tracking-widest">DiscoveryPipeline đang xử lý</p>
-                 </div>
-               </div>
-             )}
+              {/* 2. Floating/Pinned Server Bar (Docked to Right & Vertically Centered) */}
+              {streamingLinks.length > 0 && (
+                <div ref={serverRibbonRef} className="absolute left-full top-1/2 -translate-y-1/2 w-9 max-h-full overflow-y-auto no-scrollbar shrink-0 flex flex-col gap-1 py-1 z-0">
+                  {streamingLinks.map((server: any, idx: number) => {
+                    const isActive = idx === activeServerIdx;
+                    return (
+                        <button key={idx}
+                            ref={el => { serverRibbonButtonsRef.current[idx] = el; }}
+                            onClick={() => { setActiveServerIdx(idx); setActiveEpisodeIdx(seasonBoundaries[activeSeasonIdx]?.start || 0); }}
+                            className={`group relative flex items-center justify-center rounded-r-xl transition-all py-14 border-y border-r shrink-0 overflow-hidden ${
+                                isActive 
+                                  ? 'bg-blue-600/30 border-blue-500/50 shadow-[3px_0_10px_rgba(37,99,235,0.1)]' 
+                                  : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
+                            }`}
+                        >
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <span className={`text-[7px] font-black uppercase tracking-widest whitespace-nowrap rotate-90 transition-colors pointer-events-none ${
+                                    isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-400'
+                                }`}>
+                                    {server.server_name}
+                                </span>
+                            </div>
+                        </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
            </div>
-
-           </div> {/* /Episode Panel */}
-         </div>   {/* /Right column */}
-      </div>
+       </div>
 
       {/* Sentinel — fixed mini player triggers when user scrolls past the top section */}
       <div ref={miniPlayerSentinelRef} className="h-0 w-0 pointer-events-none" />
 
       <div className="max-w-screen-2xl mx-auto px-4 md:px-10 flex flex-col gap-10 pt-4">
         <div className="flex flex-col xl:flex-row gap-8 w-full items-stretch">
-          <section className="flex-1 glass-dark p-8 md:p-12 rounded-[3.5rem] border border-white/5 shadow-inner animate-cinema-fade">
+          <section className="flex-1 glass-dark p-8 md:p-12 rounded-3xl border border-white/5 shadow-inner animate-cinema-fade">
             <div className="flex flex-col md:flex-row gap-10 items-start">
-              <div className="hidden md:block w-48 shrink-0 aspect-[2/3] rounded-[2rem] overflow-hidden shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8)] border border-white/10 group bg-[#050505]">
+              <div className="hidden md:block w-48 shrink-0 aspect-[2/3] rounded-2xl overflow-hidden shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8)] border border-white/10 group bg-[#050505]">
                 <img src={getProxiedImageUrl(metadata.poster_url || metadata.poster || metadata.thumb_url)} className="w-full h-full object-cover transition-transform duration-[2s] group-hover:scale-110" alt="poster" onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/500x750?text=No+Poster'; }} />
               </div>
               <div className="flex-1 space-y-6">
@@ -456,7 +500,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
           </section>
 
           <div className="w-full xl:w-[400px] shrink-0 flex flex-col gap-8">
-              <div className="glass-dark p-8 rounded-[3.5rem] border border-white/5 space-y-6 flex-1 bg-[#030303]/40">
+              <div className="glass-dark p-8 rounded-3xl border border-white/5 space-y-6 flex-1 bg-[#030303]/40">
                   <div className="flex items-center gap-3 border-b border-white/5 pb-4">
                       <Users className="w-4 h-4 text-blue-500/50" />
                       <h3 className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-500">Personnel Manifest</h3>
@@ -464,7 +508,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                   <div className="space-y-4">
                       {(metadata.actor || []).slice(0, 5).map(a => (
                           <div key={a} className="flex items-center gap-4 group cursor-pointer transition-all">
-                              <div className="w-9 h-9 rounded-[1rem] bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-black group-hover:bg-blue-600/30 group-hover:text-blue-200 transition-all duration-500 shadow-md">{a.charAt(0)}</div>
+                              <div className="w-9 h-9 shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-lg relative group bg-black flex items-center justify-center text-[10px] font-black group-hover:bg-blue-600/30 group-hover:text-blue-200 transition-all duration-500">
+                                {a.charAt(0)}
+                              </div>
                               <div className="flex flex-col">
                                   <span className="text-xs font-bold text-gray-300 group-hover:text-white transition-colors">{a}</span>
                                   <span className="text-[7px] font-black uppercase tracking-[0.2em] text-gray-600 group-hover:text-blue-500/60 transition-colors">Agent / Class A</span>
