@@ -30,7 +30,7 @@ async def get_tmdb_details(client: httpx.AsyncClient, tmdb_id: int, media_type: 
     if not config.TMDB_READ_ACCESS_TOKEN:
         return {}
         
-    url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?language=vi-VN"
+    url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?language=vi-VN&append_to_response=credits"
     headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
     
     try:

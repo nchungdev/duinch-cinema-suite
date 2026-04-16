@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Query
 from app.core import config
 from app.services import cache_manager, tmdb_service
 import urllib.parse
+import re
 
 router = APIRouter()
 
@@ -20,6 +21,7 @@ def _fmt_tmdb(item: dict, media_type: str = None) -> dict:
     backdrop = item.get("backdrop_path")
     return {
         "tmdb_id": item.get("id"),
+        "slug": str(item.get("id")), # Use ID as slug for TMDB items
         "media_type": mt,
         "title": item.get("title") or item.get("name"),
         "origin_name": item.get("original_title") or item.get("original_name"),
@@ -66,7 +68,14 @@ async def discovery_list(request: Request, category: str = "new", page: int = 1)
                 "title": item.get("name"), "origin_name": item.get("origin_name"),
                 "slug": item.get("slug"), "year": item.get("year"),
                 "poster": img_prefix + item.get("poster_url") if item.get("poster_url") else None,
-                "media_type": "tv" if category in ["phim-bo", "tv-shows"] or "Tập" in item.get("episode_current", "") else "movie"
+                # Priority: explicit type field → category name → episode_current heuristic
+                "media_type": (
+                    "tv" if item.get("type") in ["series", "hoathinh"]
+                    else "movie" if item.get("type") == "single"
+                    else "tv" if category in ["phim-bo", "tv-shows", "hoat-hinh"]
+                    else "tv" if "Tập" in item.get("episode_current", "")
+                    else "movie"
+                )
             })
         
         res_data = {
@@ -93,8 +102,16 @@ async def tmdb_trending(request: Request, media_type: str = "all", time_window: 
     data = await _tmdb_get(client, f"/trending/{media_type}/{time_window}", {"page": page, "language": "vi-VN"})
     if "error" in data:
         return {"data": None, "error_code": 500, "error_msg": data["error"]}
+    # /trending/all → TMDB includes "media_type" per item
+    # /trending/movie or /trending/tv → TMDB does NOT include "media_type" per item
+    # so we must fall back to the explicit param when not "all"
+    def resolve_type(item: dict) -> str:
+        if media_type != "all":
+            return media_type
+        return item.get("media_type", "movie")
+
     return {
-        "data": {"results": [_fmt_tmdb(i) for i in data.get("results", [])]},
+        "data": {"results": [_fmt_tmdb(i, resolve_type(i)) for i in data.get("results", [])]},
         "error_code": 0,
         "error_msg": ""
     }
@@ -137,31 +154,3 @@ async def tmdb_similar(request: Request, media_type: str, tmdb_id: int, page: in
         "error_code": 0,
         "error_msg": ""
     }
-@router.get("/lookup/fshare-discovery/{slug}")
-async def fshare_discovery(request: Request, slug: str, title: str = Query(...)):
-    """Deep lookup for FShare links by title/slug."""
-    from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
-    from app.services.scrapers.google_search_lookup import lookup_google_fshare
-    from app.services.scrapers.hdvietnam_lookup import lookup_hdvietnam
-    import asyncio
-    
-    search_query = f"{title} fshare"
-    try:
-        tasks = [lookup_thuviencine(search_query), lookup_google_fshare(search_query), lookup_hdvietnam(search_query)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        links = []
-        for res in results:
-            if isinstance(res, list):
-                links.extend(res)
-        
-        return {
-            "fshare": links,
-            "success": True
-        }
-    except Exception as e:
-        return {
-            "fshare": [],
-            "success": False,
-            "error": str(e)
-        }

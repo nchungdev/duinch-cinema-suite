@@ -1,8 +1,56 @@
+import hashlib
+import os
+import time
 from fastapi import APIRouter, Request, Response, Query
+from fastapi.responses import FileResponse, RedirectResponse
 import httpx
 from urllib.parse import urljoin
 
 router = APIRouter()
+CACHE_DIR = os.path.abspath("data/image_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+@router.get("/image")
+async def proxy_image(request: Request, url: str = Query(...)):
+    """Proxy and cache images locally to speed up frontend loading."""
+    if not url or not url.startswith('http'):
+        return Response(status_code=400)
+        
+    # Generate a unique cache filename based on the URL
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    # Basic extension detection
+    ext = ".jpg" 
+    if ".png" in url.lower(): ext = ".png"
+    elif ".webp" in url.lower(): ext = ".webp"
+    
+    cache_path = os.path.join(CACHE_DIR, f"{url_hash}{ext}")
+    
+    # Return from cache if exists and not older than 1 hour
+    if os.path.exists(cache_path):
+        mtime = os.path.getmtime(cache_path)
+        if (time.time() - mtime) < 3600:
+            return FileResponse(
+                cache_path, 
+                headers={"Cache-Control": "public, max-age=3600"}
+            )
+    
+    # Otherwise, download and cache
+    client = request.app.state.http_client
+    try:
+        resp = await client.get(url, follow_redirects=True, timeout=10)
+        if resp.status_code == 200:
+            with open(cache_path, "wb") as f:
+                f.write(resp.content)
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=3600"}
+            )
+        # Fallback if status not 200
+        return RedirectResponse(url)
+    except Exception as e:
+        print(f"Proxy error for {url}: {e}")
+        return RedirectResponse(url)
 
 @router.get("/m3u8")
 async def proxy_m3u8(request: Request, url: str = Query(...)):
