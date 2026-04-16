@@ -10,3 +10,5 @@ __pycache__/
 !plugin.json
 !manifest.json
 !docker-compose.yml
+backend/data
+.gitnexus

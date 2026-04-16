@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Request, Query, HTTPException
-from typing import Optional, List
 import asyncio
 import re
-from app.services import tmdb_service, media_service, cache_manager
+from typing import List, Dict, Any, Optional
+from app.services import tmdb_service
 from app.services.scrapers.kkphim_lookup import lookup_kkphim
 from app.services.scrapers.ophim_lookup import lookup_ophim
 from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
 from app.services.scrapers.google_search_lookup import lookup_google_fshare
 from app.services.scrapers.fshare_lookup import resolve_fshare_url
-from app.services.scrapers.hdvietnam_lookup import lookup_hdvietnam
 from app.services.scrapers.gdrive_lookup import lookup_gdrive
 from app.services.scrapers.torrent_lookup import lookup_torrent
 
@@ -16,164 +15,156 @@ router = APIRouter()
 
 @router.get("/detail/{media_type}/{tmdb_id}")
 async def media_detail(request: Request, media_type: str, tmdb_id: int):
-    """Get full details for a movie or tv show from TMDB."""
-    client = request.app.state.http_client
-    details = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
-    return {
-        "data": details,
-        "error_code": 0,
-        "error_msg": ""
-    }
-
-@router.get("/lookup")
-async def lookup_sources(
-    request: Request,
-    media_type: str = Query(..., pattern="^(movie|tv)$"),
-    title: str = Query(...),
-    tmdb_id: Optional[int] = Query(None),
-    year: Optional[str] = Query(None),
-    season: Optional[int] = Query(None),
-    episode: Optional[int] = Query(None),
-    provider: str = Query("all")
-):
-    if media_type == "movie" and (season is not None or episode is not None):
-        raise HTTPException(status_code=400, detail="Movies cannot have season or episode")
-    if episode is not None and season is None:
-        raise HTTPException(status_code=400, detail="Episode requires season")
+    """Get full details for a movie/tv show — metadata from TMDB + streaming from KKPhim."""
+    if media_type not in ("movie", "tv"):
+        raise HTTPException(status_code=400, detail="media_type must be 'movie' or 'tv'")
 
     client = request.app.state.http_client
-    
-    # --- PHA 1: ĐỊNH DANH THỰC THỂ DUY NHẤT ---
-    details = {}
-    if tmdb_id:
-        details = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
-    else:
-        tmdb_results = await media_service.fetch_tmdb_metadata(client, title, media_type)
-        if not tmdb_results:
-            return {
-                "data": None,
-                "error_code": 404,
-                "error_msg": f"Không tìm thấy phim '{title}' trên TMDB."
-            }
-        
-        match = None
-        clean_query = title.lower().strip()
-        if year:
-            match = next((item for item in tmdb_results if (item.get("title", "").lower() == clean_query or item.get("origin_name", "").lower() == clean_query) and item.get("year") == str(year)), None)
-        if not match:
-            match = next((item for item in tmdb_results if item.get("title", "").lower() == clean_query or item.get("origin_name", "").lower() == clean_query), None)
-        if not match:
-            return {
-                "data": None,
-                "error_code": 404,
-                "error_msg": f"Không tìm thấy phim khớp chính xác '{title}'."
-            }
-        tmdb_id = match.get("tmdb_id")
-        details = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
 
-    if not details or not tmdb_id:
-        return {
-            "data": None,
-            "error_code": 500,
-            "error_msg": "Failed to fetch authoritative metadata."
-        }
+    # ── 1. TMDB metadata ──────────────────────────────────────────────────────
+    raw = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
+    if not raw or raw.get("success") is False:
+        raise HTTPException(status_code=404, detail=f"TMDB {media_type}/{tmdb_id} not found")
 
-    target_title = details.get("title") or details.get("name")
-    target_origin = details.get("original_title") or details.get("original_name")
-    target_year = (details.get("release_date") or details.get("first_air_date") or "")[:4]
-    
-    metadata_response = {
-        "title": target_title, "original_title": target_origin,
-        "tmdb_id": tmdb_id, "media_type": media_type, "year": target_year,
-        "poster": f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else None,
-        "backdrop": f"https://image.tmdb.org/t/p/original{details.get('backdrop_path')}" if details.get('backdrop_path') else None,
-        "overview": details.get("overview")
+    tmdb_seasons = []
+    if media_type == "tv":
+        for s in raw.get("seasons", []):
+            if s.get("season_number", 0) > 0:
+                tmdb_seasons.append({
+                    "season_number": s["season_number"],
+                    "name": s.get("name"),
+                    "episode_count": s.get("episode_count", 0),
+                })
+
+    metadata = {
+        "title": raw.get("title") or raw.get("name"),
+        "origin_name": raw.get("original_title") or raw.get("original_name"),
+        "poster": f"https://image.tmdb.org/t/p/w500{raw['poster_path']}" if raw.get("poster_path") else None,
+        "poster_url": f"https://image.tmdb.org/t/p/w500{raw['poster_path']}" if raw.get("poster_path") else None,
+        "thumb_url": f"https://image.tmdb.org/t/p/original{raw['backdrop_path']}" if raw.get("backdrop_path") else None,
+        "content": raw.get("overview", ""),
+        "year": int((raw.get("release_date") or raw.get("first_air_date") or "0")[:4] or 0),
+        "time": f"{raw.get('runtime', 0)} min" if media_type == "movie" else f"{raw.get('number_of_episodes', 0)} tập",
+        "quality": "4K" if raw.get("vote_average", 0) > 8 else "HD",
+        "lang": raw.get("original_language", "en").upper(),
+        "type": "series" if media_type == "tv" else "single",
+        "category": [{"name": g["name"]} for g in raw.get("genres", [])],
+        "actor": [],
+        "tmdb_id": tmdb_id,
+        "media_type": media_type,
+        "tmdb_seasons": tmdb_seasons,
     }
-    if season: metadata_response["season"] = season
-    if episode: metadata_response["episode"] = episode
 
-    # --- PHA 2: TÌM NGUỒN ---
-    search_query = target_title
-    if target_year:
-        search_query = f"{target_title} {target_year}"
-    
-    if media_type == "tv" and season:
-        if episode:
-            search_query = f"{target_title} S{int(season):02d}E{int(episode):02d}"
-        else:
-            search_query = f"{target_title} S{int(season):02d}"
-
-    tasks = []
-    if provider in ["all", "kkphim"]:
-        tasks.append(lookup_kkphim(client, str(tmdb_id), target_title, media_type, season, episode))
-    if provider in ["all", "ophim"]:
-        tasks.append(lookup_ophim(client, tmdb_id, target_title, media_type, season, episode))
-        
-    async def surgical_provider_search(scraper_func, query):
-        try: return await scraper_func(query)
-        except Exception: return []
-
-    if provider in ["all", "fshare"]:
-        async def wrap_fshare(q):
-            f_res = await asyncio.gather(lookup_thuviencine(q), lookup_google_fshare(q), lookup_hdvietnam(q), return_exceptions=True)
-            links = []
-            for r in f_res:
-                if isinstance(r, list): links.extend(r)
-            if not links: return []
-            expanded = await asyncio.gather(*[resolve_fshare_url(l["url"], client) for l in links], return_exceptions=True)
-            fshare_final = []
-            for source_link, resolved_items in zip(links, expanded):
-                if isinstance(resolved_items, list):
-                    for item in resolved_items:
-                        fshare_final.append({
-                            "type": "download", "provider": "fshare",
-                            "url": item.get("url"), "name": item.get("name"),
-                            "size": item.get("size", 0), "source_page": source_link.get("source_page", "")
-                        })
-            return fshare_final
-        tasks.append(surgical_provider_search(wrap_fshare, search_query))
-    if provider in ["all", "gdrive"]:
-        tasks.append(surgical_provider_search(lookup_gdrive, search_query))
-    if provider in ["all", "torrent"]:
-        tasks.append(surgical_provider_search(lookup_torrent, search_query))
-
-    results_list = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    final_sources = []
-    def get_link_format(url):
-        if not url: return "url"
-        url_lower = url.lower()
-        if url_lower.startswith("magnet:"): return "magnet"
-        if ".m3u8" in url_lower: return "m3u8"
-        if any(x in url_lower for x in ["share/", "embed/", "player/", "storage/"]): return "embed"
-        if url_lower.endswith(".mp4"): return "mp4"
-        if url_lower.endswith(".mkv"): return "mkv"
-        return "url"
-
-    for res in results_list:
-        if not isinstance(res, list) or not res: continue
-        p_name = res[0].get("provider", "unknown")
-        provider_links = []
-        for item in res:
-            raw_url = item.get("url") or item.get("m3u8") or item.get("embed")
-            if not raw_url: continue
-            link_obj = {
-                "name": item.get("name"), "url": raw_url,
-                "format": get_link_format(raw_url), "server": item.get("server"),
-                "size": item.get("size"), "season": item.get("season") if media_type == "tv" else None,
-                "episode": item.get("episode") if media_type == "tv" else None
-            }
-            provider_links.append({k: v for k, v in link_obj.items() if v is not None})
-        final_sources.append({"provider": p_name, "links": provider_links})
+    # ── 2. KKPhim streaming links (default backup) ───────────────────
+    streaming_links = []
+    try:
+        from app.services.scrapers.kkphim_lookup import kkphim_get_by_tmdb, format_kkphim_links
+        res = await asyncio.to_thread(kkphim_get_by_tmdb, media_type, tmdb_id)
+        if res and not res.get("error") and res.get("status") is True and res.get("episodes"):
+            streaming_links = format_kkphim_links(res["episodes"])
+    except Exception as e:
+        print(f"KKPhim lookup error for {media_type}/{tmdb_id}: {e}")
 
     return {
         "data": {
-            "sources": final_sources,
-            "metadata": metadata_response
+            "metadata": metadata,
+            "local": {"exists": False},
+            "links": {
+                "streaming": streaming_links,
+                "fshare": [],
+                "web": [],
+            },
         },
         "error_code": 0,
-        "error_msg": ""
+        "error_msg": "",
     }
+
+@router.get("/discovery")
+async def discovery(
+    request: Request,
+    tmdb_id: int = Query(None),
+    media_type: str = Query("movie"),
+    title: str = Query(...),
+    localize_title: str = Query(None),
+    year: str = Query(None),
+    season: int = Query(None),
+    episode: int = Query(None),
+    provider: str = Query(...),  # kkphim, ophim, torrent, fshare, thuviencine, gdrive
+):
+    """Unified discovery endpoint for all providers. Supports streamable and downloadable types."""
+    client = request.app.state.http_client
+    clean_title    = re.sub(r'\(.*?\)', '', title).strip()
+    clean_localize = re.sub(r'\(.*?\)', '', localize_title).strip() if localize_title else None
+
+    # Helper to build search queries (consistent with previous refined logic)
+    def _build_query(base: str) -> str:
+        parts = [base]
+        if media_type == "movie" and year:
+            parts.append(str(year))
+        if season and episode:
+            parts.append(f"S{season:02d}E{episode:02d}")
+        elif season:
+            parts.append(f"Season {season}")
+        elif media_type == "tv" and year:
+            parts.append(str(year))
+        return " ".join(parts)
+
+    primary   = _build_query(clean_title)
+    secondary = _build_query(clean_localize) if clean_localize else None
+
+    results = []
+    
+    try:
+        if provider == "kkphim":
+            results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
+        elif provider == "ophim":
+            results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
+        elif provider == "torrent":
+            results = await lookup_torrent(clean_title, tmdb_id, media_type, season, episode, year)
+        elif provider == "fshare":
+            results = await lookup_google_fshare(clean_title, year, season, episode)
+            if clean_localize:
+                sec_res = await lookup_google_fshare(clean_localize, year, season, episode)
+                results.extend(sec_res)
+        elif provider == "thuviencine":
+            results = await lookup_thuviencine(primary)
+            if secondary:
+                sec_res = await lookup_thuviencine(secondary)
+                results.extend(sec_res)
+        elif provider == "gdrive":
+            results = await lookup_gdrive(primary)
+            if secondary:
+                sec_res = await lookup_gdrive(secondary)
+                results.extend(sec_res)
+        
+        # Standardize results structure if needed (ensure each item has 'type' and 'provider')
+        # Scrapers should already return the correct format now.
+        
+        # Deduplicate results by URL
+        seen_urls = set()
+        final_results = []
+        for r in results:
+            url = r.get("url") or r.get("m3u8") or r.get("embed")
+            if url and url not in seen_urls:
+                final_results.append(r)
+                seen_urls.add(url)
+
+        return {
+            "data": {
+                "results": final_results,
+                "provider": provider,
+                "success": True
+            },
+            "error_code": 0,
+            "error_msg": ""
+        }
+    except Exception as e:
+        print(f"Discovery error for {provider}: {e}")
+        return {
+            "data": {"results": [], "provider": provider, "success": False},
+            "error_code": 500,
+            "error_msg": str(e)
+        }
 
 @router.get("/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
