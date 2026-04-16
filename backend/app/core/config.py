@@ -11,5 +11,5 @@ FSHARE_USER_AGENT = os.getenv("FSHARE_USER_AGENT")
 METADATA_CACHE_EXPIRE = 24 * 3600  # 24 hours
 DISCOVERY_CACHE_EXPIRE = 3600      # 1 hour
 
-TMDB_CACHE = "tmdb_cache.json"
-KKPHIM_CACHE = "kkphim_cache.json"
+TMDB_CACHE = "data/tmdb_cache.json"
+KKPHIM_CACHE = "data/kkphim_cache.json"

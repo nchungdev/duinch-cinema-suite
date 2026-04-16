@@ -21,6 +21,8 @@ def load_cache(filename):
 
 def save_cache(filename, cache):
     try:
+        if os.path.dirname(filename):
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "w") as f:
             json.dump(cache, f, ensure_ascii=False)
     except Exception:
