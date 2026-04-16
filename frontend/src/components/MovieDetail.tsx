@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { api, getProxiedImageUrl } from '../api/config';
-import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 interface MetaData {
@@ -50,7 +50,12 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [isInternalScrolling, setIsInternalScrolling] = useState(false);
   const isInternalScrollingRef = useRef(false);
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
+  const [streamableProviders, setStreamableProviders] = useState<Record<string, any[]>>({});
+  const [activeProviderId, setActiveProviderId] = useState<string>('');
+  const [showProviderMenu, setShowProviderMenu] = useState(false);
   const [miniPlayerFloating, setMiniPlayerFloating] = useState(false);
+  const [ribbonAtStart, setRibbonAtStart] = useState(true);
+  const [ribbonAtEnd, setRibbonAtEnd] = useState(false);
 
   const episodeListRef = useRef<HTMLDivElement>(null);
   const seasonRibbonRef = useRef<HTMLDivElement>(null);
@@ -120,6 +125,18 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   }, [seasonBoundaries]);
 
   useEffect(() => {
+    const ribbon = seasonRibbonRef.current;
+    if (!ribbon) return;
+    const update = () => {
+      setRibbonAtStart(ribbon.scrollLeft <= 0);
+      setRibbonAtEnd(ribbon.scrollLeft + ribbon.clientWidth >= ribbon.scrollWidth - 1);
+    };
+    update();
+    ribbon.addEventListener('scroll', update, { passive: true });
+    return () => ribbon.removeEventListener('scroll', update);
+  }, [seasonBoundaries]);
+
+  useEffect(() => {
     const HEADER_H = 96;
     const onScroll = () => {
       if (!miniPlayerSentinelRef.current) return;
@@ -144,6 +161,14 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                 if (initialEpisode) {
                     setActiveEpisodeIdx(initialEpisode - 1);
                 }
+            }
+        } else {
+            // Check Local History if no initial params
+            const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
+            const progress = history[slug];
+            if (progress) {
+                setActiveSeasonIdx(progress.s_idx || 0);
+                setActiveEpisodeIdx(progress.e_idx || 0);
             }
         }
       } catch (err) {
@@ -177,20 +202,40 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
   // Auto-focus active server tab in the sidebar
   useEffect(() => {
-      if (serverRibbonButtonsRef.current[activeServerIdx]) {
-          serverRibbonButtonsRef.current[activeServerIdx]?.scrollIntoView({
-              behavior: 'smooth',
-              block: 'center',
-              inline: 'nearest'
-          });
-      }
+    if (serverRibbonButtonsRef.current[activeServerIdx]) {
+      serverRibbonButtonsRef.current[activeServerIdx]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+    }
   }, [activeServerIdx]);
+
+  // Save progress when season/episode changes
+  useEffect(() => {
+    if (!data) return;
+    const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
+    history[slug] = {
+      s_idx: activeSeasonIdx,
+      e_idx: activeEpisodeIdx,
+      timestamp: Date.now()
+    };
+    localStorage.setItem('omv_watch_history', JSON.stringify(history));
+  }, [activeSeasonIdx, activeEpisodeIdx, slug, data]);
 
   useEffect(() => {
     if (!data) return;
     const sNum = data.metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number;
     const eNum = activeEpisodeIdx + 1;
     
+    // Recovery: Check for saved provider/server names on mount or data change
+    if (!activeProviderId) {
+        const savedProvider = localStorage.getItem('omv_active_provider');
+        if (savedProvider) {
+            // We wait for DiscoveryPipeline to populate providers
+        }
+    }
+
     const hash = window.location.hash;
     const qPart = hash.includes('?q=') ? `q=${new URLSearchParams(hash.split('?')[1]).get('q')}` : '';
     
@@ -211,9 +256,25 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   }, [activeSeasonIdx, activeEpisodeIdx, data, slug, mediaType, category]);
 
   useEffect(() => {
-    const ep = streamingLinks?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
+    const ep = streamableProviders[activeProviderId]?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
     if (ep?.embed) setActiveEmbed(ep.embed);
-  }, [streamingLinks, activeServerIdx, activeEpisodeIdx]);
+  }, [streamableProviders, activeProviderId, activeServerIdx, activeEpisodeIdx]);
+
+  useEffect(() => {
+    if (activeProviderId && streamableProviders[activeProviderId]) {
+      const servers = streamableProviders[activeProviderId];
+      setStreamingLinks(servers);
+
+      // Persistence: Try to restore saved server name
+      const savedServerName = localStorage.getItem('omv_active_server_name');
+      if (savedServerName) {
+          const sIdx = servers.findIndex((s: any) => s.server_name === savedServerName);
+          if (sIdx !== -1 && sIdx !== activeServerIdx) {
+              setActiveServerIdx(sIdx);
+          }
+      }
+    }
+  }, [activeProviderId, streamableProviders]);
 
   if (loading) return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
@@ -336,14 +397,17 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
              );
            })()}
 
-            <div className="relative group/panel">
+             <div className="relative group/panel">
               <div className="w-full xl:w-[400px] max-h-[500px] flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10">
+                
                 {seasonBoundaries.length > 0 && (
-                  <div className="shrink-0 bg-white/[0.03] border-b border-white/10 flex items-center h-11 relative group/ribbon">
-                    <button onClick={() => scrollSeasonRibbon('l')} className="absolute left-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-r border-white/5">
-                        <ChevronLeft className="w-4 h-4 text-gray-400" />
-                    </button>
-                    <div ref={seasonRibbonRef} className="flex-1 flex overflow-x-auto no-scrollbar h-full scroll-smooth px-12">
+                  <div className="shrink-0 bg-white/[0.01] border-b border-white/10 flex items-center h-11 relative group/ribbon">
+                    {!ribbonAtStart && (
+                      <button onClick={() => scrollSeasonRibbon('l')} className="absolute left-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-r border-white/5">
+                          <ChevronLeft className="w-4 h-4 text-gray-400" />
+                      </button>
+                    )}
+                    <div ref={seasonRibbonRef} className="flex-1 flex overflow-x-auto no-scrollbar h-full scroll-smooth pr-12">
                         {seasonBoundaries.map((s, idx) => {
                         const isActive = idx === activeSeasonIdx;
                         return (
@@ -361,9 +425,11 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                         );
                         })}
                     </div>
-                    <button onClick={() => scrollSeasonRibbon('r')} className="absolute right-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-l border-white/5">
-                        <ChevronRight className="w-4 h-4 text-gray-400" />
-                    </button>
+                    {!ribbonAtEnd && (
+                      <button onClick={() => scrollSeasonRibbon('r')} className="absolute right-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-l border-white/5">
+                          <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -393,15 +459,23 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                             const hasLink = !!(ep?.m3u8 || ep?.embed || ep?.link_m3u8);
                                             const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
                                             const isPlaying = activeEpisodeIdx === globalIdx;
+                                            const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
+                                            const isLastWatched = history[slug]?.s_idx === sIdx && history[slug]?.e_idx === globalIdx;
+
                                             return (
                                                 <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
                                                     <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
                                                     <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
                                                         <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
                                                     </div>
-                                                    <span className={`text-[11px] font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}>
-                                                        {epLabel}
-                                                    </span>
+                                                    <div className="flex flex-col min-w-0 items-start">
+                                                        <span className={`text-[11px] font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}>
+                                                            {epLabel}
+                                                        </span>
+                                                        {isLastWatched && !isPlaying && (
+                                                            <span className="text-[7px] font-black uppercase tracking-wider text-blue-500/60 leading-none">Last Watched</span>
+                                                        )}
+                                                    </div>
                                                     </button>
                                                     <div className="flex items-center px-2.5 gap-0.5">
                                                         <button disabled={!hasLink} title="Download" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-blue-500/20 text-gray-600 hover:enabled:text-blue-400"><Download className="w-3 h-3" /></button>
@@ -426,33 +500,90 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                 </div>
               </div>
 
-              {/* 2. Floating/Pinned Server Bar (Docked to Right & Vertically Centered) */}
-              {streamingLinks.length > 0 && (
-                <div ref={serverRibbonRef} className="absolute left-full top-1/2 -translate-y-1/2 w-9 max-h-full overflow-y-auto no-scrollbar shrink-0 flex flex-col gap-1 py-1 z-0">
-                  {streamingLinks.map((server: any, idx: number) => {
-                    const isActive = idx === activeServerIdx;
-                    return (
-                        <button key={idx}
-                            ref={el => { serverRibbonButtonsRef.current[idx] = el; }}
-                            onClick={() => { setActiveServerIdx(idx); setActiveEpisodeIdx(seasonBoundaries[activeSeasonIdx]?.start || 0); }}
-                            className={`group relative flex items-center justify-center rounded-r-xl transition-all py-14 border-y border-r shrink-0 overflow-hidden ${
+               {/* 2. Floating/Pinned Side Dock (Providers + Servers) */}
+               <div className="absolute left-full top-1/2 -translate-y-1/2 flex flex-col gap-2 py-1 z-40">
+                  {/* Settings / Provider Toggle */}
+                  <div className="relative">
+                    <button 
+                      onClick={() => setShowProviderMenu(!showProviderMenu)}
+                      className={`w-9 h-9 rounded-r-xl border-y border-r flex items-center justify-center transition-all ${
+                        showProviderMenu 
+                        ? 'bg-blue-600/30 border-blue-500/50 text-blue-400' 
+                        : 'bg-white/5 border-white/5 text-gray-600 hover:text-gray-400 hover:bg-white/10'
+                      }`}
+                    >
+                      <Settings className={`w-4 h-4 ${showProviderMenu ? 'animate-spin-slow' : ''}`} />
+                    </button>
+
+                    {/* Popover Source Menu */}
+                    {showProviderMenu && Object.keys(streamableProviders).length > 0 && (
+                      <div className="absolute right-full top-0 mr-3 w-48 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl p-2 flex flex-col gap-1 z-50 animate-slide-left">
+                        <div className="px-3 py-2 border-b border-white/5 mb-1">
+                          <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-500">Select Source</span>
+                        </div>
+                        {Object.keys(streamableProviders).map(pId => {
+                          const isActive = pId === activeProviderId;
+                          const colors: Record<string, string> = {
+                            kkphim: 'text-orange-400 bg-orange-500/10',
+                            ophim: 'text-pink-400 bg-pink-500/10',
+                            thuviencine: 'text-emerald-400 bg-emerald-500/10'
+                          };
+                          return (
+                            <button key={pId}
+                              onClick={() => { 
+                                setActiveProviderId(pId); 
+                                setActiveServerIdx(0); 
+                                setShowProviderMenu(false); 
+                                localStorage.setItem('omv_active_provider', pId);
+                              }}
+                              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                                 isActive 
-                                  ? 'bg-blue-600/30 border-blue-500/50 shadow-[3px_0_10px_rgba(37,99,235,0.1)]' 
-                                  : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/10'
-                            }`}
-                        >
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <span className={`text-[7px] font-black uppercase tracking-widest whitespace-nowrap rotate-90 transition-colors pointer-events-none ${
-                                    isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-400'
-                                }`}>
-                                    {server.server_name}
-                                </span>
-                            </div>
-                        </button>
-                    );
-                  })}
-                </div>
-              )}
+                                  ? `border-white/20 ${colors[pId] || 'text-blue-400 bg-blue-500/10'}` 
+                                  : 'border-transparent text-gray-600 hover:text-gray-400 hover:bg-white/5'
+                              }`}
+                            >
+                              <Globe className="w-3 h-3" />
+                              {pId}
+                              {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Server Section */}
+                  {streamingLinks.length > 0 && (
+                    <div ref={serverRibbonRef} className="w-9 max-h-[400px] overflow-y-auto no-scrollbar flex flex-col gap-1">
+                      {streamingLinks.map((server: any, idx: number) => {
+                        const isActive = idx === activeServerIdx;
+                        return (
+                            <button key={idx}
+                                ref={el => { serverRibbonButtonsRef.current[idx] = el; }}
+                                onClick={() => { 
+                                    setActiveServerIdx(idx); 
+                                    setActiveEpisodeIdx(seasonBoundaries[activeSeasonIdx]?.start || 0); 
+                                    localStorage.setItem('omv_active_server_name', server.server_name);
+                                }}
+                                className={`group relative flex items-center justify-center rounded-r-xl transition-all py-14 border-y border-r shrink-0 overflow-hidden ${
+                                    isActive 
+                                      ? 'bg-blue-600/30 border-blue-500/50 shadow-[3px_0_10px_rgba(37,99,235,0.1)]' 
+                                      : 'bg-white/5 border-white/5 hover:text-gray-600 hover:bg-white/10'
+                                }`}
+                            >
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <span className={`text-[7px] font-black uppercase tracking-widest whitespace-nowrap rotate-90 transition-colors pointer-events-none ${
+                                        isActive ? 'text-white' : 'text-gray-600 group-hover:text-gray-400'
+                                    }`}>
+                                        {server.server_name}
+                                    </span>
+                                </div>
+                            </button>
+                        );
+                      })}
+                    </div>
+                  )}
+               </div>
             </div>
            </div>
        </div>
@@ -526,7 +657,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
           </div>
         </div>
         <div className="w-full">
-           <DiscoveryPipeline
+            <DiscoveryPipeline
               tmdbId={metadata.tmdb_id ?? parseInt(slug, 10)}
               title={metadata.origin_name || metadata.title}
               localizeTitle={metadata.origin_name ? metadata.title : undefined}
@@ -534,13 +665,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
               mediaType={mediaType}
               season={metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number}
               onStreamingReady={(links) => {
-                // quick-discovery trả flat list [{server, name, m3u8, embed}, ...]
-                // episode panel cần grouped [{server_name, server_data: [...]}, ...]
-                const isAlreadyGrouped = links.length > 0 && 'server_data' in links[0];
-                if (isAlreadyGrouped) {
-                  setStreamingLinks(links);
-                  return;
-                }
+                // Determine provider
+                const sample = links[0];
+                const providerId = sample?.provider || 'Unknown';
+                
                 // Group flat items by server field
                 const grouped: Record<string, any> = {};
                 for (const item of links) {
@@ -552,7 +680,23 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                     embed: item.embed || '',
                   });
                 }
-                setStreamingLinks(Object.values(grouped));
+                
+                const serverList = Object.values(grouped);
+                setStreamableProviders(prev => ({
+                    ...prev,
+                    [providerId]: serverList
+                }));
+
+                // Auto-restore provider if possible
+                const savedProvider = localStorage.getItem('omv_active_provider');
+                if (!activeProviderId) {
+                    if (savedProvider && providerId === savedProvider) {
+                        setActiveProviderId(providerId);
+                    } else if (!activeProviderId) {
+                        // Fallback to the first found provider if nothing set yet
+                        setActiveProviderId(providerId);
+                    }
+                }
               }}
             />
         </div>

@@ -3,6 +3,20 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+.gitnexus
+
+# Backend
+backend/data/
+backend/log/
+backend/*.log
+backend/*.json
+!backend/metadata.json
+
+# Frontend
+frontend/dist/
+frontend/node_modules/
+
+# Generic
 *.log
 *.json
 !package.json
@@ -10,9 +24,3 @@ __pycache__/
 !plugin.json
 !manifest.json
 !docker-compose.yml
-backend/data
-.gitnexus
-
-# Cache and logs
-backend/*.log
-backend/*_cache.json
