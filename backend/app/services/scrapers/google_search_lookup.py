@@ -23,23 +23,35 @@ _FSHARE_RE = re.compile(
 def _extract(text: str) -> List[str]:
     return list(dict.fromkeys(_FSHARE_RE.findall(text)))
 
-def _make_result(url: str, title: str, source: str) -> Dict[str, str]:
+def _parse_quality(text: str) -> str:
+    """Guess quality from text snippets."""
+    text = text.upper()
+    if '2160P' in text or '4K' in text: return '4K'
+    if 'REMUX' in text: return 'Remux'
+    if '1080P' in text: return '1080p'
+    if '720P' in text: return '720p'
+    if 'MHD' in text: return 'mHD'
+    if 'CAM' in text or 'TS' in text: return 'CAM'
+    return 'HD'
+
+def _make_result(url: str, title: str, source: str, snippet: str = "") -> Dict[str, str]:
+    quality = _parse_quality(f"{title} {snippet}")
     return {
         "url": url,
-        "name": f"{source.upper()} | {title}",
+        "name": f"[{quality}] {title.split(' - ')[0].split(' | ')[0]}",
         "source": source,
         "provider": "fshare",
         "type": "downloadable",
+        "quality": quality,
     }
 
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
+        "Chrome/125.0.0.0 Safari/537.36"
     ),
     "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
 
@@ -50,9 +62,9 @@ async def _ddg(query: str) -> List[Dict[str, str]]:
         from duckduckgo_search import DDGS
 
         def _sync():
-            # vn-vi region surfaces Vietnamese forum results
             with DDGS() as ddgs:
-                return list(ddgs.text(query, region="vn-vi", safesearch="off", max_results=20))
+                # Use strict dorking for DDG
+                return list(ddgs.text(f"site:fshare.vn {query}", region="vn-vi", safesearch="off", max_results=20))
 
         items = await asyncio.to_thread(_sync)
     except Exception:
@@ -64,7 +76,7 @@ async def _ddg(query: str) -> List[Dict[str, str]]:
         text = f"{item.get('body', '')} {item.get('href', '')}"
         for url in _extract(text):
             if url not in seen:
-                results.append(_make_result(url, item.get("title", "FShare"), "ddg"))
+                results.append(_make_result(url, item.get("title", "FShare"), "duckduckgo", item.get("body", "")))
                 seen.add(url)
     return results
 
@@ -73,48 +85,54 @@ async def _ddg(query: str) -> List[Dict[str, str]]:
 
 async def _bing(query: str) -> List[Dict[str, str]]:
     try:
+        # Use explicit file path search in Bing
         search_url = (
             f"https://www.bing.com/search"
-            f"?q={urllib.parse.quote(query)}&setlang=vi&cc=VN&count=20"
+            f"?q=site:fshare.vn/file/+{urllib.parse.quote(query)}&setlang=vi&cc=VN&count=15"
         )
         async with httpx.AsyncClient(
-            timeout=12.0, headers=_HEADERS, follow_redirects=True
+            timeout=15.0, headers=_HEADERS, follow_redirects=True
         ) as client:
             resp = await client.get(search_url)
             if resp.status_code != 200:
                 return []
+            
+            # Use regex to find result blocks for better metadata
+            results = []
+            seen = set()
+            # Simple fallback extraction from whole page if block parsing fails
             urls = _extract(resp.text)
-            return [_make_result(u, "FShare Link", "bing") for u in urls]
+            for u in urls:
+                if u not in seen:
+                    results.append(_make_result(u, "FShare", "bing"))
+                    seen.add(u)
+            return results
     except Exception:
         return []
 
 
 # ── Engine 3: SearXNG public instances ───────────────────────────────────────
 
-# Public SearXNG instances that support JSON API and have good uptime
 _SEARXNG_INSTANCES = [
     "https://searx.be",
     "https://search.mdosch.de",
     "https://searxng.site",
     "https://paulgo.io",
+    "https://priv.au",
 ]
 
 async def _searxng(query: str) -> List[Dict[str, str]]:
-    """Try SearXNG public instances until one responds.
-    SearXNG is a metasearch engine — it queries Google/Bing/DDG itself.
-    """
     params = urllib.parse.urlencode({
-        "q": query,
+        "q": f'site:fshare.vn "{query}"',
         "format": "json",
         "engines": "google,bing,duckduckgo",
         "language": "vi",
-        "safesearch": "0",
     })
     headers = {**_HEADERS, "Accept": "application/json"}
 
     for base in _SEARXNG_INSTANCES:
         try:
-            async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+            async with httpx.AsyncClient(timeout=8.0, headers=headers) as client:
                 resp = await client.get(f"{base}/search?{params}")
                 if resp.status_code != 200:
                     continue
@@ -122,18 +140,17 @@ async def _searxng(query: str) -> List[Dict[str, str]]:
                 results = []
                 seen: set = set()
                 for item in data.get("results", []):
-                    text = f"{item.get('content', '')} {item.get('url', '')}"
-                    for url in _extract(text):
+                    urls = _extract(item.get('url', '')) + _extract(item.get('content', ''))
+                    for url in urls:
                         if url not in seen:
                             results.append(
-                                _make_result(url, item.get("title", "FShare"), "searxng")
+                                _make_result(url, item.get("title", "FShare"), "searxng", item.get("content", ""))
                             )
                             seen.add(url)
                 if results:
                     return results
         except Exception:
             continue
-
     return []
 
 
@@ -145,38 +162,48 @@ async def lookup_google_fshare(
     season: Optional[int] = None,
     episode: Optional[int] = None,
 ) -> List[Dict[str, str]]:
-    """Search for FShare links using DDG + Bing + SearXNG in parallel.
-    No API key required.
-    """
-    # Build query (handle pre-built queries passed by deep-discovery endpoint)
-    parts = [title]
-    if year and str(year) not in title:
-        parts.append(str(year))
-    if season and episode and f"S{season:02d}" not in title:
-        parts.append(f"S{season:02d}E{episode:02d}")
-    elif season and "Season" not in title and f"S{season:02d}" not in title:
-        parts.append(f"Season {season}")
-    if "fshare" not in title.lower():
-        parts.append("fshare.vn")
-    query = " ".join(parts)
+    # 1. Clean title for better search
+    clean_title = re.sub(r'[\(\)\[\]]', ' ', title).strip()
+    
+    # 2. Build prioritized queries
+    queries = []
+    # Primary: title + year/season info
+    q1_parts = [clean_title]
+    if year: q1_parts.append(str(year))
+    if season and episode: q1_parts.append(f"S{season:02d}E{episode:02d}")
+    queries.append(" ".join(q1_parts))
+    
+    # Secondary: quoted title for strictness
+    if len(clean_title.split()) > 1:
+        queries.append(f'"{clean_title}"')
 
-    # All engines run in parallel
-    batches = await asyncio.gather(
-        _ddg(query),
-        _bing(query),
-        _searxng(query),
-        return_exceptions=True,
-    )
+    results = []
+    seen = set()
 
-    seen: set = set()
-    results: List[Dict[str, str]] = []
-    for batch in batches:
-        if not isinstance(batch, list):
-            continue
-        for item in batch:
-            u = item.get("url", "")
-            if u and u not in seen:
-                results.append(item)
-                seen.add(u)
-
+    # Try each query in parallel
+    for q in queries:
+        batches = await asyncio.gather(
+            _ddg(q),
+            _bing(q),
+            _searxng(q),
+            return_exceptions=True
+        )
+        
+        found_in_query = False
+        for batch in batches:
+            if not isinstance(batch, list): continue
+            for item in batch:
+                u = item.get("url", "")
+                if u and u not in seen:
+                    results.append(item)
+                    seen.add(u)
+                    found_in_query = True
+        
+        # If we found enough results, don't bother with deeper queries
+        if len(results) >= 10: break
+        
+    # Sort results so 4K/1080p comes first
+    quality_map = {'4K': 0, 'Remux': 1, '1080p': 2, '720p': 3, 'HD': 4, 'mHD': 5, 'CAM': 6}
+    results.sort(key=lambda x: quality_map.get(x.get('quality', 'HD'), 10))
+    
     return results
