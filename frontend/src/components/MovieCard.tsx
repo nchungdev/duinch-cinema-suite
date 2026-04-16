@@ -3,7 +3,7 @@ import type { MediaItem } from '../api/config';
 
 interface MovieCardProps {
   item: MediaItem;
-  onClick: (slug: string) => void;
+  onClick: (slug: string, mediaType: string) => void;
 }
 
 export const MovieCard = ({ item, onClick }: MovieCardProps) => {
@@ -13,7 +13,7 @@ export const MovieCard = ({ item, onClick }: MovieCardProps) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -5 }}
-      onClick={() => onClick(item.slug)}
+      onClick={() => onClick(item.slug, item.media_type)}
       className="relative aspect-[2/3] rounded-2xl overflow-hidden cursor-pointer group bg-white/5 border border-white/5 hover:border-blue-500/50 transition-all duration-500 shadow-2xl"
     >
       <img

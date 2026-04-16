@@ -7,6 +7,11 @@ export const api = axios.create({
   baseURL: API_BASE,
 });
 
+export const getProxiedImageUrl = (url: string) => {
+  if (!url || !url.startsWith('http')) return url;
+  return `${API_BASE}/proxy/image?url=${encodeURIComponent(url)}`;
+};
+
 // Response interceptor to handle the new { data, error_code, error_msg } format
 api.interceptors.response.use(
   (response) => {

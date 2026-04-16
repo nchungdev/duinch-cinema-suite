@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { api } from '../api/config';
+import { api, getProxiedImageUrl } from '../api/config';
 import { PlayCircle, Loader2 } from 'lucide-react';
 
 interface DiscoveryItem {
@@ -7,7 +7,7 @@ interface DiscoveryItem {
   origin_name: string;
   slug: string;
   poster: string;
-  year: number;
+  year: number | string;
   media_type: 'movie' | 'tv';
 }
 
@@ -18,11 +18,12 @@ interface DiscoveryResponse {
 
 interface Props {
   category?: string;
+  mediaType?: 'all' | 'movie' | 'tv';
   staticItems?: DiscoveryItem[];
-  onMovieClick: (slug: string) => void;
+  onMovieClick: (slug: string, mediaType: string) => void;
 }
 
-export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
+export function DiscoveryGrid({ category, mediaType = 'all', staticItems, onMovieClick }: Props) {
   const [items, setItems] = useState<DiscoveryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [pageNum, setPageNum] = useState(1);
@@ -34,7 +35,6 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
   const fetchItems = useCallback(async (page: number, isInitial: boolean = false) => {
     if (staticItems || !category || (isFetching.current && isInitial)) return;
     
-    // Cancel previous request if initial load (new category)
     if (isInitial && abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -44,7 +44,15 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
     setLoading(true);
     
     try {
-      const res = await api.get<DiscoveryResponse>(`/discovery?category=${category}&page=${page}`, {
+      // All discovery goes through TMDB — no PhimAPI on home
+      const endpoint =
+        category === 'phim-le'
+          ? `/movies?category=popular&page=${page}`
+          : category === 'phim-bo'
+            ? `/tvs?category=popular&page=${page}`
+            : `/trending?media_type=${mediaType}&page=${page}`; // 'new' + fallback
+        
+      const res = await api.get<DiscoveryResponse>(endpoint, {
         signal: abortControllerRef.current.signal
       });
       
@@ -61,7 +69,7 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
       setLoading(false);
       isFetching.current = false;
     }
-  }, [category, staticItems]);
+  }, [category, mediaType, staticItems]);
 
   useEffect(() => {
     if (staticItems) {
@@ -76,7 +84,6 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
     fetchItems(1, true);
   }, [category, staticItems, fetchItems]);
 
-  // Infinite scroll observer
   const observer = useRef<IntersectionObserver | null>(null);
   const lastElementRef = useCallback((node: HTMLDivElement) => {
     if (loading) return;
@@ -89,7 +96,6 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
     if (node) observer.current.observe(node);
   }, [loading, hasMore]);
 
-  // Handle pageNum effect
   useEffect(() => {
     if (pageNum > 1) fetchItems(pageNum, false);
   }, [pageNum, fetchItems]);
@@ -101,14 +107,13 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
           <div 
             key={`${item.slug}-${idx}`}
             ref={idx === items.length - 1 ? lastElementRef : null}
-            onClick={() => onMovieClick(item.slug)}
+            onClick={() => onMovieClick(item.slug, item.media_type)}
             className="group relative cursor-pointer"
           >
-            {/* Poster Card with Pro Max Effects */}
             <div className="aspect-cinema relative rounded-[2rem] overflow-hidden bg-white/5 shadow-2xl transition-all duration-700 group-hover:scale-105 group-hover:-translate-y-3 ring-1 ring-white/10 group-hover:ring-blue-500/50">
               {item.poster ? (
                 <img 
-                  src={item.poster} 
+                  src={getProxiedImageUrl(item.poster)} 
                   alt={item.title}
                   className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-90 group-hover:opacity-100"
                   loading="lazy"
@@ -119,20 +124,15 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
                 </div>
               )}
               
-              {/* Soft Inner Glow */}
               <div className="absolute inset-0 ring-1 ring-inset ring-white/10 group-hover:ring-white/20 transition-all pointer-events-none rounded-[2rem]" />
-              
-              {/* Overlay Gradient (Netflix Style) */}
               <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               
-              {/* Immersive Play Action */}
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0">
                 <div className="w-14 h-14 rounded-full bg-blue-600/90 flex items-center justify-center backdrop-blur-md shadow-[0_0_40px_rgba(37,99,235,0.6)] border border-white/20">
                   <PlayCircle className="w-7 h-7 text-white fill-white/20" />
                 </div>
               </div>
 
-              {/* Status Tags */}
               <div className="absolute top-4 right-4 translate-x-1 group-hover:translate-x-0 transition-transform duration-500">
                 <div className={`px-2.5 py-1 rounded-lg backdrop-blur-md text-[8px] font-black uppercase tracking-tighter shadow-lg border border-white/10 ${
                   item.media_type === 'tv' ? 'bg-purple-600/80 text-white' : 'bg-blue-600/80 text-white'
@@ -141,13 +141,11 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
                 </div>
               </div>
 
-              {/* Year Floating Label */}
               <div className="absolute bottom-6 left-6 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-2 group-hover:translate-y-0">
                 <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{item.year}</span>
               </div>
             </div>
 
-            {/* Premium Typography & Info */}
             <div className="mt-5 px-1 space-y-1.5 transition-all duration-500 group-hover:px-2">
               <h3 className="text-xs font-black line-clamp-1 group-hover:text-blue-400 transition-colors uppercase tracking-tight font-outfit leading-tight">
                 {item.title}
@@ -159,7 +157,6 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
           </div>
         ))}
 
-        {/* Cinematic Loading Skeletons */}
         {loading && Array.from({ length: 14 }).map((_, i) => (
           <div key={i} className="space-y-4">
              <div className="aspect-cinema rounded-[2rem] bg-white/5 animate-pulse border border-white/5" />
