@@ -28,11 +28,25 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
   const [pageNum, setPageNum] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
+  const isFetching = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const fetchItems = useCallback(async (page: number, isInitial: boolean = false) => {
-    if (staticItems || !category) return;
+    if (staticItems || !category || (isFetching.current && isInitial)) return;
+    
+    // Cancel previous request if initial load (new category)
+    if (isInitial && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    abortControllerRef.current = new AbortController();
+    isFetching.current = true;
     setLoading(true);
+    
     try {
-      const res = await api.get<DiscoveryResponse>(`/discovery?category=${category}&page=${page}`);
+      const res = await api.get<DiscoveryResponse>(`/discovery?category=${category}&page=${page}`, {
+        signal: abortControllerRef.current.signal
+      });
       
       const newItems = res.data?.results || [];
       setItems(prev => isInitial ? newItems : [...prev, ...newItems]);
@@ -40,10 +54,12 @@ export function DiscoveryGrid({ category, staticItems, onMovieClick }: Props) {
       if (newItems.length < 5) setHasMore(false);
       else setHasMore(true);
 
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
       console.error('Discovery fetch failed:', err);
     } finally {
       setLoading(false);
+      isFetching.current = false;
     }
   }, [category, staticItems]);
 

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CinemaPro System Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;400;900&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #fff; }
+        .font-outfit { font-family: 'Outfit', sans-serif; }
+        .text-gradient {
+            background: linear-gradient(135deg, #fff 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .status-up { color: #4ade80; }
+        .status-down { color: #ef4444; }
+        .animate-fade { animation: fadeIn 0.8s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen p-8 md:p-12 overflow-x-hidden">
+    <!-- Background elements -->
+    <div class="fixed inset-0 pointer-events-none -z-10">
+        <div class="absolute top-[-10%] right-[-10%] w-[600px] h-[600px] bg-blue-600/10 blur-[120px] rounded-full"></div>
+        <div class="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-purple-600/5 blur-[120px] rounded-full"></div>
+    </div>
+
+    <div class="max-w-7xl mx-auto space-y-12 animate-fade">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-8 border-b border-white/5 pb-12">
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-3xl bg-blue-600 flex items-center justify-center shadow-[0_0_30px_rgba(37,99,235,0.4)]">
+                    <i data-lucide="activity" class="w-8 h-8 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-4xl font-black italic uppercase tracking-tighter text-gradient font-outfit">System Monitor</h1>
+                    <p class="text-[10px] font-black uppercase tracking-[0.5em] text-gray-500 mt-1 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        Unified Health Cluster / Node-01
+                    </p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4 bg-white/5 p-2 rounded-2xl border border-white/5">
+                <button onclick="refresh()" class="flex items-center gap-3 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 transition-all font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-600/20 active:scale-95">
+                    <i data-lucide="refresh-cw" id="refresh-icon" class="w-4 h-4"></i>
+                    Refresh Pulse
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6" id="stats-grid">
+            <!-- Dynamic stats -->
+        </div>
+
+        <!-- Core Services Grid -->
+        <div class="space-y-6">
+            <h3 class="text-xl font-black uppercase italic tracking-tighter font-outfit px-2">Core Services Health</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6" id="services-grid">
+                <!-- Dynamic services -->
+            </div>
+        </div>
+
+        <!-- Recent Logs -->
+        <div class="glass rounded-[2.5rem] overflow-hidden">
+            <div class="px-10 py-8 border-b border-white/5 bg-white/[0.02]">
+                <h3 class="text-xl font-black uppercase italic tracking-tighter font-outfit">Tactical Traffic Log</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-white/[0.01] border-b border-white/5">
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-500">Timestamp</th>
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-500">Method</th>
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-500">Endpoint</th>
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-500">Status</th>
+                            <th class="px-10 py-5 text-[10px] font-black uppercase tracking-widest text-gray-500">Lat</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-body" class="divide-y divide-white/5">
+                        <!-- Dynamic logs -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchHealth() {
+            const icon = document.getElementById('refresh-icon');
+            icon.classList.add('animate-spin');
+            
+            try {
+                const response = await fetch('/api/monitor/health');
+                const { data } = await response.json();
+                renderUI(data);
+            } catch (error) {
+                console.error('Failed to fetch health:', error);
+            } finally {
+                setTimeout(() => icon.classList.remove('animate-spin'), 500);
+            }
+        }
+
+        function renderUI(data) {
+            // Render Stats
+            const statsGrid = document.getElementById('stats-grid');
+            const totalCached = (data.cache?.details?.tmdb || 0) + (data.cache?.details?.kkphim || 0);
+            
+            statsGrid.innerHTML = `
+                ${createStatCard('globe', 'Gateway', data.tmdb?.status === 'up' ? 'Online' : 'Error', data.tmdb?.status)}
+                ${createStatCard('zap', 'Ping', data.tmdb?.latency || '0ms', 'up')}
+                ${createStatCard('database', 'Cache', totalCached + ' Items', 'up')}
+                ${createStatCard('clock', 'Uptime', '99.99%', 'up')}
+            `;
+
+            // Render Services
+            const servicesGrid = document.getElementById('services-grid');
+            servicesGrid.innerHTML = Object.entries(data).filter(([key]) => key !== 'requests').map(([key, item]) => `
+                <div class="glass p-6 rounded-[2rem] border border-white/5 flex flex-col items-center text-center gap-4 hover:bg-white/[0.05] transition-all group">
+                    <div class="w-16 h-16 rounded-2xl flex items-center justify-center border shadow-lg transition-transform duration-500 group-hover:scale-110 ${item.status === 'up' ? 'bg-green-500/10 border-green-500/20 text-green-500' : 'bg-red-500/10 border-red-500/20 text-red-500'}">
+                        <i data-lucide="${item.status === 'up' ? 'check-circle' : 'alert-circle'}" class="w-8 h-8"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <h4 class="text-sm font-black uppercase tracking-tight">${item.name}</h4>
+                        <div class="flex items-center justify-center gap-2">
+                             <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase ${item.status === 'up' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}">${item.status}</span>
+                             <span class="text-[10px] font-black tabular-nums ${item.code === 200 ? 'text-blue-400' : 'text-yellow-500'}">${item.code || '--'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Render Logs
+            const logsBody = document.getElementById('logs-body');
+            logsBody.innerHTML = (data.requests || []).slice().reverse().map(req => `
+                <tr class="hover:bg-white/[0.02] transition-all">
+                    <td class="px-10 py-5 text-sm font-bold tabular-nums text-gray-500">${req.timestamp}</td>
+                    <td class="px-10 py-5">
+                        <span class="px-2 py-1 rounded-lg bg-blue-600/10 text-blue-500 text-[10px] font-black uppercase tracking-widest border border-blue-500/20">${req.method}</span>
+                    </td>
+                    <td class="px-10 py-5 text-sm font-black tracking-tight">${req.path}</td>
+                    <td class="px-10 py-5">
+                        <span class="font-black tabular-nums ${req.status < 400 ? 'text-green-500' : 'text-red-500'}">${req.status}</span>
+                    </td>
+                    <td class="px-10 py-5 text-sm font-bold tabular-nums text-gray-500">${req.duration}</td>
+                </tr>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        function createStatCard(icon, label, value, status) {
+            return `
+                <div class="glass p-8 rounded-[2rem] border border-white/5">
+                    <div class="flex items-center gap-4 mb-4 opacity-50">
+                        <i data-lucide="${icon}" class="w-4 h-4 text-blue-400"></i>
+                        <span class="text-[10px] font-black uppercase tracking-widest">${label}</span>
+                    </div>
+                    <span class="text-3xl font-black uppercase italic tracking-tighter font-outfit ${status === 'down' ? 'text-red-500' : 'text-white'}">${value}</span>
+                </div>
+            `;
+        }
+
+        function refresh() {
+            fetchHealth();
+        }
+
+        refresh();
+        setInterval(refresh, 10000);
+    </script>
+</body>
+</html>

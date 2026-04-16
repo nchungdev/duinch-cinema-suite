@@ -33,6 +33,7 @@ export const DiscoveryPipeline = ({ slug, title }: DiscoveryPipelineProps) => {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
     const runDiscovery = async () => {
       // PRO MAX: Visualizing the tactical sync process
       updateStep('tmdb', 'active');
@@ -51,15 +52,16 @@ export const DiscoveryPipeline = ({ slug, title }: DiscoveryPipelineProps) => {
       setTimeout(async () => {
         updateStep('fshare', 'active');
         try {
-          // No trailing slash for clean REST communication
           const res = await api.get<{ fshare: MediaLink[], success: boolean }>(
-            `/lookup/fshare-discovery/${slug}?title=${encodeURIComponent(title)}`
+            `/lookup/fshare-discovery/${slug}?title=${encodeURIComponent(title)}`,
+            { signal: controller.signal }
           );
           if (res.data.success) {
             setLinksFound(res.data.fshare.length);
             setFshareLinks(res.data.fshare);
           }
-        } catch (err) {
+        } catch (err: any) {
+          if (err.name === 'CanceledError' || err.name === 'AbortError') return;
           console.error(err);
         } finally {
           updateStep('fshare', 'done');
@@ -70,6 +72,8 @@ export const DiscoveryPipeline = ({ slug, title }: DiscoveryPipelineProps) => {
     setSteps(INITIAL_STEPS);
     setLinksFound(0);
     runDiscovery();
+
+    return () => controller.abort();
   }, [slug, title]);
 
   return (

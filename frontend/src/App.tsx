@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { api } from './api/config';
 import { DiscoveryGrid } from './components/DiscoveryGrid';
 import { MovieDetail } from './components/MovieDetail';
-import { Search, Play, Settings, Bell, User, Clapperboard, Monitor, Film, Compass, Tv } from 'lucide-react';
+import { Search, Play, Settings, Bell, User, Clapperboard, Monitor as MonitorIcon, Film, Compass, Tv } from 'lucide-react';
 
 const CATEGORIES = [
   { id: 'new', label: 'Recommended', icon: <Compass className="w-4 h-4" /> },
   { id: 'phim-le', label: 'Movies', icon: <Film className="w-4 h-4" /> },
   { id: 'phim-bo', label: 'Series', icon: <Tv className="w-4 h-4" /> },
-  { id: 'hoat-hinh', label: 'Animation', icon: <Monitor className="w-4 h-4" /> },
+  { id: 'hoat-hinh', label: 'Animation', icon: <MonitorIcon className="w-4 h-4" /> },
   { id: 'phim-chieu-rap', label: 'Theatre', icon: <Clapperboard className="w-4 h-4" /> },
 ];
 
@@ -68,9 +68,6 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
-  const returnToDiscovery = () => {
-    window.history.back();
-  };
 
   const navToDiscoveryClear = (newCat?: string) => {
     if (view === 'detail') window.history.pushState({ view: 'discovery' }, '');
@@ -78,7 +75,10 @@ function App() {
     setSlug(null);
     setSearchResults(null);
     setSearchQuery('');
-    if (newCat) setCategory(newCat);
+    if (newCat) {
+      setCategory(newCat);
+      setView('discovery');
+    }
   };
 
   return (
@@ -212,7 +212,7 @@ function App() {
             )}
           </div>
         ) : (
-          slug && <MovieDetail slug={slug} onBack={returnToDiscovery} />
+          slug && <MovieDetail slug={slug} onBack={navToDiscoveryClear} />
         )}
       </main>
 

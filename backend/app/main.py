@@ -5,8 +5,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from app.api.endpoints import search, media, recommended, downloader, proxy, metadata
+from app.api.endpoints import search, media, recommended, downloader, proxy, metadata, monitor
 from app.services import cache_manager
+from collections import deque
+import time
+
+# Global storage for recent requests
+recent_requests = deque(maxlen=20)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,6 +28,23 @@ app = FastAPI(
     redirect_slashes=False
 )
 
+@app.middleware("http")
+async def log_requests(request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    
+    # Don't log internal monitor/health pings to keep clean
+    if "/api/monitor/health" not in request.url.path:
+        recent_requests.append({
+            "path": request.url.path,
+            "method": request.method,
+            "status": response.status_code,
+            "duration": f"{int(duration * 1000)}ms",
+            "timestamp": time.strftime("%H:%M:%S")
+        })
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,6 +59,7 @@ app.include_router(metadata.router, prefix="/api/metadata", tags=["Metadata"])
 app.include_router(recommended.router, prefix="/api", tags=["Recommended"])
 app.include_router(downloader.router, prefix="/api/downloader", tags=["Downloader"])
 app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])
+app.include_router(monitor.router, prefix="/api/monitor", tags=["Monitor"])
 
 if __name__ == "__main__":
     import uvicorn

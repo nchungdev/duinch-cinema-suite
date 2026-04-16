@@ -137,3 +137,31 @@ async def tmdb_similar(request: Request, media_type: str, tmdb_id: int, page: in
         "error_code": 0,
         "error_msg": ""
     }
+@router.get("/lookup/fshare-discovery/{slug}")
+async def fshare_discovery(request: Request, slug: str, title: str = Query(...)):
+    """Deep lookup for FShare links by title/slug."""
+    from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
+    from app.services.scrapers.google_search_lookup import lookup_google_fshare
+    from app.services.scrapers.hdvietnam_lookup import lookup_hdvietnam
+    import asyncio
+    
+    search_query = f"{title} fshare"
+    try:
+        tasks = [lookup_thuviencine(search_query), lookup_google_fshare(search_query), lookup_hdvietnam(search_query)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        links = []
+        for res in results:
+            if isinstance(res, list):
+                links.extend(res)
+        
+        return {
+            "fshare": links,
+            "success": True
+        }
+    except Exception as e:
+        return {
+            "fshare": [],
+            "success": False,
+            "error": str(e)
+        }
