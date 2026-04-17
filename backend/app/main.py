@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from app.api.endpoints import search, media, recommended, downloader, proxy, metadata, monitor, detail, user
+from app.api.endpoints import search, media, recommended, downloader, proxy, metadata, monitor, detail, user, stream
 from collections import deque
 import time
 
@@ -60,6 +60,7 @@ app.include_router(downloader.router, prefix="/api/downloader", tags=["Downloade
 app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])
 app.include_router(monitor.router, prefix="/api/monitor", tags=["Monitor"])
 app.include_router(user.router, prefix="/api/user", tags=["User"])
+app.include_router(stream.router, prefix="/api/stream", tags=["Streaming"])
 
 if __name__ == "__main__":
     import uvicorn

@@ -41,7 +41,33 @@ interface Props {
   onBack: () => void;
 }
 
-export function MovieDetail({ slug, mediaType, category, initialSeason, initialEpisode, onBack }: Props) {
+function MarqueeText({ text, className }: { text: string, className?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [shouldAnimate, setShouldAnimate] = useState(false);
+
+  useEffect(() => {
+    if (containerRef.current && textRef.current) {
+      setShouldAnimate(textRef.current.offsetWidth > containerRef.current.offsetWidth);
+    }
+  }, [text]);
+
+  return (
+    <div ref={containerRef} className={`overflow-hidden whitespace-nowrap relative ${className}`}>
+      <span 
+        ref={textRef} 
+        className={`inline-block ${shouldAnimate ? 'animate-marquee' : ''}`}
+        style={shouldAnimate ? { animationDuration: `${Math.max(5, text.length * 0.2)}s` } : {}}
+      >
+        {text}
+      </span>
+      {shouldAnimate && <span className="inline-block pl-8 opacity-0">{text}</span>}
+    </div>
+  );
+}
+
+export function MovieDetail({ slug, mediaType, category, initialSeason, initialEpisode, onBack }: MovieDetailProps) {
+
   const [data, setData] = useState<DetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
@@ -55,6 +81,52 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [streamableSources, setStreamableSources] = useState<Record<string, any[]>>({});
   const [activeSrcId, setActiveSrcId] = useState<string>('');
   const [userSettings, setUserSettings] = useState<any>(null);
+  const [isTorrentStreaming, setIsTorrentStreaming] = useState(false);
+  const [isFshareResolving, setIsFshareResolving] = useState(false);
+  const [showFshareLogin, setShowFshareLogin] = useState(false);
+  const [fshareEmail, setFshareEmail] = useState('');
+  const [fsharePassword, setFsharePassword] = useState('');
+
+  const handleTorrentStream = async (magnet: string, serverName: string, epIdx: number, srvIdx: number) => {
+...
+  };
+
+  const handleFshareStream = async (url: string, serverName: string, epIdx: number, srvIdx: number) => {
+    setIsFshareResolving(true);
+    try {
+        const res = await api.get<{ data: { stream_url: string } }>(`/stream/fshare/resolve?url=${encodeURIComponent(url)}`);
+        const { stream_url } = res.data.data;
+        
+        setActiveServerIdx(srvIdx);
+        setActiveEpisodeIdx(epIdx);
+        setActiveEmbed(stream_url); 
+        localStorage.setItem('omv_active_server_name', serverName);
+    } catch (err: any) {
+        console.error('Fshare resolve failed:', err);
+        if (err.response?.status === 403) {
+            setShowFshareLogin(true);
+            alert('Fshare login required for direct streaming.');
+        } else {
+            alert('Failed to resolve Fshare link. Link might be expired or account restricted.');
+        }
+    } finally {
+        setIsFshareResolving(false);
+    }
+  };
+
+  const handleFshareLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+        await api.post('/stream/fshare/login', { email: fshareEmail, password: fsharePassword });
+        const res = await api.get<{ data: any }>('/user/settings');
+        setUserSettings(res.data);
+        setShowFshareLogin(false);
+        setFsharePassword('');
+        alert('Fshare logged in successfully!');
+    } catch (err) {
+        alert('Fshare login failed. Please check your credentials.');
+    }
+  };
 
   // Load settings on mount
   useEffect(() => {
@@ -469,7 +541,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                ))}
                              </div>
                            </div>
-                           <span className="text-[12px] font-black text-white truncate block leading-tight">{metadata.title}</span>
+                           <MarqueeText 
+                                text={metadata.title} 
+                                className="text-[12px] font-black text-white block leading-tight" 
+                           />
                            {playingServer && (
                              <span className="text-[9px] text-gray-500 truncate flex items-center gap-1 mt-0.5">
                                <Globe className="w-2.5 h-2.5 shrink-0" />{playingServer}
@@ -505,6 +580,64 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                <div 
                  className="w-full xl:w-[400px] h-full flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10"
                >
+                
+                {/* Fshare Login Overlay */}
+                {showFshareLogin && (
+                    <div className="absolute inset-0 z-[100] bg-black/80 backdrop-blur-xl animate-in fade-in duration-300 flex items-center justify-center p-8">
+                        <div className="w-full space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+                            <div className="text-center space-y-2">
+                                <div className="w-12 h-12 rounded-2xl bg-red-600/20 border border-red-500/40 flex items-center justify-center mx-auto mb-4">
+                                    <Cloud className="w-6 h-6 text-red-500" />
+                                </div>
+                                <h3 className="text-lg font-black uppercase italic tracking-tighter text-white font-outfit">Fshare Authentication</h3>
+                                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest leading-relaxed">
+                                    Login required for direct high-speed <br/> cloud streaming transmissions.
+                                </p>
+                            </div>
+
+                            <form onSubmit={handleFshareLogin} className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 ml-1">Access Email</label>
+                                    <input 
+                                        type="email" 
+                                        required
+                                        value={fshareEmail}
+                                        onChange={e => setFshareEmail(e.target.value)}
+                                        placeholder="commander@fshare.vn"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-500/40 transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 ml-1">Authorization Key</label>
+                                    <input 
+                                        type="password" 
+                                        required
+                                        value={fsharePassword}
+                                        onChange={e => setFsharePassword(e.target.value)}
+                                        placeholder="••••••••••••"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-500/40 transition-all"
+                                    />
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowFshareLogin(false)}
+                                        className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-all"
+                                    >
+                                        Abort
+                                    </button>
+                                    <button 
+                                        type="submit"
+                                        className="flex-[2] px-4 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-[9px] font-black uppercase tracking-widest text-white shadow-lg shadow-red-600/20 transition-all active:scale-95"
+                                    >
+                                        Initialize Link
+                                    </button>
+                                </div>
+                            </form>
+                            <p className="text-[7px] text-center text-gray-700 uppercase font-bold tracking-widest">Credentials are stored locally in your encrypted SQLite vault.</p>
+                        </div>
+                    </div>
+                )}
                 
                 {mediaType === 'tv' && seasonBoundaries.length > 0 && (
                   <div className="shrink-0 bg-white/[0.01] border-b border-white/10 flex items-center h-11 relative group/ribbon">
@@ -570,14 +703,29 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
                                                 return (
                                                     <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
-                                                        <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
-                                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
-                                                            <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
+                                                        <button 
+                                                            disabled={!hasLink || isLoading} 
+                                                            onClick={() => { 
+                                                                if (!hasLink) return; 
+                                                                if (ep.isTorrent) {
+                                                                    handleTorrentStream(ep.magnet, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
+                                                                } else if (isFshare) {
+                                                                    handleFshareStream(ep.url, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
+                                                                } else {
+                                                                    setActiveEpisodeIdx(globalIdx); 
+                                                                    if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); 
+                                                                }
+                                                            }} 
+                                                            className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed"
+                                                        >
+                                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
+                                                            {isLoading ? <Loader2 className="w-2 h-2 animate-spin" /> : <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />}
                                                         </div>
                                                         <div className="flex flex-col min-w-0 items-start">
-                                                            <span className={`text-[11px] font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}>
-                                                                {epLabel}
-                                                            </span>
+                                                            <MarqueeText 
+                                                                text={epLabel}
+                                                                className={`w-full text-[11px] font-black transition-colors ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}
+                                                            />
                                                             {isLastWatched && !isPlaying && (
                                                                 <span className="text-[7px] font-black uppercase tracking-wider text-blue-500/60 leading-none">Last Watched</span>
                                                             )}
@@ -603,33 +751,46 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                 {streamingLinks.map((server: any, srvIdx: number) => (
                                     <div key={srvIdx} className="flex flex-col border-b last:border-b-0 border-white/5">
                                         {server.server_data.map((ep: any, epIdx: number) => {
-                                            const hasLink = !!(ep.m3u8 || ep.link_m3u8);
                                             const isPlaying = activeServerIdx === srvIdx && activeEpisodeIdx === epIdx;
+                                            const isFshare = ep.source_type === 'fshare' || ep.url?.includes('fshare.vn');
+                                            const hasLink = ep.isTorrent || isFshare || !!(ep.m3u8 || ep.embed || ep.link_m3u8);
+                                            const isLoading = isPlaying && (isTorrentStreaming || isFshareResolving);
+                                            
                                             return (
                                                 <div key={epIdx} className={`flex items-stretch transition-all duration-300 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
                                                     <button 
-                                                        disabled={!hasLink} 
+                                                        disabled={!hasLink || isLoading} 
                                                         onClick={() => { 
-                                                            if (!hasLink) return;
-                                                            setActiveServerIdx(srvIdx);
-                                                            setActiveEpisodeIdx(epIdx);
-                                                            localStorage.setItem('omv_active_server_name', server.server_name);
+                                                            if (!hasLink) return; 
+                                                            if (ep.isTorrent) {
+                                                                handleTorrentStream(ep.magnet, server.server_name, epIdx, srvIdx);
+                                                            } else if (isFshare) {
+                                                                handleFshareStream(ep.url, server.server_name, epIdx, srvIdx);
+                                                            } else {
+                                                                setActiveServerIdx(srvIdx);
+                                                                setActiveEpisodeIdx(epIdx); 
+                                                                if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); 
+                                                                localStorage.setItem('omv_active_server_name', server.server_name);
+                                                            }
                                                         }} 
                                                         className="flex-1 min-w-0 flex items-center gap-4 px-5 py-4 disabled:cursor-not-allowed"
                                                     >
                                                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-500 ${isPlaying ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] scale-110' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10 group-hover/ep:scale-105'}`}>
-                                                            <Play className={`w-3 h-3 ${isPlaying ? 'fill-current' : ''}`} />
+                                                            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className={`w-3 h-3 ${isPlaying ? 'fill-current' : ''}`} />}
                                                         </div>
                                                         <div className="flex flex-col min-w-0 items-start">
-                                                            <span className={`text-[11px] font-black uppercase tracking-[0.15em] transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-300 group-hover/ep:text-white'}`}>
-                                                                {server.server_name}
-                                                            </span>
+                                                            <MarqueeText 
+                                                                text={ep.isTorrent || isFshare ? ep.name : server.server_name}
+                                                                className={`w-full text-[11px] font-black uppercase tracking-[0.15em] transition-colors ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-300 group-hover/ep:text-white'}`}
+                                                            />
                                                             <div className="flex items-center gap-2 mt-1">
                                                                 <span className="text-[8px] font-bold text-gray-600 uppercase tracking-widest leading-none">
-                                                                    {ep.name || 'Full Movie'}
+                                                                    {ep.isTorrent ? 'P2P Stream' : isFshare ? 'Cloud Stream' : (ep.name || 'Full Movie')}
                                                                 </span>
                                                                 <div className="w-1 h-1 rounded-full bg-white/10" />
-                                                                <span className="text-[8px] font-bold text-blue-500/40 uppercase tracking-widest leading-none">Primary Link</span>
+                                                                <span className={`text-[8px] font-bold uppercase tracking-widest leading-none ${ep.isTorrent ? 'text-green-500/60' : isFshare ? 'text-red-500/60' : 'text-blue-500/40'}`}>
+                                                                    {ep.isTorrent ? 'Sequential Loading' : isFshare ? 'Fshare Account' : 'Primary Link'}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     </button>
@@ -865,10 +1026,17 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
                   const key = item.server || item.server_name || source;
                   if (!grouped[key]) grouped[key] = { server_name: key, server_data: [] };
+                  
+                  // For torrents, the URL is the magnet. 
+                  // We'll tag it so the UI knows to call handleTorrentStream
+                  const isTorrent = item.source_type === 'torrent' || url.startsWith('magnet:');
+
                   grouped[key].server_data.push({
                     name:  item.name,
-                    m3u8:  item.m3u8 || item.url || '',
+                    m3u8:  isTorrent ? '' : (item.m3u8 || item.url || ''),
                     embed: item.embed || '',
+                    magnet: isTorrent ? url : '',
+                    isTorrent: isTorrent
                   });
                 }
                 const serverList = Object.values(grouped);

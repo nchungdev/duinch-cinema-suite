@@ -142,3 +142,21 @@ h1, h2, h3 {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  10% { transform: translateX(0); }
+  90% { transform: translateX(-100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 10s linear infinite alternate;
+}
+
+.marquee-container {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}

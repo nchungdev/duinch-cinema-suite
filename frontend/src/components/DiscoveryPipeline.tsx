@@ -155,6 +155,18 @@ export const DiscoveryPipeline = ({
             if (fresh.length === 0) return prev;
             return { ...prev, [source_type]: [...existing, ...fresh] };
           });
+
+          // Notify parent (sidebar) about torrent and fshare links so they appear as playable
+          if (items.length > 0 && (source_type === 'torrent' || source_type === 'fshare')) {
+             onStreamingReady?.(items.map((it: any) => ({ 
+                 ...it, 
+                 source_type, 
+                 source,
+                 // Ensure server name is present for grouping
+                 server: it.server || source 
+             })), source);
+          }
+
           if (!firstSettledTab) { firstSettledTab = source_type; setActiveTab(source_type); }
         }
 
@@ -313,14 +325,10 @@ export const DiscoveryPipeline = ({
           <div className="space-y-1">
             {downloadableByType[activeTab].map((l, i) => (
               <DeepRow key={i} link={l}
-                actionLabel={activeTab === 'torrent' ? 'Play' : activeTab === 'gdrive' ? 'Drive' : activeTab === 'dailymotion' ? 'Watch' : 'FShare'}
+                actionLabel={activeTab === 'torrent' ? 'Magnet' : activeTab === 'gdrive' ? 'Drive' : activeTab === 'dailymotion' ? 'Watch' : 'FShare'}
                 color={stMeta(activeTab).color}
-                onAction={(url, name) => {
-                  if (activeTab === 'torrent') {
-                    onStreamingReady?.([{ name, url, source_type: 'torrent', source: l.source }], l.source || 'torrent');
-                  } else {
-                    window.open(url, '_blank');
-                  }
+                onAction={(url) => {
+                  window.open(url, '_blank');
                 }}
               />
             ))}
