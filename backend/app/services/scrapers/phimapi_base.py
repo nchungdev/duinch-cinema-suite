@@ -5,6 +5,8 @@ import re
 import unicodedata
 import asyncio
 from typing import List, Dict, Optional, Any
+from app.core import config
+from app.services import cache_manager
 
 TMDB_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")
 
@@ -276,6 +278,13 @@ class PhimAPIBase:
         year: int = None,
     ) -> List[Dict[str, Any]]:
         
+        # 0. Check Cache
+        cache_dir = config.KKPHIM_CACHE if self.provider_name == "kkphim" else config.OPHIM_CACHE
+        cache_key = f"{tmdb_id or ''}|{title or ''}|{localize_title or ''}|{media_type}|{season or ''}|{episode or ''}|{year or ''}"
+        cached = cache_manager.get_from_cache(cache_dir, cache_key, config.DISCOVERY_CACHE_EXPIRE)
+        if cached is not None:
+            return cached
+
         async def _try_slug(slug: str):
             res = await self.get_formatted_details(client, slug)
             if not res or "error" in res or not res.get("title"):
@@ -357,4 +366,7 @@ class PhimAPIBase:
         if not details:
             return []
 
-        return self.extract_streaming_links(details, media_type, season, episode)
+        results = self.extract_streaming_links(details, media_type, season, episode)
+        if results:
+            cache_manager.set_to_cache(cache_dir, cache_key, results)
+        return results

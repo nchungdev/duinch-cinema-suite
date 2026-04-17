@@ -4,9 +4,16 @@ import httpx
 from typing import List, Dict, Any
 import urllib.parse
 from bs4 import BeautifulSoup
+from app.core import config
+from app.services import cache_manager
 
 async def lookup_gdrive(title_query: str) -> List[Dict[str, Any]]:
     """Search for Google Drive links using specialized search queries."""
+    cache_key = title_query.strip().lower()
+    cached = cache_manager.get_from_cache(config.OTHERS_CACHE, cache_key, config.DISCOVERY_CACHE_EXPIRE)
+    if cached is not None:
+        return cached
+
     results = []
     
     # 1. Bóc tách title
@@ -53,4 +60,6 @@ async def lookup_gdrive(title_query: str) -> List[Dict[str, Any]]:
             final.append(r)
             seen.add(r["url"])
             
+    if final:
+        cache_manager.set_to_cache(config.OTHERS_CACHE, cache_key, final)
     return final

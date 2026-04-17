@@ -4,6 +4,7 @@ import httpx
 from typing import List, Dict, Any, Optional
 import urllib.parse
 from app.core import config
+from app.services import cache_manager
 
 def is_english_like(text: str) -> bool:
     """Check if the text consists mostly of ASCII characters (no accents)."""
@@ -40,6 +41,11 @@ async def lookup_torrent(
     """Search for Torrent links using multiple reliable Search APIs.
     Ensures that for torrents, we search using an English-friendly query.
     """
+    cache_key = f"{title.strip().lower()}|{tmdb_id or ''}|{media_type}|{season or ''}|{episode or ''}|{year or ''}"
+    cached = cache_manager.get_from_cache(config.TORRENT_CACHE, cache_key, config.DISCOVERY_CACHE_EXPIRE)
+    if cached is not None:
+        return cached
+
     results = []
     
     # 1. Decide which title to use
@@ -97,6 +103,8 @@ async def lookup_torrent(
             final.append(r)
             seen.add(r["url"])
             
+    if final:
+        cache_manager.set_to_cache(config.TORRENT_CACHE, cache_key, final)
     return final
 
 async def lookup_solidtorrents_api(q: str) -> List[Dict[str, Any]]:
