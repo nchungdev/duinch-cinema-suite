@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
+import Hls from 'hls.js';
 import { api, getProxiedImageUrl } from '../api/config';
 import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
@@ -112,6 +113,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const seasonRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const episodeRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const miniPlayerSentinelRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   const totalEpisodes = streamingLinks?.[0]?.server_data?.length ?? 0;
 
@@ -322,21 +325,46 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
         if (!ep) ep = server.server_data[activeEpisodeIdx];
     }
 
-    if (ep?.embed) {
-      let url = ep.embed;
-      if (userSettings?.auto_play !== false) {
-        if (!url.includes('autoplay=')) {
-          url += (url.includes('?') ? '&' : '?') + 'autoplay=1';
-        }
-      }
-      // If the URL is different, update it. 
-      // We set to null first for 10ms to trigger a "reset" state for immediate feedback
-      if (activeEmbed !== url) {
-          setActiveEmbed(null);
-          setTimeout(() => setActiveEmbed(url), 10);
-      }
+    // embed takes priority for player (provider's own player, better quality/subtitles)
+    // m3u8 is fallback (HLS.js native player)
+    const embedUrl = ep?.embed || null;
+    const m3u8Url  = ep?.m3u8 || ep?.url || null;
+    const url = embedUrl || m3u8Url;
+
+    if (url && url !== activeEmbed) {
+      setActiveEmbed(null);
+      setTimeout(() => setActiveEmbed(url), 10);
     }
   }, [streamableSources, activeSrcId, activeServerIdx, activeEpisodeIdx, userSettings, mediaType]);
+
+  // HLS.js — only activate when activeEmbed is an m3u8 URL (no embed available)
+  const isM3u8 = !!activeEmbed && !activeEmbed.includes('embed') && (
+    activeEmbed.includes('.m3u8') || activeEmbed.includes('/m3u8')
+  );
+
+  useEffect(() => {
+    if (!isM3u8) return;                  // iframe mode — HLS.js not needed
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    if (!activeEmbed) return;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true });
+      hlsRef.current = hls;
+      hls.loadSource(activeEmbed);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (userSettings?.auto_play !== false) video.play().catch(() => {});
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = activeEmbed;
+      if (userSettings?.auto_play !== false) video.play().catch(() => {});
+    }
+
+    return () => { hlsRef.current?.destroy(); hlsRef.current = null; };
+  }, [activeEmbed, isM3u8, userSettings?.auto_play]);
 
   useEffect(() => {
     if (activeSrcId && streamableSources[activeSrcId]) {
@@ -394,15 +422,24 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
       <div className="flex flex-col xl:flex-row gap-8 w-full max-w-screen-2xl mx-auto px-4 md:px-10">
          <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative flex items-center justify-center group"
               style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}>
-            {activeEmbed ? (
-               <iframe 
-                  key={activeEmbed}
-                  src={activeEmbed} 
-                  allowFullScreen 
-                  allow="autoplay; fullscreen"
-                  className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" 
-               />
-            ) : (
+            {activeEmbed && !isM3u8 && (
+              <iframe
+                key={activeEmbed}
+                src={userSettings?.auto_play !== false && !activeEmbed.includes('autoplay')
+                  ? activeEmbed + (activeEmbed.includes('?') ? '&' : '?') + 'autoplay=1'
+                  : activeEmbed}
+                allowFullScreen
+                allow="autoplay; fullscreen"
+                className="w-full h-full border-0 absolute inset-0 animate-cinema-fade"
+              />
+            )}
+            <video
+              ref={videoRef}
+              controls
+              playsInline
+              className={`w-full h-full absolute inset-0 bg-black ${activeEmbed && isM3u8 ? 'animate-cinema-fade' : 'hidden'}`}
+            />
+            {!activeEmbed && (
                <div className="flex flex-col items-center gap-4 text-gray-500">
                   <Play className="w-16 h-16 opacity-30" />
                   <span className="text-[10px] uppercase tracking-[0.2em] font-black">Standing By</span>
@@ -536,7 +573,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                 const epNum = localIdx + 1;
                                                 const globalIdx = offsetStart + localIdx;
                                                 const ep = findEp(epNum);
-                                                const hasLink = !!(ep?.m3u8 || ep?.embed || ep?.link_m3u8);
+                                                const hasLink = !!(ep?.m3u8 || ep?.url || ep?.link_m3u8);
                                                 const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
                                                 const isPlaying = activeEpisodeIdx === globalIdx;
                                                 const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
@@ -544,7 +581,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
                                                 return (
                                                     <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
-                                                        <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
+                                                        <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
                                                         <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
                                                             <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
                                                         </div>
@@ -577,17 +614,16 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                 {streamingLinks.map((server: any, srvIdx: number) => (
                                     <div key={srvIdx} className="flex flex-col border-b last:border-b-0 border-white/5">
                                         {server.server_data.map((ep: any, epIdx: number) => {
-                                            const hasLink = !!(ep.m3u8 || ep.embed || ep.link_m3u8);
+                                            const hasLink = !!(ep.m3u8 || ep.link_m3u8);
                                             const isPlaying = activeServerIdx === srvIdx && activeEpisodeIdx === epIdx;
                                             return (
                                                 <div key={epIdx} className={`flex items-stretch transition-all duration-300 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
                                                     <button 
                                                         disabled={!hasLink} 
                                                         onClick={() => { 
-                                                            if (!hasLink) return; 
+                                                            if (!hasLink) return;
                                                             setActiveServerIdx(srvIdx);
-                                                            setActiveEpisodeIdx(epIdx); 
-                                                            if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); 
+                                                            setActiveEpisodeIdx(epIdx);
                                                             localStorage.setItem('omv_active_server_name', server.server_name);
                                                         }} 
                                                         className="flex-1 min-w-0 flex items-center gap-4 px-5 py-4 disabled:cursor-not-allowed"

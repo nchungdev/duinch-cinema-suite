@@ -260,15 +260,18 @@ class PhimAPIBase:
                 if is_match and m3u8:   # embed-only entries are not useful for download
                     nums = re.findall(r'\d+', ep_name or "")
                     parsed_ep = int(nums[0]) if nums else None
-                    results.append({
+                    entry: dict = {
                         "type": "streamable",
                         "provider": self.provider_name,
                         "season": season or details.get("season", 1),
                         "episode": parsed_ep,
                         "name": ep_name,
                         "m3u8": m3u8,
-                        "server": server_name
-                    })
+                        "server": server_name,
+                    }
+                    if embed:
+                        entry["embed"] = embed   # player can use iframe when available
+                    results.append(entry)
         return results
 
     def _should_skip_item(self, item: Dict, clean_query: str) -> bool:
