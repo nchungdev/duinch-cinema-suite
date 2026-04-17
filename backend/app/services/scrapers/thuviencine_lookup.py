@@ -35,7 +35,15 @@ def _keywords(text: str) -> set:
     return {w for w in words if len(w) >= 3 and w not in _STOP_WORDS}
 
 
+_VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.ts', '.m4v'}
+
 def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
+    name_lower = name.lower()
+    
+    # 0. Video-only filter
+    if any(name_lower.endswith(ext) for ext in {'.rar', '.zip', '.7z', '.iso'}):
+        return False
+
     title_kw = _keywords(title)
     if not title_kw:
         return True

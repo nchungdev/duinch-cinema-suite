@@ -329,12 +329,19 @@ _STOP_WORDS = {
     'minh','lồng','tiếng','việt','nam','season','series','collection',
 }
 
+_VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.ts', '.m4v'}
+
 def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     """
     Check if the FShare file/folder name is relevant to the search title.
     Uses keyword overlap: at least 70% of significant title words must appear in the name.
     Also ensures year consistency if provided.
     """
+    name_lower = name.lower()
+    # 0. Video-only filter (for files, ignore for folders which usually don't have extension in 4 chars)
+    if any(name_lower.endswith(ext) for ext in {'.rar', '.zip', '.7z', '.iso', '.txt'}):
+        return False
+
     def keywords(text: str):
         words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
         return {w for w in words if len(w) >= 3 and w not in _STOP_WORDS}

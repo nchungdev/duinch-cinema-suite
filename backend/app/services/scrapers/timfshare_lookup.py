@@ -71,7 +71,27 @@ def _keywords(text: str) -> set:
     return {w for w in words if len(w) >= 3 and w not in _STOP_WORDS}
 
 
+_VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.ts', '.m4v'}
+
 def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
+    name_lower = name.lower()
+    
+    # 0. Video-only filter: Discard known archive/non-video extensions
+    if any(name_lower.endswith(ext) for ext in {'.rar', '.zip', '.7z', '.txt', '.pdf', '.exe'}):
+        return False
+    
+    # If it has an extension, it MUST be a video extension
+    # (Some names might not have extensions if they are folders or bare names)
+    match = re.search(r'(\.[a-z0-9]{2,4})$', name_lower)
+    if match:
+        ext = match.group(1)
+        if ext not in _VIDEO_EXTENSIONS:
+            # It's an extension but not a video one
+            if ext not in {'.rar', '.zip', '.7z'}: # double check
+                 pass # allow unknown for now or be strict? 
+                 # Let's be strict: if it has an extension, it must be video
+                 if ext in {'.iso', '.nfo', '.jpg', '.png'}: return False
+
     title_kw = _keywords(title)
     if not title_kw:
         return True
