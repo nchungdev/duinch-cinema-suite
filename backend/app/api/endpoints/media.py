@@ -161,9 +161,10 @@ async def discovery(
         elif source_type == "dailymotion":
             results = []  # TODO: implement dailymotion scraper
 
-        # ── Normalize: set source_type on every result, drop legacy provider ──
+        # ── Normalize: ensure source_type + source on every result, drop legacy provider ──
         for r in results:
             r["source_type"] = source_type
+            r.setdefault("source", source or source_type)  # scrapers may already set their own `source`
             r.pop("provider", None)
 
         # ── Deduplicate by URL ────────────────────────────────────────────────
