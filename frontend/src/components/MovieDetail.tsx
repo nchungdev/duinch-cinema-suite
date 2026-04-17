@@ -824,9 +824,15 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
               mediaType={mediaType}
               season={metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number}
               onStreamingReady={(links, source) => {
-                // Group flat items by server name
+                // Group flat items by server name and deduplicate by URL
                 const grouped: Record<string, any> = {};
+                const seenUrls = new Set<string>();
+
                 for (const item of links) {
+                  const url = item.m3u8 || item.url || item.embed;
+                  if (!url || seenUrls.has(url)) continue;
+                  seenUrls.add(url);
+
                   const key = item.server || item.server_name || source;
                   if (!grouped[key]) grouped[key] = { server_name: key, server_data: [] };
                   grouped[key].server_data.push({
