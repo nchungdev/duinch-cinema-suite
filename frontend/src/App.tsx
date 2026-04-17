@@ -45,12 +45,12 @@ function App() {
       const progress = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
       const history  = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
       
-      const res = await api.post<{ data: any }>('/user/sync', { progress, history });
-      const { data } = res.data;
-      
+      const res = await api.post<any>('/user/sync', { progress, history });
+      const data = res.data;
+
       // Update local with merged data from server
-      if (data.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(data.progress));
-      if (data.history)  localStorage.setItem('omv_watch_history', JSON.stringify(data.history));
+      if (data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(data.progress));
+      if (data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(data.history));
       
       console.log('[Sync] Background synchronization complete');
     } catch (err) {

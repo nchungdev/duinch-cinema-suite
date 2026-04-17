@@ -93,17 +93,37 @@ async def discovery(
         elif source_type == "dailymotion":
             results = []  # TODO: implement dailymotion scraper
 
-        # ── Normalize: ensure source_type + source on every result ─────────────
+        # ── Normalize: ensure standardized fields on every result ─────────────
         for r in results:
+            url = r.get("url") or r.get("m3u8") or r.get("embed") or r.get("magnet")
+            
+            # 1. Determine Stream Type
+            s_type = "HLS"
+            if r.get("embed") or "embed" in str(url).lower():
+                s_type = "EMBED"
+            elif source_type == "torrent" or (url and str(url).startswith("magnet:")):
+                s_type = "P2P"
+            elif source_type in ["fshare", "gdrive"]:
+                s_type = "DIRECT"
+            
+            r["stream_type"] = s_type
+
+            # 2. Standardize Provider (Uppercase)
+            prov = str(r.get("source") or source or "UNKNOWN").upper()
+            if prov in ["TIMFSHAREAPI", "TIMFSHAREHTML"]: prov = "TIMFSHARE"
+            if prov in ["DUCKDUCKGO", "BRAVESEARCH"]: prov = "WEB"
+            r["provider"] = prov
+            
+            # Legacy fields for safety
             r["source_type"] = source_type
             r.setdefault("source", source or source_type)
-            r.pop("provider", None)
+            r.pop("provider_name", None)
 
         # ── Deduplicate by URL ────────────────────────────────────────────────
         seen_urls: set = set()
         deduped = []
         for r in results:
-            url = r.get("url") or r.get("m3u8")
+            url = r.get("url") or r.get("m3u8") or r.get("embed") or r.get("magnet")
             if url and url not in seen_urls:
                 deduped.append(r)
                 seen_urls.add(url)
@@ -112,7 +132,7 @@ async def discovery(
         if source_type == "m3u8":
             server_map: dict = {}
             for r in deduped:
-                srv = r.get("server") or source or "Server"
+                srv = r.get("server") or r.get("provider") or "Server"
                 if srv not in server_map:
                     server_map[srv] = []
                 ep = {k: v for k, v in r.items()

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Hls from 'hls.js';
 import { api, getProxiedImageUrl } from '../api/config';
-import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings, Loader2, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings, Loader2, Zap, Activity } from 'lucide-react';
+
 import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 interface MetaData {
@@ -79,8 +80,12 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [isInternalScrolling, setIsInternalScrolling] = useState(false);
   const isInternalScrollingRef = useRef(false);
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
-  const [streamableSources, setStreamableSources] = useState<Record<string, any[]>>({});
-  const [activeSrcId, setActiveSrcId] = useState<string>('');
+  // Hierarchical Structure: { [Type]: { [Provider]: Server[] } }
+  const [streamableSources, setStreamableSources] = useState<Record<string, Record<string, any[]>>>({});
+  
+  const [activeType, setActiveType] = useState<string>('');
+  const [activeProvider, setActiveProvider] = useState<string>('');
+  
   const [userSettings, setUserSettings] = useState<any>(null);
   const [isTorrentStreaming, setIsTorrentStreaming] = useState(false);
   const [isFshareResolving, setIsFshareResolving] = useState(false);
@@ -143,6 +148,45 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     }
   };
 
+  const handleStreamingReady = useCallback((links: any[], sourceId: string) => {
+    setStreamableSources(prev => {
+        const next = { ...prev };
+        for (const item of links) {
+            const type = item.stream_type || 'HLS';
+            const provider = (item.provider || sourceId).toUpperCase();
+            const url = item.m3u8 || item.url || item.embed || item.magnet;
+            if (!url) continue;
+
+            if (!next[type]) next[type] = {};
+            if (!next[type][provider]) next[type][provider] = [];
+            
+            const serverKey = item.server || provider;
+            let targetServer = next[type][provider].find(s => s.server_name === serverKey);
+            
+            if (!targetServer) {
+                targetServer = { server_name: serverKey, server_data: [] };
+                next[type][provider].push(targetServer);
+            }
+
+            // Deduplicate URLs
+            if (!targetServer.server_data.some((ep: any) => (ep.m3u8 || ep.url || ep.embed || ep.magnet) === url)) {
+                const isP2P = type === 'P2P' || (url && url.startsWith('magnet:'));
+                targetServer.server_data.push({
+                    name: item.name,
+                    m3u8: isP2P ? '' : (item.m3u8 || item.url || ''),
+                    embed: item.embed || '',
+                    magnet: isP2P ? url : '',
+                    isTorrent: isP2P,
+                    stream_type: type,
+                    provider: provider,
+                    url: url
+                });
+            }
+        }
+        return next;
+    });
+  }, []);
+
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
@@ -157,35 +201,59 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     loadSettings();
   }, []);
 
-  // Smart Source Selection — chỉ chạy khi chưa có source nào được chọn.
-  // Không có activeSrcId trong deps để tránh re-run khi source switch → player khựng.
+  // Smart Source Selection Logic — navigates the hierarchical Type > Provider structure.
   useEffect(() => {
-    const sources = Object.keys(streamableSources);
-    if (sources.length === 0 || !userSettings || activeSrcId) return; // đã chọn rồi → không đổi
+    const types = Object.keys(streamableSources);
+    if (types.length === 0 || !userSettings || (activeType && activeProvider)) return;
 
     const preferred = userSettings.preferred_source || 'auto';
-    if (preferred !== 'auto' && streamableSources[preferred]) {
-      setActiveSrcId(preferred);
-      return;
+
+    // 1. User has a specific provider preference
+    if (preferred !== 'auto') {
+      for (const type of types) {
+        if (streamableSources[type][preferred]) {
+          setActiveType(type);
+          setActiveProvider(preferred);
+          return;
+        }
+      }
     }
 
-    const providerWeights: Record<string, number> = { kkphim: 10, ophim: 5 };
-    const bestSource = sources.reduce((best, current) => {
-      const bestEpCount = streamableSources[best]?.[0]?.server_data?.length || 0;
-      const currEpCount = streamableSources[current]?.[0]?.server_data?.length || 0;
-      if (currEpCount > bestEpCount) return current;
-      if (currEpCount === bestEpCount)
-        return (providerWeights[current] || 0) > (providerWeights[best] || 0) ? current : best;
+    // 2. Auto Selection: Priority EMBED -> HLS -> P2P -> DIRECT
+    const typePriority = ['EMBED', 'HLS', 'P2P', 'DIRECT'];
+    const providerWeights: Record<string, number> = { KKPHIM: 10, OPHIM: 5, TORRENT: 8, TIMFSHARE: 7 };
+    
+    const bestType = typePriority.find(t => streamableSources[t] && Object.keys(streamableSources[t]).length > 0);
+    if (!bestType) return;
+
+    const providers = Object.keys(streamableSources[bestType]);
+    const bestProvider = providers.reduce((best, curr) => {
+      const bestEpCount = streamableSources[bestType][best].reduce((sum, s) => sum + s.server_data.length, 0);
+      const currEpCount = streamableSources[bestType][curr].reduce((sum, s) => sum + s.server_data.length, 0);
+      
+      if (currEpCount > bestEpCount) return curr;
+      if (currEpCount === bestEpCount) {
+        return (providerWeights[curr] || 0) > (providerWeights[best] || 0) ? curr : best;
+      }
       return best;
     });
-    setActiveSrcId(bestSource);
-  }, [streamableSources, userSettings]); // activeSrcId intentionally excluded — guard at top
+
+    setActiveType(bestType);
+    setActiveProvider(bestProvider);
+  }, [streamableSources, userSettings, activeType, activeProvider]);
+
+  // Sync activeType/Provider to streamingLinks for the UI
+  useEffect(() => {
+    if (activeType && activeProvider && streamableSources[activeType]?.[activeProvider]) {
+      setStreamingLinks(streamableSources[activeType][activeProvider]);
+    }
+  }, [activeType, activeProvider, streamableSources]);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [ribbonAtStart, setRibbonAtStart] = useState(true);
   const [ribbonAtEnd, setRibbonAtEnd] = useState(false);
 
   // Ref so play effect can read latest sources without being in its dep array
-  const streamableSourcesRef = useRef<Record<string, any[]>>({});
+  const streamableSourcesRef = useRef<Record<string, Record<string, any[]>>>({});
   streamableSourcesRef.current = streamableSources;
 
   const episodeListRef = useRef<HTMLDivElement>(null);
@@ -274,7 +342,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
       // Reset sources on new slug
       setStreamableSources({});
       setStreamingLinks([]);
-      setActiveSrcId('');
+      setActiveType('');
+      setActiveProvider('');
 
       try {
         const res = await api.get<DetailResponse>(`/${mediaType}/${slug}`);
@@ -360,9 +429,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     const eNum = activeEpisodeIdx + 1;
     
     // Recovery: Check for saved source on mount or data change
-    if (!activeSrcId) {
-        // We wait for DiscoveryPipeline to populate sources
-    }
+    // Handled by Smart Source Selection Logic now
 
     const hash = window.location.hash;
     const qPart = hash.includes('?q=') ? `q=${new URLSearchParams(hash.split('?')[1]).get('q')}` : '';
@@ -387,7 +454,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   // Reads streamableSources via ref so it does NOT re-fire when new sources arrive
   // (that would cause double-setup: once with server 0, again after sync effect restores saved server).
   useEffect(() => {
-    const servers = streamableSourcesRef.current[activeSrcId];
+    const servers = streamableSourcesRef.current[activeType]?.[activeProvider];
     const server = servers?.[activeServerIdx];
     if (!server) return;
 
@@ -412,7 +479,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
       setTimeout(() => setActiveEmbed(url), 10);
     }
     // deps: only real selection signals — NOT streamableSources (via ref) or userSettings
-  }, [activeSrcId, activeServerIdx, activeEpisodeIdx, mediaType]);
+  }, [activeType, activeProvider, activeServerIdx, activeEpisodeIdx, mediaType]);
 
   // Dùng flag thay vì đoán từ URL string — tránh trường hợp embed URL chứa ".m3u8" trong query param
   const isM3u8 = !!activeEmbed && !activeIsEmbed;
@@ -444,8 +511,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   // Sync effect — updates UI list + restores saved server when source/sources change.
   // Changing activeServerIdx here will trigger the play effect exactly once (its dep).
   useEffect(() => {
-    if (!activeSrcId || !streamableSources[activeSrcId]) return;
-    const servers = streamableSources[activeSrcId];
+    if (!activeType || !activeProvider || !streamableSources[activeType]?.[activeProvider]) return;
+    const servers = streamableSources[activeType][activeProvider];
     setStreamingLinks(servers);
 
     const savedServerName = localStorage.getItem('omv_active_server_name');
@@ -455,7 +522,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
         setActiveServerIdx(sIdx); // play effect fires once with correct server
       }
     }
-  }, [activeSrcId, streamableSources]);
+  }, [activeType, activeProvider, streamableSources]);
 
   if (loading) return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
@@ -884,13 +951,13 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                       <Settings className={`w-4 h-4 ${showSourceMenu ? 'animate-spin-slow' : ''}`} />
                     </button>
 
-                    {/* Popover: Stream Sources */}
+                    {/* Popover: Stream Sources grouped by Type */}
                     {showSourceMenu && (
-                      <div className="absolute right-full top-0 mr-3 w-52 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl p-2 flex flex-col gap-1 z-50 animate-slide-left">
-                        <div className="px-3 py-2 border-b border-white/5 mb-1 flex items-center justify-between">
+                      <div className="absolute right-full top-0 mr-3 w-64 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl overflow-hidden flex flex-col z-50 animate-slide-left">
+                        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
                           <div>
-                            <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">Transmission Grid</span>
-                            <p className="text-[6px] text-gray-700 uppercase tracking-widest mt-0.5">Control Panel</p>
+                            <span className="text-[8px] font-black uppercase tracking-[0.3em] text-blue-500/80">Transmission Protocols</span>
+                            <p className="text-[6px] text-gray-600 uppercase tracking-widest mt-0.5">Control Panel</p>
                           </div>
                           <button 
                             onClick={async () => {
@@ -899,7 +966,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                               await api.post('/user/settings', newSettings);
                               setShowSourceMenu(false);
                             }}
-                            className={`px-2 py-1 rounded-md text-[7px] font-black uppercase tracking-widest border transition-all ${
+                            className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest border transition-all ${
                               userSettings?.preferred_source === 'auto' 
                                 ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
                                 : 'bg-white/5 border-white/10 text-gray-500 hover:text-white'
@@ -909,56 +976,76 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                           </button>
                         </div>
 
-                        {/* Define All Possible Sources */}
-                        {(['kkphim', 'ophim', 'default', 'timfshare', 'thuviencine', 'web']).map(srcId => {
-                          const isActive = srcId === activeSrcId;
-                          const serverCount = streamableSources[srcId]?.length ?? 0;
-                          const isAvailable = serverCount > 0;
-                          
-                          const srcMeta: Record<string, { label: string; color: string }> = {
-                            kkphim:     { label: 'KKPhim',     color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
-                            ophim:      { label: 'OPhim',      color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
-                            default:    { label: 'Torrent',    color: 'text-green-400  bg-green-500/10  border-green-500/30'  },
-                            timfshare:  { label: 'TimFshare',  color: 'text-blue-400   bg-blue-500/10   border-blue-500/30'   },
-                            thuviencine:{ label: 'ThuVienCine',color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
-                            web:        { label: 'Web/Google', color: 'text-sky-400    bg-sky-500/10    border-sky-500/30'    },
-                          };
-                          const meta = srcMeta[srcId] ?? { label: srcId.toUpperCase(), color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
-                          
-                          return (
-                            <button key={srcId}
-                              disabled={!isAvailable}
-                              onClick={async () => {
-                                if (!isAvailable) return;
-                                setActiveSrcId(srcId);
-                                setActiveServerIdx(0);
-                                setShowSourceMenu(false);
+                        <div className="max-h-[70vh] overflow-y-auto custom-scrollbar p-2 space-y-4">
+                          {[
+                            { type: 'EMBED', icon: <Layout className="w-2.5 h-2.5" />, sources: ['DAILYMOTION'] },
+                            { type: 'HLS', icon: <Zap className="w-2.5 h-2.5" />, sources: ['KKPHIM', 'OPHIM'] },
+                            { type: 'P2P', icon: <Activity className="w-2.5 h-2.5" />, sources: ['TORRENT'] },
+                            { type: 'DIRECT', icon: <Cloud className="w-2.5 h-2.5" />, sources: ['TIMFSHARE', 'THUVIENCINE', 'WEB'] },
+                          ].map((group) => {
+                            const availableProviders = group.sources.filter(p => (streamableSources[group.type]?.[p]?.length ?? 0) > 0);
+                            const isGroupAvailable = availableProviders.length > 0;
+
+                            return (
+                              <div key={group.type} className={`space-y-1.5 ${!isGroupAvailable ? 'opacity-30 grayscale' : ''}`}>
+                                <div className="px-2 flex items-center gap-2">
+                                  <div className={`p-1 rounded-md ${isGroupAvailable ? 'bg-blue-500/10 text-blue-500' : 'bg-gray-800 text-gray-600'}`}>
+                                    {group.icon}
+                                  </div>
+                                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-500">{group.type} FEED</span>
+                                </div>
                                 
-                                const newSettings = { ...userSettings, preferred_source: srcId };
-                                setUserSettings(newSettings);
-                                try {
-                                  await api.post('/user/settings', newSettings);
-                                } catch (err) {
-                                  console.error('Failed to save source preference:', err);
-                                }
-                              }}
-                              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                                !isAvailable
-                                  ? 'opacity-20 grayscale cursor-not-allowed border-transparent text-gray-500'
-                                  : isActive
-                                    ? meta.color
-                                    : 'border-transparent text-gray-600 hover:text-gray-400 hover:bg-white/5'
-                              }`}
-                            >
-                              <Globe className={`w-3 h-3 ${!isAvailable ? 'text-gray-800' : ''}`} />
-                              <span className="flex-1 text-left">{meta.label}</span>
-                              <span className="text-[7px] font-bold normal-case tracking-normal opacity-50">
-                                {isAvailable ? `${serverCount} sv` : 'N/A'}
-                              </span>
-                              {isActive && isAvailable && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
-                            </button>
-                          );
-                        })}
+                                <div className="grid grid-cols-1 gap-1 pl-1">
+                                  {group.sources.map(provId => {
+                                    const isActive = provId === activeProvider;
+                                    const serverCount = streamableSources[group.type]?.[provId]?.length ?? 0;
+                                    const isAvailable = serverCount > 0;
+                                    
+                                    const srcMeta: Record<string, { label: string; color: string }> = {
+                                      KKPHIM:     { label: 'KKPhim',     color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
+                                      OPHIM:      { label: 'OPhim',      color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
+                                      TORRENT:    { label: 'Torrent',    color: 'text-green-400  bg-green-500/10  border-green-500/30'  },
+                                      TIMFSHARE:  { label: 'TimFshare',  color: 'text-blue-400   bg-blue-500/10   border-blue-500/30'   },
+                                      THUVIENCINE:{ label: 'ThuVienCine',color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
+                                      WEB:        { label: 'Web/Google', color: 'text-sky-400    bg-sky-500/10    border-sky-500/30'    },
+                                    };
+                                    const meta = srcMeta[provId] ?? { label: provId, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
+
+                                    return (
+                                      <button key={provId}
+                                        disabled={!isAvailable}
+                                        onClick={async () => {
+                                          if (!isAvailable) return;
+                                          setActiveType(group.type);
+                                          setActiveProvider(provId);
+                                          setShowSourceMenu(false);
+                                          
+                                          const newSettings = { ...userSettings, preferred_source: provId };
+                                          setUserSettings(newSettings);
+                                          await api.post('/user/settings', newSettings);
+                                        }}
+                                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                                          !isAvailable
+                                            ? 'opacity-40 border-transparent text-gray-600'
+                                            : isActive
+                                              ? meta.color
+                                              : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                                        }`}
+                                      >
+                                        <Globe className={`w-2.5 h-2.5 ${!isAvailable ? 'text-gray-800' : ''}`} />
+                                        <span className="flex-1 text-left">{meta.label}</span>
+                                        <span className="text-[7px] font-bold normal-case tracking-normal opacity-50">
+                                          {isAvailable ? `${serverCount} sv` : 'N/A'}
+                                        </span>
+                                        {isActive && isAvailable && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1075,36 +1162,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
               year={String(metadata.year || '')}
               mediaType={mediaType}
               season={metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number}
-              onStreamingReady={(links, source) => {
-                // Group flat items by server name and deduplicate by URL
-                const grouped: Record<string, any> = {};
-                const seenUrls = new Set<string>();
-
-                for (const item of links) {
-                  const url = item.m3u8 || item.url || item.embed;
-                  if (!url || seenUrls.has(url)) continue;
-                  seenUrls.add(url);
-
-                  const key = item.server || item.server_name || source;
-                  if (!grouped[key]) grouped[key] = { server_name: key, server_data: [] };
-                  
-                  // For torrents, the URL is the magnet. 
-                  // We'll tag it so the UI knows to call handleTorrentStream
-                  const isTorrent = item.source_type === 'torrent' || url.startsWith('magnet:');
-
-                  grouped[key].server_data.push({
-                    name:  item.name,
-                    m3u8:  isTorrent ? '' : (item.m3u8 || item.url || ''),
-                    embed: item.embed || '',
-                    magnet: isTorrent ? url : '',
-                    isTorrent: isTorrent,
-                    stream_type: item.stream_type,
-                    provider: item.provider
-                  });
-                }
-                const serverList = Object.values(grouped);
-                setStreamableSources(prev => ({ ...prev, [source]: serverList }));
-              }}
+              onStreamingReady={handleStreamingReady}
             />
         </div>
       </div>
