@@ -93,20 +93,35 @@ async def discovery(
         elif source_type == "dailymotion":
             results = []  # TODO: implement dailymotion scraper
 
-        # ── Normalize: ensure source_type + source on every result, drop legacy provider ──
+        # ── Normalize: ensure source_type + source on every result ─────────────
         for r in results:
             r["source_type"] = source_type
-            r.setdefault("source", source or source_type)  # scrapers may already set their own `source`
+            r.setdefault("source", source or source_type)
             r.pop("provider", None)
 
         # ── Deduplicate by URL ────────────────────────────────────────────────
         seen_urls: set = set()
-        final_results = []
+        deduped = []
         for r in results:
-            url = r.get("url") or r.get("m3u8") or r.get("embed")
+            url = r.get("url") or r.get("m3u8")
             if url and url not in seen_urls:
-                final_results.append(r)
+                deduped.append(r)
                 seen_urls.add(url)
+
+        # ── Group by server name (m3u8 can have multiple named servers) ───────
+        if source_type == "m3u8":
+            server_map: dict = {}
+            for r in deduped:
+                srv = r.get("server") or source or "Server"
+                if srv not in server_map:
+                    server_map[srv] = []
+                ep = {k: v for k, v in r.items()
+                      if k not in ("server", "source_type", "source") and v is not None}
+                server_map[srv].append(ep)
+            final_results = [{"server": srv, "episodes": eps}
+                             for srv, eps in server_map.items()]
+        else:
+            final_results = deduped
 
         return {
             "data": {

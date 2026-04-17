@@ -121,23 +121,24 @@ export const DiscoveryPipeline = ({
         if (items.length === 0) { markDone(key); return; }
 
         if (source_type === 'm3u8') {
-          // Group by server name, merge into streamableByType['m3u8']
+          // items = [{server, episodes:[]}] — already grouped by backend
           setStreamableByType(prev => {
             const next = { ...prev };
-            const existing = next['m3u8'] ?? {};
-            for (const item of items) {
-              const server = item.server || item.server_name || source;
-              if (!existing[server]) existing[server] = [];
-              existing[server].push(item);
+            const existing: Record<string, any[]> = { ...(next['m3u8'] ?? {}) };
+            for (const group of items) {
+              const srv = group.server || source;
+              if (!existing[srv]) existing[srv] = [];
+              existing[srv].push(...(group.episodes ?? []));
             }
             next['m3u8'] = existing;
             return next;
           });
 
-          // Notify MovieDetail for player — once per source
+          // Notify MovieDetail for player — flatten grouped [{server,episodes}] back to flat list
           setStreamingNotified(prev => {
             if (prev.has(source)) return prev;
-            onStreamingReady?.(items, source);
+            const flat = items.flatMap((g: any) => g.episodes ?? []);
+            onStreamingReady?.(flat, source);
             return new Set(prev).add(source);
           });
 
