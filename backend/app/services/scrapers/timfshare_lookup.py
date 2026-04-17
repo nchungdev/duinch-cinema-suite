@@ -73,24 +73,18 @@ def _keywords(text: str) -> set:
 
 _VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.ts', '.m4v'}
 
-def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
+def _is_relevant(name: str, title: str, year: Optional[str] = None, media_type: str = "movie") -> bool:
     name_lower = name.lower()
     
     # 0. Video-only filter: Discard known archive/non-video extensions
     if any(name_lower.endswith(ext) for ext in {'.rar', '.zip', '.7z', '.txt', '.pdf', '.exe'}):
         return False
     
-    # If it has an extension, it MUST be a video extension
-    # (Some names might not have extensions if they are folders or bare names)
-    match = re.search(r'(\.[a-z0-9]{2,4})$', name_lower)
-    if match:
-        ext = match.group(1)
-        if ext not in _VIDEO_EXTENSIONS:
-            # It's an extension but not a video one
-            if ext not in {'.rar', '.zip', '.7z'}: # double check
-                 pass # allow unknown for now or be strict? 
-                 # Let's be strict: if it has an extension, it must be video
-                 if ext in {'.iso', '.nfo', '.jpg', '.png'}: return False
+    # 1. Media Type Strict Filter
+    # - If we want a movie, but filename has SxxExx or "Tập", skip it
+    if media_type == "movie":
+        if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_lower):
+            return False
 
     title_kw = _keywords(title)
     if not title_kw:
@@ -99,11 +93,11 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     name_kw = _keywords(name)
     overlap = title_kw & name_kw
     
-    # 1. Keyword Overlap: Require 70% match
+    # 2. Keyword Overlap: Require 70% match
     if len(overlap) < max(1, int(len(title_kw) * 0.7)):
         return False
         
-    # 2. Year Filter
+    # 3. Year Filter
     if year:
         year_str = str(year)
         is_one_piece_la = "one piece" in title.lower() and year_str == "2023"
@@ -117,32 +111,38 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
         if is_one_piece_la and "live action" in name.lower():
             return True
             
-        # If result has a DIFFERENT year, it's definitely wrong (e.g., 2023 vs 1999)
+        # If result has a DIFFERENT year, it's definitely wrong
         if found_years:
             return False
             
-        # If it has NO year:
-        # - For Movies: usually irrelevant (want specific year)
-        # - For TV: could be a long-running series (like Anime) where episodes don't carry the start year
-        # We allow it if overlap is very high (already checked above)
-        return True
+        # If it has NO year, allow for TV, but be strict for movies
+        return True if media_type == "tv" else False
             
     return True
 
 
-def _make_result(item: dict, source: str) -> Optional[Dict]:
+def _make_result(item: dict, source: str, media_type: str = "movie") -> Optional[Dict]:
     name = item.get("name", "").strip()
     url  = item.get("url", "").split("?")[0]   # strip ?des=... tracking param
     if not name or not url:
         return None
     clean = re.sub(r'^\[(?:4K|Remux|1080p|720p|mHD|CAM|HD)\]\s*', '', name).strip()
     quality = _parse_quality(clean)
+    
+    # Try to refine media_type based on name
+    actual_type = media_type
+    if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name.lower()):
+        actual_type = "tv"
+    elif "folder" in url.lower():
+        actual_type = "tv"
+
     return {
         "url": url,
         "name": f"[{quality}] {clean}",
         "source": source,
         "provider": "fshare",
         "type": "downloadable",
+        "media_type": actual_type,
         "quality": quality,
         "size": _format_size(item.get("size", 0)),
     }
@@ -200,8 +200,9 @@ async def lookup_timfshare(
     season: Optional[int] = None,
     episode: Optional[int] = None,
     filter_title: Optional[str] = None,
+    media_type: str = "movie",
 ) -> List[Dict]:
-    cache_key = f"{query.strip().lower()}|{year or ''}|{season or ''}|{episode or ''}|{filter_title or ''}"
+    cache_key = f"{query.strip().lower()}|{year or ''}|{season or ''}|{episode or ''}|{filter_title or ''}|{media_type}"
     cached = get_from_cache(_CACHE_FILE, cache_key, _CACHE_TTL)
     if cached is not None:
         return cached
@@ -232,9 +233,9 @@ async def lookup_timfshare(
         url = item.get("url", "").split("?")[0]
         if not url or url in seen:
             continue
-        if not _is_relevant(item.get("name", ""), rel_title, year):
+        if not _is_relevant(item.get("name", ""), rel_title, year, media_type):
             continue
-        result = _make_result(item, source_tag)
+        result = _make_result(item, source_tag, media_type)
         if result:
             results.append(result)
             seen.add(url)

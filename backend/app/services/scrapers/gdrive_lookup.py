@@ -7,9 +7,9 @@ from bs4 import BeautifulSoup
 from app.core import config
 from app.services import cache_manager
 
-async def lookup_gdrive(title_query: str) -> List[Dict[str, Any]]:
+async def lookup_gdrive(title_query: str, media_type: str = "movie") -> List[Dict[str, Any]]:
     """Search for Google Drive links using specialized search queries."""
-    cache_key = title_query.strip().lower()
+    cache_key = f"{title_query.strip().lower()}|{media_type}"
     cached = cache_manager.get_from_cache(config.OTHERS_CACHE, cache_key, config.DISCOVERY_CACHE_EXPIRE)
     if cached is not None:
         return cached
@@ -57,6 +57,15 @@ async def lookup_gdrive(title_query: str) -> List[Dict[str, Any]]:
     final = []
     for r in results:
         if r["url"] not in seen:
+            # Infer actual media type
+            name_low = r.get("name", "").lower()
+            actual_type = media_type
+            if "/folders/" in r["url"] or "folder" in name_low:
+                actual_type = "tv"
+            elif re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_low):
+                actual_type = "tv"
+            
+            r["media_type"] = actual_type
             final.append(r)
             seen.add(r["url"])
             

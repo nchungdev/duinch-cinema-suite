@@ -37,12 +37,17 @@ def _keywords(text: str) -> set:
 
 _VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.ts', '.m4v'}
 
-def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
+def _is_relevant(name: str, title: str, year: Optional[str] = None, media_type: str = "movie") -> bool:
     name_lower = name.lower()
     
     # 0. Video-only filter
     if any(name_lower.endswith(ext) for ext in {'.rar', '.zip', '.7z', '.iso'}):
         return False
+
+    # 1. Media Type Strict Filter
+    if media_type == "movie":
+        if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_lower):
+            return False
 
     title_kw = _keywords(title)
     if not title_kw:
@@ -51,11 +56,11 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     name_kw = _keywords(name)
     overlap = title_kw & name_kw
     
-    # 1. Keyword Overlap
+    # 2. Keyword Overlap
     if len(overlap) < max(1, int(len(title_kw) * 0.7)):
         return False
         
-    # 2. Year Filter: Strict
+    # 3. Year Filter: Strict
     if year:
         year_str = str(year)
         is_one_piece_la = "one piece" in title.lower() and year_str == "2023"
@@ -70,20 +75,20 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
         if found_years:
             return False
             
-        # If it has NO year, we allow it (for TV series/Anime)
-        return True
+        # If it has NO year, allow for TV
+        return True if media_type == "tv" else False
             
     return True
 
 
-async def lookup_thuviencine(title: str, filter_title: Optional[str] = None, year: Optional[str] = None) -> List[Dict[str, str]]:
+async def lookup_thuviencine(title: str, filter_title: Optional[str] = None, year: Optional[str] = None, media_type: str = "movie") -> List[Dict[str, str]]:
     """
     Searches ThuVienCine for Fshare links.
     Flow: Search → Detail Page → Download Page → Extract Fshare links.
     filter_title: if provided, each result name is checked for relevance against this title.
     Results cached for 8 hours.
     """
-    cache_key = f"{title.strip().lower()}|{year or ''}"
+    cache_key = f"{title.strip().lower()}|{year or ''}|{media_type}"
     cached = get_from_cache(_CACHE_FILE, cache_key, _CACHE_TTL)
     if cached is not None:
         return cached
@@ -149,16 +154,25 @@ async def lookup_thuviencine(title: str, filter_title: Optional[str] = None, yea
                         name = re.sub(r'^\[(?:4K|Remux|1080p|720p|mHD|CAM|HD)\]\s*', '', name).strip()
 
                         # Relevance filter
-                        if filter_title and not _is_relevant(name, filter_title, year):
+                        if filter_title and not _is_relevant(name, filter_title, year, media_type):
                             continue
 
                         quality = _parse_quality(name)
+                        
+                        # Infer actual media type
+                        actual_type = media_type
+                        if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name.lower()):
+                            actual_type = "tv"
+                        elif "folder" in url.lower():
+                            actual_type = "tv"
+
                         links.append({
                             "url": url,
                             "name": f"[{quality}] {name}",
                             "source": "thuviencine",
                             "provider": "fshare",
                             "type": "downloadable",
+                            "media_type": actual_type,
                             "quality": quality,
                         })
                         seen_urls.add(url)

@@ -331,7 +331,7 @@ _STOP_WORDS = {
 
 _VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov', '.ts', '.m4v'}
 
-def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
+def _is_relevant(name: str, title: str, year: Optional[str] = None, media_type: str = "movie") -> bool:
     """
     Check if the FShare file/folder name is relevant to the search title.
     Uses keyword overlap: at least 70% of significant title words must appear in the name.
@@ -341,6 +341,11 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     # 0. Video-only filter (for files, ignore for folders which usually don't have extension in 4 chars)
     if any(name_lower.endswith(ext) for ext in {'.rar', '.zip', '.7z', '.iso', '.txt'}):
         return False
+
+    # 1. Media Type Strict Filter
+    if media_type == "movie":
+        if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_lower):
+            return False
 
     def keywords(text: str):
         words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
@@ -353,11 +358,11 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     name_kw  = keywords(name)
     overlap  = title_kw & name_kw
     
-    # 1. Keyword Overlap: 70% threshold
+    # 2. Keyword Overlap: 70% threshold
     if len(overlap) < max(1, int(len(title_kw) * 0.7)):
         return False
         
-    # 2. Year Filter: Strict matching
+    # 3. Year Filter: Strict matching
     if year:
         year_str = str(year)
         is_one_piece_la = "one piece" in title.lower() and year_str == "2023"
@@ -372,12 +377,12 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
         if found_years:
             return False
             
-        # If it has NO year, we allow it (for TV series/Anime)
-        return True
+        # If it has NO year, allow for TV
+        return True if media_type == "tv" else False
             
     return True
 
-async def _enrich(result: Dict, title: str, year: Optional[str] = None) -> Optional[Dict]:
+async def _enrich(result: Dict, title: str, year: Optional[str] = None, media_type: str = "movie") -> Optional[Dict]:
     """
     Enrich and filter a single search result against the search title.
 
@@ -396,7 +401,7 @@ async def _enrich(result: Dict, title: str, year: Optional[str] = None) -> Optio
     if not _is_generic(name):
         # Strip quality prefix for relevance check
         clean = re.sub(r'^\[(?:4K|Remux|1080p|720p|mHD|CAM|HD)\]\s*', '', name).strip()
-        return result if _is_relevant(clean, title, year) else None
+        return result if _is_relevant(clean, title, year, media_type) else None
 
     fetched = await _fshare_fetch_name(result["url"])
 
@@ -406,7 +411,7 @@ async def _enrich(result: Dict, title: str, year: Optional[str] = None) -> Optio
     if fetched is None:
         return result  # network error → keep with generic name
 
-    if not _is_relevant(fetched, title, year):
+    if not _is_relevant(fetched, title, year, media_type):
         return None
 
     quality = _parse_quality(fetched)
@@ -424,12 +429,13 @@ async def lookup_google_fshare(
     year: Optional[str] = None,
     season: Optional[int] = None,
     episode: Optional[int] = None,
+    media_type: str = "movie"
 ) -> List[Dict[str, str]]:
     # 1. Clean title
     clean_title = re.sub(r'[\(\)\[\]]', ' ', title).strip()
 
     # 2. Cache key — includes all search params
-    cache_key = f"{clean_title}|{year or ''}|{season or ''}|{episode or ''}"
+    cache_key = f"{clean_title}|{year or ''}|{season or ''}|{episode or ''}|{media_type}"
     cached = get_from_cache(_FSHARE_SEARCH_CACHE, cache_key, _FSHARE_SEARCH_TTL)
     if cached is not None:
         return cached
@@ -468,13 +474,28 @@ async def lookup_google_fshare(
 
     # 4. Enrich generic names via FShare page + filter irrelevant results
     enriched = await asyncio.gather(
-        *[_enrich(r, clean_title, year) for r in results],
+        *[_enrich(r, clean_title, year, media_type) for r in results],
         return_exceptions=True
     )
     results = [r for r in enriched if isinstance(r, dict)]
 
-    # 5. Sort: 4K first, CAM last
+    # 5. Sort: 4K first, CAM last and Infer Media Type
     quality_map = {'4K': 0, 'Remux': 1, '1080p': 2, '720p': 3, 'HD': 4, 'mHD': 5, 'CAM': 6}
+    
+    for r in results:
+        r["provider"] = "fshare"
+        r["type"] = "downloadable"
+        r["source_type"] = "fshare"
+        # Infer type
+        name_low = r.get("name", "").lower()
+        url_low = r.get("url", "").lower()
+        actual_type = media_type
+        if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_low):
+            actual_type = "tv"
+        elif "folder" in url_low:
+            actual_type = "tv"
+        r["media_type"] = actual_type
+
     results.sort(key=lambda x: quality_map.get(x.get('quality', 'HD'), 10))
 
     set_to_cache(_FSHARE_SEARCH_CACHE, cache_key, results)

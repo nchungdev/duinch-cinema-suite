@@ -100,6 +100,15 @@ async def lookup_torrent(
     final = []
     for r in results:
         if r["url"] not in seen:
+            # Infer actual media type
+            name_low = r.get("name", "").lower()
+            actual_type = media_type
+            if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_low):
+                actual_type = "tv"
+            elif "[pack]" in name_low or "season" in name_low:
+                actual_type = "tv"
+            
+            r["media_type"] = actual_type
             final.append(r)
             seen.add(r["url"])
             
