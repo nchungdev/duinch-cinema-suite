@@ -37,41 +37,40 @@ def _ensure_dir(path: str):
 
 def get_from_cache(cache_name: str, key: str, expire_seconds: int) -> Optional[Any]:
     """Retrieve an item from Redis or File System."""
-    r = _get_redis()
-    
-    # 1. Try Redis
-    if r:
-        try:
-            val = r.get(f"{cache_name}:{key}")
-            if val:
-                return json.loads(val)
-        except Exception:
-            pass
-
-    # 2. Fallback to File System
-    file_path = _get_path(cache_name, key)
-    if not os.path.exists(file_path):
-        return None
-        
     try:
+        r = _get_redis()
+        
+        # 1. Try Redis
+        if r:
+            try:
+                val = r.get(f"{cache_name}:{key}")
+                if val:
+                    return json.loads(val)
+            except Exception as e:
+                print(f"[Cache] Redis get error: {e}")
+
+        # 2. Fallback to File System
+        file_path = _get_path(cache_name, key)
+        if not os.path.exists(file_path):
+            return None
+            
         with open(file_path, "r", encoding="utf-8") as f:
             entry = json.load(f)
         if time.time() - entry.get("timestamp", 0) < expire_seconds:
             data = entry.get("data")
-            # Side effect: if Redis is alive but empty, populate it from disk
             if r:
                 set_to_cache(cache_name, key, data, int(expire_seconds - (time.time() - entry.get("timestamp", 0))))
             return data
         os.remove(file_path)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Cache] General get error: {e}")
     return None
 
 def set_to_cache(cache_name: str, key: str, data: Any, expire_seconds: int = 3600):
-    """Save an item into Redis and/or File System."""
+    """Save an item into Redis (Primary) or File System (Fallback)."""
     r = _get_redis()
     
-    # 1. Save to Redis (Primary for performance)
+    # 1. Save to Redis
     if r:
         try:
             r.setex(
@@ -79,10 +78,11 @@ def set_to_cache(cache_name: str, key: str, data: Any, expire_seconds: int = 360
                 int(expire_seconds),
                 json.dumps(data, ensure_ascii=False)
             )
+            return # SUCCESS: Skip Disk write to save I/O
         except Exception as e:
             print(f"[Cache] Redis set error: {e}")
 
-    # 2. Save to File System (Secondary for persistence)
+    # 2. Fallback to File System only if Redis is not available
     _ensure_dir(cache_name)
     file_path = _get_path(cache_name, key)
     try:
