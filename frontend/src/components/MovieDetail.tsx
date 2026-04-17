@@ -747,9 +747,18 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                             )}
                                                         </div>
                                                         </button>
-                                                        <div className="flex items-center px-2.5 gap-0.5">
-                                                            <button disabled={!hasLink} title="Download" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-blue-500/20 text-gray-600 hover:enabled:text-blue-400"><Download className="w-3 h-3" /></button>
-                                                            <button disabled={!hasLink} title="Cloud" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-purple-500/20 text-gray-600 hover:enabled:text-purple-400"><Cloud className="w-3 h-3" /></button>
+                                                        <div className="flex items-center px-2.5 gap-1">
+                                                            <button 
+                                                                disabled={!hasLink} 
+                                                                onClick={() => {
+                                                                    const url = ep?.url || ep?.m3u8 || ep?.link_m3u8 || ep?.magnet;
+                                                                    if (url) window.open(url, '_blank');
+                                                                }}
+                                                                title="Open Externally" 
+                                                                className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 transition-all flex items-center justify-center hover:enabled:bg-white/10 text-gray-500 hover:enabled:text-white disabled:opacity-30"
+                                                            >
+                                                                <ExternalLink className="w-3.5 h-3.5" />
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 );
@@ -810,7 +819,15 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                             </div>
                                                         </div>
                                                     </button>
-                                                    <div className="flex items-center px-4 gap-1">
+                                                    <div className="flex items-center px-4 gap-2">
+                                                        <button 
+                                                            disabled={!hasLink}
+                                                            onClick={() => ep.url && window.open(ep.url, '_blank')}
+                                                            title="Open Externally"
+                                                            className="w-8 h-8 rounded-lg transition-all flex items-center justify-center bg-white/5 hover:enabled:bg-white/10 text-gray-500 hover:enabled:text-white border border-white/5 disabled:opacity-30"
+                                                        >
+                                                            <ExternalLink className="w-3.5 h-3.5" />
+                                                        </button>
                                                         <div className={`w-1.5 h-1.5 rounded-full ${isPlaying ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-white/5'}`} />
                                                     </div>
                                                 </div>
