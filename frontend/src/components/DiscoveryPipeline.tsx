@@ -135,9 +135,12 @@ export const DiscoveryPipeline = ({
           });
 
           // Notify MovieDetail for player — flatten grouped [{server,episodes}] back to flat list
+          // Re-attach server name to each episode so MovieDetail can re-group correctly
           setStreamingNotified(prev => {
             if (prev.has(source)) return prev;
-            const flat = items.flatMap((g: any) => g.episodes ?? []);
+            const flat = items.flatMap((g: any) =>
+              (g.episodes ?? []).map((ep: any) => ({ ...ep, server: g.server }))
+            );
             onStreamingReady?.(flat, source);
             return new Set(prev).add(source);
           });
