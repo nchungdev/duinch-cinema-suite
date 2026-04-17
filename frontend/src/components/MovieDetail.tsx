@@ -52,6 +52,54 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
   const [streamableSources, setStreamableSources] = useState<Record<string, any[]>>({});
   const [activeSrcId, setActiveSrcId] = useState<string>('');
+  const [userSettings, setUserSettings] = useState<any>(null);
+
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const res = await api.get<{ data: any }>('/user/settings');
+        setUserSettings(res.data);
+      } catch (err) {
+        console.warn('Failed to load settings:', err);
+        setUserSettings({ preferred_source: 'auto' });
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Smart Source Selection Logic
+  useEffect(() => {
+    const sources = Object.keys(streamableSources);
+    if (sources.length === 0 || !userSettings) return;
+
+    const preferred = userSettings.preferred_source || 'auto';
+
+    // 1. User has a specific preference
+    if (preferred !== 'auto' && streamableSources[preferred]) {
+      if (activeSrcId !== preferred) setActiveSrcId(preferred);
+      return;
+    }
+
+    // 2. Auto Selection or Preferred source not found
+    // Criteria: 1. Most episodes, 2. Provider Weight (KKPhim > OPhim)
+    const providerWeights: Record<string, number> = { kkphim: 10, ophim: 5 };
+    
+    const bestSource = sources.reduce((best, current) => {
+      const bestEpCount = streamableSources[best]?.[0]?.server_data?.length || 0;
+      const currEpCount = streamableSources[current]?.[0]?.server_data?.length || 0;
+      
+      if (currEpCount > bestEpCount) return current;
+      if (currEpCount === bestEpCount) {
+        return (providerWeights[current] || 0) > (providerWeights[best] || 0) ? current : best;
+      }
+      return best;
+    });
+
+    if (activeSrcId !== bestSource) {
+      setActiveSrcId(bestSource);
+    }
+  }, [streamableSources, userSettings, activeSrcId]);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [miniPlayerFloating, setMiniPlayerFloating] = useState(false);
   const [ribbonAtStart, setRibbonAtStart] = useState(true);
@@ -176,9 +224,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                 }
             }
         } else {
-            // Check Local History if no initial params
-            const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
-            const progress = history[slug];
+            // Check Local History (which might have been synced by App.tsx)
+            const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+            const progress = progressStore[slug];
             if (progress) {
                 setActiveSeasonIdx(progress.s_idx || 0);
                 setActiveEpisodeIdx(progress.e_idx || 0);
@@ -224,17 +272,20 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     }
   }, [activeServerIdx]);
 
-  // Save progress when season/episode changes
+  // Save progress locally (updated_at will be used for sync)
   useEffect(() => {
     if (!data) return;
-    const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
-    history[slug] = {
+    
+    const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+    progressStore[slug] = {
       s_idx: activeSeasonIdx,
       e_idx: activeEpisodeIdx,
-      timestamp: Date.now()
+      title: data.metadata.title,
+      type: mediaType,
+      updated_at: Date.now()
     };
-    localStorage.setItem('omv_watch_history', JSON.stringify(history));
-  }, [activeSeasonIdx, activeEpisodeIdx, slug, data]);
+    localStorage.setItem('omv_watch_progress', JSON.stringify(progressStore));
+  }, [activeSeasonIdx, activeEpisodeIdx, slug, data, mediaType]);
 
   useEffect(() => {
     if (!data) return;
@@ -530,9 +581,26 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                     {/* Popover: Stream Sources (kkphim / ophim) */}
                     {showSourceMenu && Object.keys(streamableSources).length > 0 && (
                       <div className="absolute right-full top-0 mr-3 w-52 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl p-2 flex flex-col gap-1 z-50 animate-slide-left">
-                        <div className="px-3 py-2 border-b border-white/5 mb-1">
-                          <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">Stream Source</span>
-                          <p className="text-[6px] text-gray-700 uppercase tracking-widest mt-0.5">M3U8 provider</p>
+                        <div className="px-3 py-2 border-b border-white/5 mb-1 flex items-center justify-between">
+                          <div>
+                            <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">Stream Source</span>
+                            <p className="text-[6px] text-gray-700 uppercase tracking-widest mt-0.5">M3U8 provider</p>
+                          </div>
+                          <button 
+                            onClick={async () => {
+                              const newSettings = { ...userSettings, preferred_source: 'auto' };
+                              setUserSettings(newSettings);
+                              await api.post('/user/settings', newSettings);
+                              setShowSourceMenu(false);
+                            }}
+                            className={`px-2 py-1 rounded-md text-[7px] font-black uppercase tracking-widest border transition-all ${
+                              userSettings?.preferred_source === 'auto' 
+                                ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
+                                : 'bg-white/5 border-white/10 text-gray-500 hover:text-white'
+                            }`}
+                          >
+                            Auto
+                          </button>
                         </div>
                         {Object.keys(streamableSources).map(srcId => {
                           const isActive = srcId === activeSrcId;
@@ -544,11 +612,19 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                           const serverCount = streamableSources[srcId]?.length ?? 0;
                           return (
                             <button key={srcId}
-                              onClick={() => {
+                              onClick={async () => {
                                 setActiveSrcId(srcId);
                                 setActiveServerIdx(0);
                                 setShowSourceMenu(false);
-                                localStorage.setItem('omv_active_source', srcId);
+                                
+                                // Save preference to backend
+                                const newSettings = { ...userSettings, preferred_source: srcId };
+                                setUserSettings(newSettings);
+                                try {
+                                  await api.post('/user/settings', newSettings);
+                                } catch (err) {
+                                  console.error('Failed to save source preference:', err);
+                                }
                               }}
                               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                                 isActive
@@ -693,14 +769,6 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                 }
                 const serverList = Object.values(grouped);
                 setStreamableSources(prev => ({ ...prev, [source]: serverList }));
-
-                // Auto-activate: restore saved source or use first available
-                const savedSrc = localStorage.getItem('omv_active_source');
-                setActiveSrcId(prev => {
-                  if (prev) return prev;                      // already set
-                  if (savedSrc === source) return source;     // restore saved
-                  return source;                              // first arrived
-                });
               }}
             />
         </div>

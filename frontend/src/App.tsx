@@ -32,14 +32,54 @@ function App() {
   const [searchPage,    setSearchPage]    = useState(1);
   const [searchTotal,   setSearchTotal]   = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [showRecent,     setShowRecent]    = useState(false);
   const [urlParams,     setUrlParams]     = useState<{ s?: number, e?: number, q?: string }>({});
 
   const lastSearchQuery = useRef<string | null>(null);
   const sentinelRef     = useRef<HTMLDivElement>(null);
 
+  // --- SYNC MANAGER ---
+  const performSync = useCallback(async () => {
+    try {
+      const progress = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+      const history  = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
+      
+      const res = await api.post<{ data: any }>('/user/sync', { progress, history });
+      const { data } = res.data;
+      
+      // Update local with merged data from server
+      if (data.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(data.progress));
+      if (data.history)  localStorage.setItem('omv_watch_history', JSON.stringify(data.history));
+      
+      console.log('[Sync] Background synchronization complete');
+    } catch (err) {
+      console.error('[Sync] Background sync failed:', err);
+    }
+  }, []);
+
+  // Sync on Mount + Periodic (15 mins)
+  useEffect(() => {
+    performSync(); // Initial sync
+    const interval = setInterval(performSync, 15 * 60 * 1000); // 15 mins
+    return () => clearInterval(interval);
+  }, [performSync]);
+  // --------------------
+
+  // Load recent searches on mount
+
+  const saveSearch = (q: string) => {
+    if (!q.trim()) return;
+    const updated = [q, ...recentSearches.filter(s => s !== q)].slice(0, 10);
+    setRecentSearches(updated);
+    localStorage.setItem('recent_searches', JSON.stringify(updated));
+  };
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
+    saveSearch(searchQuery);
+    setShowRecent(false);
     window.location.hash = `#/search?q=${encodeURIComponent(searchQuery)}`;
   };
 
@@ -112,6 +152,7 @@ function App() {
         setSlug(null);
 
         if (cat === 'search') {
+            setSearchActive(true);
             if (q && lastSearchQuery.current !== q) executeSearch(q, 'all', 1);
         } else {
             setSearchActive(false);
@@ -205,16 +246,51 @@ function App() {
         </div>
 
         <div className="flex items-center gap-8">
-           <form onSubmit={handleSearch} className="relative hidden md:block group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
-              <input 
-                type="text"
-                placeholder="Lookup Metadata..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-64 bg-white/5 border border-white/10 rounded-2xl py-2.5 pl-12 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:bg-white/10 transition-all"
-              />
-           </form>
+           <div className="relative hidden md:block group">
+              <form onSubmit={handleSearch} className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
+                <input 
+                  type="text"
+                  placeholder="Lookup Metadata..."
+                  value={searchQuery}
+                  onFocus={() => setShowRecent(true)}
+                  onBlur={() => setTimeout(() => setShowRecent(false), 200)}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-64 bg-white/5 border border-white/10 rounded-2xl py-2.5 pl-12 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:bg-white/10 transition-all"
+                />
+              </form>
+
+              {/* Recent Searches Dropdown */}
+              {showRecent && recentSearches.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-[200] animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="p-4 border-b border-white/5 flex items-center justify-between">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Recent Searches</span>
+                    <button 
+                      onClick={() => { setRecentSearches([]); localStorage.removeItem('recent_searches'); }}
+                      className="text-[8px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-400"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {recentSearches.map((s, idx) => (
+                      <div 
+                        key={idx}
+                        onClick={() => {
+                          setSearchQuery(s);
+                          window.location.hash = `#/search?q=${encodeURIComponent(s)}`;
+                          setShowRecent(false);
+                        }}
+                        className="px-4 py-3 flex items-center gap-3 hover:bg-white/5 cursor-pointer transition-colors group/item"
+                      >
+                        <Search className="w-3 h-3 text-gray-600 group-hover/item:text-blue-500" />
+                        <span className="text-[10px] font-bold text-gray-300 group-hover/item:text-white truncate">{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+           </div>
            <div className="flex items-center gap-4">
               <ToolIcon icon={<Bell className="w-4 h-4" />} />
               <ToolIcon icon={<Settings className="w-4 h-4" />} />
