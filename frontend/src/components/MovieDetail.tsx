@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import Hls from 'hls.js';
 import { api, getProxiedImageUrl } from '../api/config';
-import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings, Loader2 } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 interface MetaData {
@@ -32,7 +32,7 @@ interface DetailResponse {
   }
 }
 
-interface Props {
+interface MovieDetailProps {
   slug: string;
   mediaType: string;
   category: string;
@@ -88,7 +88,21 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [fsharePassword, setFsharePassword] = useState('');
 
   const handleTorrentStream = async (magnet: string, serverName: string, epIdx: number, srvIdx: number) => {
-...
+    setIsTorrentStreaming(true);
+    try {
+        const res = await api.get<{ data: { stream_url: string } }>(`/stream/torrent?magnet=${encodeURIComponent(magnet)}`);
+        const { stream_url } = res.data.data;
+        
+        setActiveServerIdx(srvIdx);
+        setActiveEpisodeIdx(epIdx);
+        setActiveEmbed(stream_url); 
+        localStorage.setItem('omv_active_server_name', serverName);
+    } catch (err) {
+        console.error('Torrent stream failed:', err);
+        alert('Failed to start torrent stream. Peers might be missing.');
+    } finally {
+        setIsTorrentStreaming(false);
+    }
   };
 
   const handleFshareStream = async (url: string, serverName: string, epIdx: number, srvIdx: number) => {
@@ -695,9 +709,11 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                 const epNum = localIdx + 1;
                                                 const globalIdx = offsetStart + localIdx;
                                                 const ep = findEp(epNum);
-                                                const hasLink = !!(ep?.m3u8 || ep?.url || ep?.link_m3u8);
-                                                const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
                                                 const isPlaying = activeEpisodeIdx === globalIdx;
+                                                const isFshare = ep?.source_type === 'fshare' || ep?.url?.includes('fshare.vn');
+                                                const hasLink = !!(ep?.m3u8 || ep?.url || ep?.link_m3u8 || ep?.isTorrent || isFshare);
+                                                const isLoading = isPlaying && (isTorrentStreaming || isFshareResolving);
+                                                const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
                                                 const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
                                                 const isLastWatched = history[slug]?.s_idx === sIdx && history[slug]?.e_idx === globalIdx;
 
