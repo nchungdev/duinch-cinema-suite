@@ -60,8 +60,8 @@ async def health_check(request: Request):
             "name": "System Cache",
             "status": "up",
             "details": {
-                "tmdb": len(cache_manager._cache.get("tmdb_cache.json", {})),
-                "kkphim": len(cache_manager._cache.get("kkphim_cache.json", {}))
+                "tmdb": len(cache_manager._cache.get(config.TMDB_CACHE, {})),
+                "kkphim": len(cache_manager._cache.get(config.KKPHIM_CACHE, {}))
             }
         }
     except:

@@ -79,7 +79,7 @@ export const DiscoveryPipeline = ({
   const [loadingKeys, setLoadingKeys] = useState<Set<LoadingKey>>(new Set());
   const [doneKeys,    setDoneKeys]    = useState<Set<LoadingKey>>(new Set());
   const [activeTab,   setActiveTab]   = useState<string>('');
-  const [streamingNotified, setStreamingNotified] = useState<Set<string>>(new Set());
+  const [, setStreamingNotified] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const ctrl = new AbortController();

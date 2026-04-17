@@ -14,12 +14,13 @@ import urllib.parse
 from typing import List, Dict, Optional
 
 import httpx
+from app.core import config
 from app.services.cache_manager import get_from_cache, set_to_cache
 
-_FSHARE_NAME_CACHE   = "data/fshare_name_cache.json"
-_FSHARE_NAME_TTL     = 7 * 24 * 3600  # 7 days — file names rarely change
-_FSHARE_SEARCH_CACHE = "data/fshare_search_cache.json"
-_FSHARE_SEARCH_TTL   = 8 * 3600       # 8 hours
+_FSHARE_NAME_CACHE   = config.GOOGLE_SEARCH_NAME_CACHE
+_FSHARE_NAME_TTL     = config.FSHARE_NAME_TTL
+_FSHARE_SEARCH_CACHE = config.GOOGLE_SEARCH_CACHE
+_FSHARE_SEARCH_TTL   = config.FSHARE_SEARCH_TTL
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

@@ -6,8 +6,10 @@ from fastapi.responses import FileResponse, RedirectResponse
 import httpx
 from urllib.parse import urljoin
 
+from app.core import config
+
 router = APIRouter()
-CACHE_DIR = os.path.abspath("data/image_cache")
+CACHE_DIR = config.IMAGE_CACHE_DIR
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 @router.get("/image")
@@ -28,10 +30,10 @@ async def proxy_image(request: Request, url: str = Query(...)):
     # Return from cache if exists and not older than 1 hour
     if os.path.exists(cache_path):
         mtime = os.path.getmtime(cache_path)
-        if (time.time() - mtime) < 3600:
+        if (time.time() - mtime) < config.IMAGE_CACHE_TTL:
             return FileResponse(
                 cache_path, 
-                headers={"Cache-Control": "public, max-age=3600"}
+                headers={"Cache-Control": f"public, max-age={config.IMAGE_CACHE_TTL}"}
             )
     
     # Otherwise, download and cache
@@ -44,7 +46,7 @@ async def proxy_image(request: Request, url: str = Query(...)):
             return Response(
                 content=resp.content,
                 media_type=resp.headers.get("content-type", "image/jpeg"),
-                headers={"Cache-Control": "public, max-age=3600"}
+                headers={"Cache-Control": f"public, max-age={config.IMAGE_CACHE_TTL}"}
             )
         # Fallback if status not 200
         return RedirectResponse(url)

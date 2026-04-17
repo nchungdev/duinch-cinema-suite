@@ -5,10 +5,12 @@ import re
 from typing import List, Dict, Optional
 import urllib.parse
 
+from app.core import config
 from app.services.cache_manager import get_from_cache, set_to_cache
 
-_CACHE_FILE = "data/thuviencine_cache.json"
-_CACHE_TTL  = 8 * 3600  # 8 hours
+_CACHE_FILE = config.THUVIENCINE_CACHE
+_CACHE_TTL = config.THUVIENCINE_CACHE_TTL
+
 
 _STOP_WORDS = {
     'the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'and', 'or', 'for', 'with',

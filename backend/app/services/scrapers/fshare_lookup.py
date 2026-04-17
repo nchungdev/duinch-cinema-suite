@@ -2,6 +2,7 @@ import httpx
 import asyncio
 from typing import List, Dict, Tuple, Optional
 from app.core import config
+from app.services.cache_manager import get_from_cache, set_to_cache
 
 FSHARE_BASE = "https://www.fshare.vn/api/v3"
 FSHARE_FOLDER_API = f"{FSHARE_BASE}/files/folder"
@@ -117,8 +118,16 @@ async def resolve_fshare_url(url: str, client: httpx.AsyncClient) -> List[Dict]:
                 "size": None   # Unknown without API call
             }]
         elif url_type == "folder":
-            # Folder - fetch all files recursively
-            return await fetch_folder_files(linkcode, client)
+            # Folder - fetch all files recursively with caching
+            cache_key = f"folder_{linkcode}"
+            cached = get_from_cache(config.FSHARE_FOLDER_CACHE, cache_key, config.FSHARE_FOLDER_TTL)
+            if cached:
+                return cached
+            
+            files = await fetch_folder_files(linkcode, client)
+            if files:
+                set_to_cache(config.FSHARE_FOLDER_CACHE, cache_key, files)
+            return files
 
     except ValueError as e:
         print(f"Error parsing FShare URL {url}: {e}")

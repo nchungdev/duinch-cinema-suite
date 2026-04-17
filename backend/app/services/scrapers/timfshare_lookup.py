@@ -21,12 +21,13 @@ from typing import List, Dict, Optional
 
 import httpx
 
+from app.core import config
 from app.services.cache_manager import get_from_cache, set_to_cache
 
 _SEARCH_API    = "https://timfshare.com/api/v1/string-query-search"
 _SEARCH_PAGE   = "https://timfshare.com/search"   # fallback: HTML page (CSR — limited)
-_CACHE_FILE    = "data/timfshare_cache.json"
-_CACHE_TTL     = 8 * 3600  # 8 hours
+_CACHE_FILE    = config.TIMFSHARE_CACHE
+_CACHE_TTL     = config.TIMFSHARE_CACHE_TTL
 
 _HEADERS = {
     "User-Agent": (

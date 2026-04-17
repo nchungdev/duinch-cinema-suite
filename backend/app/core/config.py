@@ -8,8 +8,21 @@ TMDB_READ_ACCESS_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")
 FSHARE_APP_KEY = os.getenv("FSHARE_APP_KEY")
 FSHARE_USER_AGENT = os.getenv("FSHARE_USER_AGENT")
 
-METADATA_CACHE_EXPIRE = 24 * 3600  # 24 hours
-DISCOVERY_CACHE_EXPIRE = 3600      # 1 hour
+METADATA_CACHE_EXPIRE = int(os.getenv("TMDB_CACHE_TTL", 24 * 3600))
+DISCOVERY_CACHE_EXPIRE = int(os.getenv("DISCOVERY_CACHE_TTL", 3600))
+THUVIENCINE_CACHE_TTL = int(os.getenv("THUVIENCINE_CACHE_TTL", 24 * 3600))
+TIMFSHARE_CACHE_TTL = int(os.getenv("TIMFSHARE_CACHE_TTL", 8 * 3600))
+FSHARE_SEARCH_TTL = int(os.getenv("FSHARE_SEARCH_TTL", 8 * 3600))
+FSHARE_NAME_TTL = int(os.getenv("FSHARE_NAME_TTL", 7 * 24 * 3600))
+FSHARE_FOLDER_TTL = int(os.getenv("FSHARE_FOLDER_TTL", 24 * 3600))
+IMAGE_CACHE_TTL = int(os.getenv("IMAGE_CACHE_TTL", 3600))
 
-TMDB_CACHE = "data/tmdb_cache.json"
-KKPHIM_CACHE = "data/kkphim_cache.json"
+DATA_DIR = os.getenv("DATA_DIR", "data")
+TMDB_CACHE = os.path.join(DATA_DIR, "tmdb_cache.json")
+KKPHIM_CACHE = os.path.join(DATA_DIR, "kkphim_cache.json")
+IMAGE_CACHE_DIR = os.path.join(DATA_DIR, "image_cache")
+THUVIENCINE_CACHE = os.path.join(DATA_DIR, "thuviencine_cache.json")
+TIMFSHARE_CACHE = os.path.join(DATA_DIR, "timfshare_cache.json")
+GOOGLE_SEARCH_CACHE = os.path.join(DATA_DIR, "google_search_cache.json")
+GOOGLE_SEARCH_NAME_CACHE = os.path.join(DATA_DIR, "fshare_name_cache.json")
+FSHARE_FOLDER_CACHE = os.path.join(DATA_DIR, "fshare_folder_cache.json")
