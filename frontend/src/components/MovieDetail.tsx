@@ -311,8 +311,17 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
   useEffect(() => {
     const ep = streamableSources[activeSrcId]?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
-    if (ep?.embed) setActiveEmbed(ep.embed);
-  }, [streamableSources, activeSrcId, activeServerIdx, activeEpisodeIdx]);
+    if (ep?.embed) {
+      let url = ep.embed;
+      // Inject autoplay if enabled in settings (default true)
+      if (userSettings?.auto_play !== false) {
+        if (!url.includes('autoplay=')) {
+          url += (url.includes('?') ? '&' : '?') + 'autoplay=1';
+        }
+      }
+      setActiveEmbed(url);
+    }
+  }, [streamableSources, activeSrcId, activeServerIdx, activeEpisodeIdx, userSettings]);
 
   useEffect(() => {
     if (activeSrcId && streamableSources[activeSrcId]) {
@@ -371,7 +380,12 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
          <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative flex items-center justify-center group"
               style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}>
             {activeEmbed ? (
-               <iframe src={activeEmbed} allowFullScreen className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" />
+               <iframe 
+                  src={activeEmbed} 
+                  allowFullScreen 
+                  allow="autoplay; fullscreen"
+                  className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" 
+               />
             ) : (
                <div className="flex flex-col items-center gap-4 text-gray-500">
                   <Play className="w-16 h-16 opacity-30" />
