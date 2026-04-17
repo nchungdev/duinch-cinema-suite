@@ -5,8 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from app.api.endpoints import search, media, recommended, downloader, proxy, metadata, monitor, detail
-from app.services import cache_manager
+from app.api.endpoints import search, media, recommended, downloader, proxy, metadata, monitor, detail, user
 from collections import deque
 import time
 
@@ -18,7 +17,6 @@ async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=10)
     yield
     await app.state.http_client.aclose()
-    cache_manager.save_all_caches()
 
 app = FastAPI(
     title="NexusStream API",
@@ -61,6 +59,7 @@ app.include_router(recommended.router, prefix="/api", tags=["Recommended"])
 app.include_router(downloader.router, prefix="/api/downloader", tags=["Downloader"])
 app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])
 app.include_router(monitor.router, prefix="/api/monitor", tags=["Monitor"])
+app.include_router(user.router, prefix="/api/user", tags=["User"])
 
 if __name__ == "__main__":
     import uvicorn

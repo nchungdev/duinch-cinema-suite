@@ -1,5 +1,9 @@
 import os
 import sys
+from dotenv import load_dotenv, find_dotenv
+
+# Load environment variables
+load_dotenv(find_dotenv(), override=False)
 
 # Get the absolute path of the current file's directory
 current_dir = os.path.dirname(os.path.abspath(__file__))

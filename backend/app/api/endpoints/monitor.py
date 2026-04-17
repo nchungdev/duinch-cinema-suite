@@ -3,7 +3,6 @@ from fastapi.responses import HTMLResponse, FileResponse
 import time
 import os
 import asyncio
-from app.services import cache_manager
 
 router = APIRouter()
 
@@ -55,13 +54,18 @@ async def health_check(request: Request):
             results[key] = {"name": name, "status": "error", "message": str(e)}
             
     # 3. Cache Stats
+    def _count_files(dir_path):
+        if not os.path.exists(dir_path): return 0
+        return len([f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))])
+
     try:
         results["cache"] = {
             "name": "System Cache",
             "status": "up",
             "details": {
-                "tmdb": len(cache_manager._cache.get(config.TMDB_CACHE, {})),
-                "kkphim": len(cache_manager._cache.get(config.KKPHIM_CACHE, {}))
+                "tmdb": _count_files(config.TMDB_CACHE),
+                "kkphim": _count_files(config.KKPHIM_CACHE),
+                "images": _count_files(config.IMAGE_CACHE_DIR)
             }
         }
     except:
