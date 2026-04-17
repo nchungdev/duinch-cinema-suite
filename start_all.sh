@@ -1,22 +1,42 @@
 #!/bin/bash
+
+# --- CONFIGURATION ---
 PROJECT_ROOT=$(pwd)
 LOG_DIR="$PROJECT_ROOT/logs"
-mkdir -p "$LOG_DIR"
+DATA_DIR="$PROJECT_ROOT/data"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+FRONTEND_DIR="$PROJECT_ROOT/frontend"
+VENV_PATH="$PROJECT_ROOT/venv"
 
-echo "--- 0. Checking Environment ---"
-mkdir -p data/cache data/user data/secrets
-ENV_FILE="$PROJECT_ROOT/backend/.env"
+# Colors for better UI
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}=== CinemaPro Dashboard Orchestrator ===${NC}"
+
+# --- 1. PREPARE DIRECTORIES ---
+echo -e "${YELLOW}--- 1. Preparing Directories ---${NC}"
+mkdir -p "$LOG_DIR"
+mkdir -p "$DATA_DIR/cache" "$DATA_DIR/user" "$DATA_DIR/secrets" "$DATA_DIR/cache/tmdb-images"
+echo -e "${GREEN}   [OK] Logs and Data folders ready${NC}"
+
+# --- 2. CHECK ENVIRONMENT (.env) ---
+echo -e "${YELLOW}--- 2. Checking Environment ---${NC}"
+ENV_FILE="$BACKEND_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
     touch "$ENV_FILE"
+    echo -e "${YELLOW}   [Env] Created new .env file${NC}"
 fi
 
-# Function to ensure a variable exists in .env
 ensure_env() {
     local key=$1
     local val=$2
     if ! grep -q "^$key=" "$ENV_FILE"; then
         echo "$key=$val" >> "$ENV_FILE"
-        echo "   [Env] Added default $key"
+        echo -e "${GREEN}   [Env] Added default $key${NC}"
     fi
 }
 
@@ -30,23 +50,58 @@ ensure_env "FSHARE_SEARCH_TTL" "28800"
 ensure_env "FSHARE_NAME_TTL" "604800"
 ensure_env "FSHARE_FOLDER_TTL" "86400"
 ensure_env "IMAGE_CACHE_TTL" "3600"
+ensure_env "REDIS_URL" "redis://localhost:6379"
 
-echo "--- 1. Cleaning up ports 8086 and 5173 ---"
+# --- 3. BACKEND SETUP (Python Venv) ---
+echo -e "${YELLOW}--- 3. Backend Setup ---${NC}"
+if [ ! -d "$VENV_PATH" ]; then
+    echo -e "${BLUE}   [Venv] Creating virtual environment...${NC}"
+    python3 -m venv "$VENV_PATH"
+fi
+
+echo -e "${BLUE}   [Venv] Installing/Updating dependencies...${NC}"
+"$VENV_PATH/bin/pip" install -q -r "$BACKEND_DIR/requirements.txt"
+echo -e "${GREEN}   [OK] Backend dependencies satisfied${NC}"
+
+# --- 4. FRONTEND SETUP (Node Modules) ---
+echo -e "${YELLOW}--- 4. Frontend Setup ---${NC}"
+if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+    echo -e "${BLUE}   [NPM] Installing frontend dependencies (this may take a minute)...${NC}"
+    cd "$FRONTEND_DIR" && npm install --silent
+    cd "$PROJECT_ROOT"
+fi
+echo -e "${GREEN}   [OK] Frontend dependencies satisfied${NC}"
+
+# --- 5. REDIS CHECK ---
+echo -e "${YELLOW}--- 5. Service Dependencies ---${NC}"
+if ! redis-cli ping > /dev/null 2>&1; then
+    echo -e "${RED}   [WARN] Redis is not running! Fallback to File Cache.${NC}"
+else
+    echo -e "${GREEN}   [OK] Redis is active${NC}"
+fi
+
+# --- 6. START SERVICES ---
+echo -e "${YELLOW}--- 6. Starting Services ---${NC}"
+
+# Cleanup existing
+echo -e "${BLUE}   [System] Cleaning up ports 8086 and 5173...${NC}"
 lsof -ti:8086,5173 | xargs kill -9 2>/dev/null || true
 
-echo "--- 2. Starting Backend on port 8086 ---"
-cd "$PROJECT_ROOT/backend"
-../venv/bin/python run.py > "$LOG_DIR/backend.log" 2>&1 &
+# Start Backend
+cd "$BACKEND_DIR"
+nohup "$VENV_PATH/bin/python" run.py > "$LOG_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
-echo "Backend started with PID: $BACKEND_PID (Log: logs/backend.log)"
+echo -e "${GREEN}   [OK] Backend started (PID: $BACKEND_PID)${NC}"
 
-echo "--- 3. Starting Frontend on port 5173 ---"
-cd "$PROJECT_ROOT/frontend"
-# Sử dụng 0.0.0.0 để chấp nhận mọi kết nối và background command
-npm run dev -- --host 0.0.0.0 --port 5173 > "$LOG_DIR/frontend.log" 2>&1 &
+# Start Frontend
+cd "$FRONTEND_DIR"
+nohup npm run dev -- --host 0.0.0.0 --port 5173 > "$LOG_DIR/frontend.log" 2>&1 &
 FRONTEND_PID=$!
-echo "Frontend started with PID: $FRONTEND_PID (Log: logs/frontend.log)"
+echo -e "${GREEN}   [OK] Frontend started (PID: $FRONTEND_PID)${NC}"
 
-echo "--- Services are running ---"
-echo "Frontend: http://localhost:5173"
-echo "Backend:  http://localhost:8086"
+echo -e "${BLUE}=========================================${NC}"
+echo -e "${GREEN}ALL SERVICES ARE RUNNING!${NC}"
+echo -e "Frontend: ${BLUE}http://localhost:5173${NC}"
+echo -e "Backend:  ${BLUE}http://localhost:8086${NC}"
+echo -e "Logs:     ${NC}tail -f logs/backend.log${NC}"
+echo -e "${BLUE}=========================================${NC}"
