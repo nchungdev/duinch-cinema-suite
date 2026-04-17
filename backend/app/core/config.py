@@ -18,7 +18,10 @@ FSHARE_FOLDER_TTL = int(os.getenv("FSHARE_FOLDER_TTL", 24 * 3600))
 IMAGE_CACHE_TTL = int(os.getenv("IMAGE_CACHE_TTL", 3600))
 
 # Data Root Structure
-DATA_ROOT = os.getenv("DATA_ROOT", "data")
+# Default to the project root (parent of backend/app/core)
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
+DATA_ROOT = os.getenv("DATA_ROOT", _project_root)
 
 # 1. Cache (Transient - can be deleted)
 CACHE_DIR = os.path.join(DATA_ROOT, "cache")
