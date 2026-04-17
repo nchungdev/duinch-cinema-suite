@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI):
     cache_manager.save_all_caches()
 
 app = FastAPI(
-    title="OMV JDownloader Dashboard API",
+    title="NexusStream API",
     description="Business-Logic focused API Architecture",
     version="4.0.0",
     lifespan=lifespan,
