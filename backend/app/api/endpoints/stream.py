@@ -8,7 +8,13 @@ router = APIRouter()
 
 @router.get("/torrent")
 async def stream_torrent(magnet: str = Query(...)):
-...
+    """
+    Kích hoạt bộ stream torrent và trả về URL HTTP.
+    """
+    stream_url = torrent_service.start_torrent_stream(magnet)
+    if not stream_url:
+        raise HTTPException(status_code=500, detail="Failed to start torrent stream engine")
+        
     return {
         "data": {
             "stream_url": stream_url,
