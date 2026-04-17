@@ -380,11 +380,12 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
             )}
          </div>
 
-         <div className="w-full xl:w-fit flex flex-col gap-3 min-h-0">
+         <div className="w-full xl:w-fit flex flex-col gap-3 min-h-0"
+              style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}>
            {(() => {
              const playingServer = streamingLinks[activeServerIdx]?.server_name;
              const hasPlayback = !!activeEmbed;
-             const cardCls = `rounded-2xl border overflow-hidden transition-all duration-500 ${
+             const cardCls = `rounded-2xl border overflow-hidden transition-all duration-500 shrink-0 ${
                hasPlayback
                  ? 'bg-[#0a1a0f] border-green-500/30 shadow-[0_0_30px_rgba(74,222,128,0.1)]'
                  : 'bg-[#0c0c0e] border-white/[0.08]'
@@ -451,10 +452,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
              );
            })()}
 
-             <div className="relative group/panel">
+             <div className="relative group/panel flex-1 min-h-0">
                <div 
-                 className="w-full xl:w-[400px] flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10"
-                 style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}
+                 className="w-full xl:w-[400px] h-full flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10"
                >
                 
                 {seasonBoundaries.length > 0 && (
