@@ -1,8 +1,6 @@
-from fastapi import APIRouter, Request, Query, HTTPException
+from fastapi import APIRouter, Request, Query
 import asyncio
 import re
-from typing import List, Dict, Any, Optional
-from app.services import tmdb_service
 from app.services.scrapers.kkphim_lookup import lookup_kkphim
 from app.services.scrapers.ophim_lookup import lookup_ophim
 from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
@@ -13,72 +11,6 @@ from app.services.scrapers.torrent_lookup import lookup_torrent
 from app.services.scrapers.timfshare_lookup import lookup_timfshare
 
 router = APIRouter()
-
-@router.get("/detail/{media_type}/{tmdb_id}")
-async def media_detail(request: Request, media_type: str, tmdb_id: int):
-    """Get full details for a movie/tv show — metadata from TMDB + streaming from KKPhim."""
-    if media_type not in ("movie", "tv"):
-        raise HTTPException(status_code=400, detail="media_type must be 'movie' or 'tv'")
-
-    client = request.app.state.http_client
-
-    # ── 1. TMDB metadata ──────────────────────────────────────────────────────
-    raw = await tmdb_service.get_tmdb_details(client, tmdb_id, media_type)
-    if not raw or raw.get("success") is False:
-        raise HTTPException(status_code=404, detail=f"TMDB {media_type}/{tmdb_id} not found")
-
-    tmdb_seasons = []
-    if media_type == "tv":
-        for s in raw.get("seasons", []):
-            if s.get("season_number", 0) > 0:
-                tmdb_seasons.append({
-                    "season_number": s["season_number"],
-                    "name": s.get("name"),
-                    "episode_count": s.get("episode_count", 0),
-                })
-
-    metadata = {
-        "title": raw.get("title") or raw.get("name"),
-        "origin_name": raw.get("original_title") or raw.get("original_name"),
-        "poster": f"https://image.tmdb.org/t/p/w500{raw['poster_path']}" if raw.get("poster_path") else None,
-        "poster_url": f"https://image.tmdb.org/t/p/w500{raw['poster_path']}" if raw.get("poster_path") else None,
-        "thumb_url": f"https://image.tmdb.org/t/p/original{raw['backdrop_path']}" if raw.get("backdrop_path") else None,
-        "content": raw.get("overview", ""),
-        "year": int((raw.get("release_date") or raw.get("first_air_date") or "0")[:4] or 0),
-        "time": f"{raw.get('runtime', 0)} min" if media_type == "movie" else f"{raw.get('number_of_episodes', 0)} tập",
-        "quality": "4K" if raw.get("vote_average", 0) > 8 else "HD",
-        "lang": raw.get("original_language", "en").upper(),
-        "type": "series" if media_type == "tv" else "single",
-        "category": [{"name": g["name"]} for g in raw.get("genres", [])],
-        "actor": [],
-        "tmdb_id": tmdb_id,
-        "media_type": media_type,
-        "tmdb_seasons": tmdb_seasons,
-    }
-
-    # ── 2. KKPhim streaming links (default backup) ───────────────────
-    streaming_links = []
-    try:
-        from app.services.scrapers.kkphim_lookup import kkphim_get_by_tmdb, format_kkphim_links
-        res = await asyncio.to_thread(kkphim_get_by_tmdb, media_type, tmdb_id)
-        if res and not res.get("error") and res.get("status") is True and res.get("episodes"):
-            streaming_links = format_kkphim_links(res["episodes"])
-    except Exception as e:
-        print(f"KKPhim lookup error for {media_type}/{tmdb_id}: {e}")
-
-    return {
-        "data": {
-            "metadata": metadata,
-            "local": {"exists": False},
-            "links": {
-                "streaming": streaming_links,
-                "fshare": [],
-                "web": [],
-            },
-        },
-        "error_code": 0,
-        "error_msg": "",
-    }
 
 
 @router.get("/discovery")

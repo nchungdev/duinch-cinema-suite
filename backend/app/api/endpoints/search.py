@@ -4,7 +4,6 @@ from app.services import media_service
 router = APIRouter()
 
 @router.get("")
-@router.get("/{q}")
 async def media_search(request: Request, q: str = None, media_type: str = "all", page: int = 1):
     """Search TMDB — supports media_type=all|movie|tv and pagination."""
     query = q or request.query_params.get("q")
