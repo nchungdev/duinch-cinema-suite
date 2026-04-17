@@ -105,6 +105,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [ribbonAtStart, setRibbonAtStart] = useState(true);
   const [ribbonAtEnd, setRibbonAtEnd] = useState(false);
 
+  const playerContainerRef = useRef<HTMLDivElement>(null);
   const episodeListRef = useRef<HTMLDivElement>(null);
   const seasonRibbonRef = useRef<HTMLDivElement>(null);
   const seasonRibbonButtonsRef = useRef<{ [key: number]: HTMLButtonElement | null }>({});
@@ -190,16 +191,24 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     return () => ribbon.removeEventListener('scroll', update);
   }, [seasonBoundaries]);
 
+  // Intersection Observer for PiP
   useEffect(() => {
-    const HEADER_H = 96;
-    const onScroll = () => {
-      if (!miniPlayerSentinelRef.current) return;
-      const top = miniPlayerSentinelRef.current.getBoundingClientRect().top;
-      setMiniPlayerFloating(top < HEADER_H);
+    const options = {
+      root: null,
+      threshold: 0,
+      rootMargin: '-96px 0px 0px 0px' 
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setMiniPlayerFloating(!entry.isIntersecting);
+    }, options);
+
+    if (playerContainerRef.current) {
+      observer.observe(playerContainerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [loading]);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -377,21 +386,37 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
       </div>
 
       <div className="flex flex-col xl:flex-row gap-8 w-full max-w-screen-2xl mx-auto px-4 md:px-10">
-         <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative flex items-center justify-center group"
+         {/* Player Wrapper & Placeholder */}
+         <div ref={playerContainerRef} className="flex-1 w-full relative" 
               style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}>
-            {activeEmbed ? (
-               <iframe 
-                  src={activeEmbed} 
-                  allowFullScreen 
-                  allow="autoplay; fullscreen"
-                  className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" 
-               />
-            ) : (
-               <div className="flex flex-col items-center gap-4 text-gray-500">
-                  <Play className="w-16 h-16 opacity-30" />
-                  <span className="text-[10px] uppercase tracking-[0.2em] font-black">Standing By</span>
-               </div>
-            )}
+            
+            <div className={`w-full h-full bg-[#030303] transition-all duration-700 ease-in-out overflow-hidden group ${
+                  miniPlayerFloating 
+                    ? 'fixed bottom-8 right-8 w-[360px] h-[202px] z-[200] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] ring-2 ring-blue-500/40 animate-in slide-in-from-bottom-10 scale-100' 
+                    : 'relative rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10'
+                 }`}
+            >
+               {activeEmbed ? (
+                  <>
+                    <iframe 
+                        src={activeEmbed} 
+                        allowFullScreen 
+                        allow="autoplay; fullscreen"
+                        className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" 
+                    />
+                    {miniPlayerFloating && (
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                             <div className="absolute top-3 left-3 px-2 py-1 bg-blue-600 rounded-md text-[7px] font-black uppercase tracking-widest text-white shadow-lg">Picture-in-Picture</div>
+                        </div>
+                    )}
+                  </>
+               ) : (
+                  <div className="flex flex-col items-center gap-4 text-gray-500 h-full justify-center">
+                     <Play className="w-16 h-16 opacity-30" />
+                     <span className="text-[10px] uppercase tracking-[0.2em] font-black">Standing By</span>
+                  </div>
+               )}
+            </div>
          </div>
 
          <div className="w-full xl:w-fit flex flex-col gap-3 min-h-0"
@@ -453,16 +478,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
              );
 
              return (
-               <>
-                  <div className="xl:w-[400px] shrink-0">
-                    <div className={cardCls}>{cardContent}</div>
-                  </div>
-                 {miniPlayerFloating && (
-                   <div className={`${cardCls} fixed top-[88px] right-4 xl:right-10 w-[min(400px,calc(100vw-2rem))] z-50 shadow-[0_8px_32px_rgba(0,0,0,0.6)] animate-slide-up`}>
-                     {cardContent}
-                   </div>
-                 )}
-               </>
+               <div className="xl:w-[400px] shrink-0">
+                 <div className={cardCls}>{cardContent}</div>
+               </div>
              );
            })()}
 
