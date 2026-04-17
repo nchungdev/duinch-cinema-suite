@@ -5,23 +5,7 @@ __pycache__/
 .DS_Store
 .gitnexus
 logs/
+data/
 
 # Backend
 backend/data/
-backend/log/
-backend/*.log
-backend/*.json
-!backend/metadata.json
-
-# Frontend
-frontend/dist/
-frontend/node_modules/
-
-# Generic
-*.log
-*.json
-!package.json
-!tsconfig.json
-!plugin.json
-!manifest.json
-!docker-compose.yml
