@@ -257,7 +257,7 @@ class PhimAPIBase:
                         elif str(episode) in ep_name:
                             is_match = True
 
-                if is_match:
+                if is_match and m3u8:   # embed-only entries are not useful for download
                     nums = re.findall(r'\d+', ep_name or "")
                     parsed_ep = int(nums[0]) if nums else None
                     results.append({
@@ -267,7 +267,6 @@ class PhimAPIBase:
                         "episode": parsed_ep,
                         "name": ep_name,
                         "m3u8": m3u8,
-                        "embed": embed,
                         "server": server_name
                     })
         return results
