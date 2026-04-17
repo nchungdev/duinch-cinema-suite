@@ -58,15 +58,44 @@ async def health_check(request: Request):
         if not os.path.exists(dir_path): return 0
         return len([f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))])
 
+    def _get_dir_size(dir_path):
+        """Calculate total size of a directory in MB."""
+        if not os.path.exists(dir_path): return 0.0
+        total = 0
+        for root, _, files in os.walk(dir_path):
+            for f in files:
+                fp = os.path.join(root, f)
+                if os.path.isfile(fp):
+                    total += os.path.getsize(fp)
+        return round(total / (1024 * 1024), 2)
+
+    def _get_redis_stats():
+        """Retrieve Redis memory usage and key count."""
+        try:
+            from app.services.cache_manager import _get_redis
+            r = _get_redis()
+            if not r: return None
+            info = r.info("memory")
+            return {
+                "status": "up",
+                "used_memory": info.get("used_memory_human", "0B"),
+                "peak_memory": info.get("used_memory_peak_human", "0B"),
+                "keys": r.dbsize()
+            }
+        except:
+            return {"status": "error"}
+
     try:
         results["cache"] = {
             "name": "System Cache",
             "status": "up",
-            "details": {
-                "tmdb": _count_files(config.TMDB_CACHE),
-                "kkphim": _count_files(config.KKPHIM_CACHE),
-                "images": _count_files(config.IMAGE_CACHE_DIR)
-            }
+            "file_system": {
+                "tmdb": {"count": _count_files(config.TMDB_CACHE), "size": f"{_get_dir_size(config.TMDB_CACHE)} MB"},
+                "kkphim": {"count": _count_files(config.KKPHIM_CACHE), "size": f"{_get_dir_size(config.KKPHIM_CACHE)} MB"},
+                "images": {"count": _count_files(config.IMAGE_CACHE_DIR), "size": f"{_get_dir_size(config.IMAGE_CACHE_DIR)} MB"},
+                "total_size": f"{_get_dir_size(config.CACHE_ROOT)} MB"
+            },
+            "redis": _get_redis_stats()
         }
     except:
         results["cache"] = {"name": "System Cache", "status": "error"}

@@ -62,6 +62,48 @@
             <!-- Dynamic stats -->
         </div>
 
+        <!-- Cache Intelligence -->
+        <div class="space-y-6">
+            <h3 class="text-xl font-black uppercase italic tracking-tighter font-outfit px-2">Cache Intelligence</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- File System Cache -->
+                <div class="glass p-10 rounded-[3rem] border border-white/5 space-y-8 relative overflow-hidden">
+                    <div class="flex items-center justify-between relative z-10">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
+                                <i data-lucide="hard-drive" class="w-5 h-5 text-blue-400"></i>
+                            </div>
+                            <h4 class="text-sm font-black uppercase tracking-widest text-white">File System</h4>
+                        </div>
+                        <span id="fs-total" class="text-2xl font-black text-blue-400 font-outfit italic">0.00 MB</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-6 relative z-10" id="fs-details">
+                        <!-- FS Details -->
+                    </div>
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-blue-600/5 blur-[80px] -z-10"></div>
+                </div>
+
+                <!-- Redis Cache -->
+                <div class="glass p-10 rounded-[3rem] border border-white/5 space-y-8 relative overflow-hidden">
+                    <div class="flex items-center justify-between relative z-10">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-xl bg-orange-600/20 border border-orange-500/30 flex items-center justify-center">
+                                <i data-lucide="zap" class="w-5 h-5 text-orange-400"></i>
+                            </div>
+                            <h4 class="text-sm font-black uppercase tracking-widest text-white">Redis Cluster</h4>
+                        </div>
+                        <span id="redis-mem" class="text-2xl font-black text-orange-400 font-outfit italic">--</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-6 relative z-10" id="redis-details">
+                        <!-- Redis Details -->
+                    </div>
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-orange-600/5 blur-[80px] -z-10"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Core Services Grid -->
         <div class="space-y-6">
             <h3 class="text-xl font-black uppercase italic tracking-tighter font-outfit px-2">Core Services Health</h3>
@@ -113,14 +155,36 @@
         function renderUI(data) {
             // Render Stats
             const statsGrid = document.getElementById('stats-grid');
-            const totalCached = (data.cache?.details?.tmdb || 0) + (data.cache?.details?.kkphim || 0);
+            const totalCached = (data.cache?.file_system?.tmdb?.count || 0) + (data.cache?.file_system?.kkphim?.count || 0);
             
             statsGrid.innerHTML = `
                 ${createStatCard('globe', 'Gateway', data.tmdb?.status === 'up' ? 'Online' : 'Error', data.tmdb?.status)}
-                ${createStatCard('zap', 'Ping', data.tmdb?.latency || '0ms', 'up')}
-                ${createStatCard('database', 'Cache', totalCached + ' Items', 'up')}
-                ${createStatCard('clock', 'Uptime', '99.99%', 'up')}
+                ${createStatCard('zap', 'Latency', data.tmdb?.latency || '0ms', 'up')}
+                ${createStatCard('database', 'Redis Keys', data.cache?.redis?.keys || '0', 'up')}
+                ${createStatCard('hard-drive', 'Disk Size', data.cache?.file_system?.total_size || '0 MB', 'up')}
             `;
+
+            // Render Cache Details
+            if (data.cache?.file_system) {
+                const fs = data.cache.file_system;
+                document.getElementById('fs-total').innerText = fs.total_size;
+                document.getElementById('fs-details').innerHTML = `
+                    ${createCacheMiniCard('TMDB Metadata', fs.tmdb.count, fs.tmdb.size)}
+                    ${createCacheMiniCard('KKPhim API', fs.kkphim.count, fs.kkphim.size)}
+                    ${createCacheMiniCard('Image Assets', fs.images.count, fs.images.size)}
+                `;
+            }
+
+            if (data.cache?.redis) {
+                const r = data.cache.redis;
+                document.getElementById('redis-mem').innerText = r.used_memory;
+                document.getElementById('redis-details').innerHTML = `
+                    ${createCacheMiniCard('Memory Usage', r.used_memory, 'Current')}
+                    ${createCacheMiniCard('Peak Usage', r.peak_memory, 'Highest')}
+                    ${createCacheMiniCard('Active Keys', r.keys, 'Indexed')}
+                    ${createCacheMiniCard('Cluster Status', 'Online', 'Operational')}
+                `;
+            }
 
             // Render Services
             const servicesGrid = document.getElementById('services-grid');
@@ -166,6 +230,18 @@
                         <span class="text-[10px] font-black uppercase tracking-widest">${label}</span>
                     </div>
                     <span class="text-3xl font-black uppercase italic tracking-tighter font-outfit ${status === 'down' ? 'text-red-500' : 'text-white'}">${value}</span>
+                </div>
+            `;
+        }
+
+        function createCacheMiniCard(label, count, size) {
+            return `
+                <div class="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-1">
+                    <p class="text-[8px] font-black uppercase tracking-widest text-gray-500">${label}</p>
+                    <div class="flex items-baseline gap-2">
+                        <span class="text-lg font-black text-white font-outfit">${count}</span>
+                        <span class="text-[9px] font-bold text-gray-600 uppercase">${size}</span>
+                    </div>
                 </div>
             `;
         }
