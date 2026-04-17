@@ -313,8 +313,15 @@ export const DiscoveryPipeline = ({
           <div className="space-y-1">
             {downloadableByType[activeTab].map((l, i) => (
               <DeepRow key={i} link={l}
-                actionLabel={activeTab === 'torrent' ? 'Magnet' : activeTab === 'gdrive' ? 'Drive' : activeTab === 'dailymotion' ? 'Watch' : 'FShare'}
+                actionLabel={activeTab === 'torrent' ? 'Play' : activeTab === 'gdrive' ? 'Drive' : activeTab === 'dailymotion' ? 'Watch' : 'FShare'}
                 color={stMeta(activeTab).color}
+                onAction={(url, name) => {
+                  if (activeTab === 'torrent') {
+                    onStreamingReady?.([{ name, url, source_type: 'torrent', source: l.source }], l.source || 'torrent');
+                  } else {
+                    window.open(url, '_blank');
+                  }
+                }}
               />
             ))}
             {typeLoading(activeTab) && (
@@ -494,7 +501,7 @@ function QuickServerRow({ serverName, episodes, color = 'text-orange-400', cloud
 }
 
 // ── Deep Row (downloadable / external link) ───────────────────────────────────
-function DeepRow({ link, actionLabel, color }: { link: MediaLink; actionLabel: string; color: string }) {
+function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; actionLabel: string; color: string; onAction?: (url: string, name: string) => void }) {
   const src      = (link as any).source as string | undefined;
   const srcLabel = src ? (SOURCE_BADGE[src] ?? src) : null;
 
@@ -522,7 +529,12 @@ function DeepRow({ link, actionLabel, color }: { link: MediaLink; actionLabel: s
             <ExternalLink className="w-3 h-3" />
           </a>
         )}
-        <button onClick={() => link.url && window.open(link.url, '_blank')}
+        <button onClick={() => {
+            if (link.url) {
+                if (onAction) onAction(link.url, link.name || '');
+                else window.open(link.url, '_blank');
+            }
+          }}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest ${color}`}>
           <Download className="w-2.5 h-2.5" />
           {actionLabel}
