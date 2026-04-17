@@ -92,7 +92,7 @@ function App() {
     setSearchLoading(true);
     try {
       const res = await api.get<{ results: any[]; total_pages: number; page: number }>(
-        `/search/${encodeURIComponent(q)}?media_type=${tab}&page=${page}`
+        `/search?q=${encodeURIComponent(q)}&media_type=${tab}&page=${page}`
       );
       const data = res.data;
       setSearchResults(prev => page === 1 ? (data?.results || []) : [...prev, ...(data?.results || [])]);
