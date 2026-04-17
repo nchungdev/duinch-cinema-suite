@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import Hls from 'hls.js';
 import { api, getProxiedImageUrl } from '../api/config';
-import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Download, Cloud, Globe, Clock, Star, Calendar, Users, Shield, Tag, Layout, Settings, Loader2, ExternalLink } from 'lucide-react';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 interface MetaData {
@@ -48,20 +48,21 @@ function MarqueeText({ text, className }: { text: string, className?: string }) 
 
   useEffect(() => {
     if (containerRef.current && textRef.current) {
-      setShouldAnimate(textRef.current.offsetWidth > containerRef.current.offsetWidth);
+      setShouldAnimate(!!text && textRef.current.offsetWidth > containerRef.current.offsetWidth);
     }
   }, [text]);
 
+  const safeText = text ?? '';
   return (
     <div ref={containerRef} className={`overflow-hidden whitespace-nowrap relative ${className}`}>
-      <span 
-        ref={textRef} 
+      <span
+        ref={textRef}
         className={`inline-block ${shouldAnimate ? 'animate-marquee' : ''}`}
-        style={shouldAnimate ? { animationDuration: `${Math.max(5, text.length * 0.2)}s` } : {}}
+        style={shouldAnimate ? { animationDuration: `${Math.max(5, safeText.length * 0.2)}s` } : {}}
       >
-        {text}
+        {safeText}
       </span>
-      {shouldAnimate && <span className="inline-block pl-8 opacity-0">{text}</span>}
+      {shouldAnimate && <span className="inline-block pl-8 opacity-0">{safeText}</span>}
     </div>
   );
 }
@@ -280,7 +281,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
         const detailData = res.data;
         setData(detailData);
         
-        if (detailData.metadata.tmdb_seasons && initialSeason) {
+        if (detailData.metadata?.tmdb_seasons && initialSeason) {
             const sIdx = detailData.metadata.tmdb_seasons.findIndex(s => s.season_number === initialSeason);
             if (sIdx !== -1) {
                 setActiveSeasonIdx(sIdx);
@@ -346,7 +347,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     progressStore[slug] = {
       s_idx: activeSeasonIdx,
       e_idx: activeEpisodeIdx,
-      title: data.metadata.title,
+      title: data.metadata?.title,
       type: mediaType,
       updated_at: Date.now()
     };
@@ -355,7 +356,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
   useEffect(() => {
     if (!data) return;
-    const sNum = data.metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number;
+    const sNum = data.metadata?.tmdb_seasons?.[activeSeasonIdx]?.season_number;
     const eNum = activeEpisodeIdx + 1;
     
     // Recovery: Check for saved source on mount or data change
@@ -475,6 +476,16 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   );
 
   const { metadata } = data;
+  if (!metadata) return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6">
+      <span className="text-yellow-500/50 italic font-black text-6xl">500</span>
+      <div className="text-center space-y-2">
+        <h2 className="text-2xl font-black uppercase italic tracking-tighter">Metadata Unavailable</h2>
+        <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">Source returned an empty manifest</p>
+      </div>
+      <button onClick={onBack} className="mt-4 px-8 py-3 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">Return to Command</button>
+    </div>
+  );
 
   const scrollSeasonRibbon = (dir: 'l' | 'r') => {
       if (seasonRibbonRef.current) {
@@ -555,9 +566,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                ))}
                              </div>
                            </div>
-                           <MarqueeText 
-                                text={metadata.title} 
-                                className="text-[12px] font-black text-white block leading-tight" 
+                           <MarqueeText
+                                text={metadata.title || metadata.origin_name || 'Unknown'}
+                                className="text-[12px] font-black text-white block leading-tight"
                            />
                            {playingServer && (
                              <span className="text-[9px] text-gray-500 truncate flex items-center gap-1 mt-0.5">
@@ -729,7 +740,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                                     handleFshareStream(ep.url, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
                                                                 } else {
                                                                     setActiveEpisodeIdx(globalIdx); 
-                                                                    if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); 
+                                                                    if (!ep.embed) {
+                                                                        const url = ep.url || ep.m3u8 || ep.link_m3u8;
+                                                                        if (url) window.open(url, '_blank');
+                                                                    }
                                                                 }
                                                             }} 
                                                             className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed"
@@ -742,24 +756,20 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                                 text={epLabel}
                                                                 className={`w-full text-[11px] font-black transition-colors ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}
                                                             />
+                                                            <div className="flex items-center gap-1.5 mt-0.5">
+                                                                <span className="text-[7px] font-bold text-gray-600 uppercase tracking-wider">
+                                                                    {ep?.stream_type || 'HLS'}
+                                                                </span>
+                                                                <div className="w-0.5 h-0.5 rounded-full bg-white/5" />
+                                                                <span className="text-[7px] font-bold text-blue-500/40 uppercase tracking-wider">
+                                                                    {ep?.provider || 'SOURCE'}
+                                                                </span>
+                                                            </div>
                                                             {isLastWatched && !isPlaying && (
-                                                                <span className="text-[7px] font-black uppercase tracking-wider text-blue-500/60 leading-none">Last Watched</span>
+                                                                <span className="text-[7px] font-black uppercase tracking-wider text-blue-500/60 leading-none mt-1">Last Watched</span>
                                                             )}
                                                         </div>
                                                         </button>
-                                                        <div className="flex items-center px-2.5 gap-1">
-                                                            <button 
-                                                                disabled={!hasLink} 
-                                                                onClick={() => {
-                                                                    const url = ep?.url || ep?.m3u8 || ep?.link_m3u8 || ep?.magnet;
-                                                                    if (url) window.open(url, '_blank');
-                                                                }}
-                                                                title="Open Externally" 
-                                                                className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 transition-all flex items-center justify-center hover:enabled:bg-white/10 text-gray-500 hover:enabled:text-white disabled:opacity-30"
-                                                            >
-                                                                <ExternalLink className="w-3.5 h-3.5" />
-                                                            </button>
-                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -778,6 +788,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                         {server.server_data.map((ep: any, epIdx: number) => {
                                             const isPlaying = activeServerIdx === srvIdx && activeEpisodeIdx === epIdx;
                                             const isFshare = ep.source_type === 'fshare' || ep.url?.includes('fshare.vn');
+                                            // Ẩn link fshare nếu chưa login fshare
+                                            if (isFshare && !userSettings?.fshare_session) return null;
                                             const hasLink = ep.isTorrent || isFshare || !!(ep.m3u8 || ep.embed || ep.link_m3u8);
                                             const isLoading = isPlaying && (isTorrentStreaming || isFshareResolving);
                                             
@@ -786,7 +798,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                     <button 
                                                         disabled={!hasLink || isLoading} 
                                                         onClick={() => { 
-                                                            if (!hasLink) return; 
+                                                            if (!hasLink || !ep) return; 
                                                             if (ep.isTorrent) {
                                                                 handleTorrentStream(ep.magnet, server.server_name, epIdx, srvIdx);
                                                             } else if (isFshare) {
@@ -794,7 +806,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                             } else {
                                                                 setActiveServerIdx(srvIdx);
                                                                 setActiveEpisodeIdx(epIdx); 
-                                                                if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); 
+                                                                if (!ep.embed) {
+                                                                    const url = ep.url || ep.m3u8 || ep.link_m3u8;
+                                                                    if (url) window.open(url, '_blank'); 
+                                                                }
                                                                 localStorage.setItem('omv_active_server_name', server.server_name);
                                                             }
                                                         }} 
@@ -805,29 +820,28 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                         </div>
                                                         <div className="flex flex-col min-w-0 items-start">
                                                             <MarqueeText 
-                                                                text={ep.isTorrent || isFshare ? ep.name : server.server_name}
+                                                                text={ep?.isTorrent || isFshare ? (ep?.name || 'Unknown') : server.server_name}
                                                                 className={`w-full text-[11px] font-black uppercase tracking-[0.15em] transition-colors ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-300 group-hover/ep:text-white'}`}
                                                             />
                                                             <div className="flex items-center gap-2 mt-1">
                                                                 <span className="text-[8px] font-bold text-gray-600 uppercase tracking-widest leading-none">
-                                                                    {ep.isTorrent ? 'P2P Stream' : isFshare ? 'Cloud Stream' : (ep.name || 'Full Movie')}
+                                                                    {ep?.stream_type === 'P2P' ? 'P2P Stream' : 
+                                                                     ep?.stream_type === 'HLS' ? 'HLS Feed' : 
+                                                                     ep?.stream_type === 'EMBED' ? 'Embed Player' : 
+                                                                     ep?.stream_type === 'DIRECT' ? 'Cloud Stream' : 'Digital Transmission'}
                                                                 </span>
                                                                 <div className="w-1 h-1 rounded-full bg-white/10" />
-                                                                <span className={`text-[8px] font-bold uppercase tracking-widest leading-none ${ep.isTorrent ? 'text-green-500/60' : isFshare ? 'text-red-500/60' : 'text-blue-500/40'}`}>
-                                                                    {ep.isTorrent ? 'Sequential Loading' : isFshare ? 'Fshare Account' : 'Primary Link'}
+                                                                <span className={`text-[8px] font-bold uppercase tracking-widest leading-none ${
+                                                                    ep?.stream_type === 'P2P' ? 'text-green-500/60' : 
+                                                                    ep?.stream_type === 'DIRECT' ? 'text-red-500/60' : 
+                                                                    'text-blue-500/40'
+                                                                }`}>
+                                                                    {ep?.provider || 'Unknown Source'}
                                                                 </span>
                                                             </div>
                                                         </div>
                                                     </button>
-                                                    <div className="flex items-center px-4 gap-2">
-                                                        <button 
-                                                            disabled={!hasLink}
-                                                            onClick={() => ep.url && window.open(ep.url, '_blank')}
-                                                            title="Open Externally"
-                                                            className="w-8 h-8 rounded-lg transition-all flex items-center justify-center bg-white/5 hover:enabled:bg-white/10 text-gray-500 hover:enabled:text-white border border-white/5 disabled:opacity-30"
-                                                        >
-                                                            <ExternalLink className="w-3.5 h-3.5" />
-                                                        </button>
+                                                    <div className="flex items-center px-4 gap-1">
                                                         <div className={`w-1.5 h-1.5 rounded-full ${isPlaying ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-white/5'}`} />
                                                     </div>
                                                 </div>
@@ -870,13 +884,13 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                       <Settings className={`w-4 h-4 ${showSourceMenu ? 'animate-spin-slow' : ''}`} />
                     </button>
 
-                    {/* Popover: Stream Sources (kkphim / ophim) */}
-                    {showSourceMenu && Object.keys(streamableSources).length > 0 && (
+                    {/* Popover: Stream Sources */}
+                    {showSourceMenu && (
                       <div className="absolute right-full top-0 mr-3 w-52 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl p-2 flex flex-col gap-1 z-50 animate-slide-left">
                         <div className="px-3 py-2 border-b border-white/5 mb-1 flex items-center justify-between">
                           <div>
-                            <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">Stream Source</span>
-                            <p className="text-[6px] text-gray-700 uppercase tracking-widest mt-0.5">M3U8 provider</p>
+                            <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">Transmission Grid</span>
+                            <p className="text-[6px] text-gray-700 uppercase tracking-widest mt-0.5">Control Panel</p>
                           </div>
                           <button 
                             onClick={async () => {
@@ -894,22 +908,32 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                             Auto
                           </button>
                         </div>
-                        {Object.keys(streamableSources).map(srcId => {
+
+                        {/* Define All Possible Sources */}
+                        {(['kkphim', 'ophim', 'default', 'timfshare', 'thuviencine', 'web']).map(srcId => {
                           const isActive = srcId === activeSrcId;
-                          const srcMeta: Record<string, { label: string; color: string }> = {
-                            kkphim: { label: 'KKPhim',  color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
-                            ophim:  { label: 'OPhim',   color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
-                          };
-                          const meta = srcMeta[srcId] ?? { label: srcId, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
                           const serverCount = streamableSources[srcId]?.length ?? 0;
+                          const isAvailable = serverCount > 0;
+                          
+                          const srcMeta: Record<string, { label: string; color: string }> = {
+                            kkphim:     { label: 'KKPhim',     color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
+                            ophim:      { label: 'OPhim',      color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
+                            default:    { label: 'Torrent',    color: 'text-green-400  bg-green-500/10  border-green-500/30'  },
+                            timfshare:  { label: 'TimFshare',  color: 'text-blue-400   bg-blue-500/10   border-blue-500/30'   },
+                            thuviencine:{ label: 'ThuVienCine',color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
+                            web:        { label: 'Web/Google', color: 'text-sky-400    bg-sky-500/10    border-sky-500/30'    },
+                          };
+                          const meta = srcMeta[srcId] ?? { label: srcId.toUpperCase(), color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
+                          
                           return (
                             <button key={srcId}
+                              disabled={!isAvailable}
                               onClick={async () => {
+                                if (!isAvailable) return;
                                 setActiveSrcId(srcId);
                                 setActiveServerIdx(0);
                                 setShowSourceMenu(false);
                                 
-                                // Save preference to backend
                                 const newSettings = { ...userSettings, preferred_source: srcId };
                                 setUserSettings(newSettings);
                                 try {
@@ -919,15 +943,19 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                 }
                               }}
                               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                                isActive
-                                  ? meta.color
-                                  : 'border-transparent text-gray-600 hover:text-gray-400 hover:bg-white/5'
+                                !isAvailable
+                                  ? 'opacity-20 grayscale cursor-not-allowed border-transparent text-gray-500'
+                                  : isActive
+                                    ? meta.color
+                                    : 'border-transparent text-gray-600 hover:text-gray-400 hover:bg-white/5'
                               }`}
                             >
-                              <Globe className="w-3 h-3" />
+                              <Globe className={`w-3 h-3 ${!isAvailable ? 'text-gray-800' : ''}`} />
                               <span className="flex-1 text-left">{meta.label}</span>
-                              <span className="text-[7px] text-gray-600 font-bold normal-case tracking-normal">{serverCount} sv</span>
-                              {isActive && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
+                              <span className="text-[7px] font-bold normal-case tracking-normal opacity-50">
+                                {isAvailable ? `${serverCount} sv` : 'N/A'}
+                              </span>
+                              {isActive && isAvailable && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
                             </button>
                           );
                         })}
@@ -1069,7 +1097,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                     m3u8:  isTorrent ? '' : (item.m3u8 || item.url || ''),
                     embed: item.embed || '',
                     magnet: isTorrent ? url : '',
-                    isTorrent: isTorrent
+                    isTorrent: isTorrent,
+                    stream_type: item.stream_type,
+                    provider: item.provider
                   });
                 }
                 const serverList = Object.values(grouped);
