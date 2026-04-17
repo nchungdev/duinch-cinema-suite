@@ -329,10 +329,11 @@ _STOP_WORDS = {
     'minh','lồng','tiếng','việt','nam','season','series','collection',
 }
 
-def _is_relevant(name: str, title: str) -> bool:
+def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     """
     Check if the FShare file/folder name is relevant to the search title.
-    Uses keyword overlap: at least half the significant title words must appear in the name.
+    Uses keyword overlap: at least 70% of significant title words must appear in the name.
+    Also ensures year consistency if provided.
     """
     def keywords(text: str):
         words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
@@ -341,11 +342,30 @@ def _is_relevant(name: str, title: str) -> bool:
     title_kw = keywords(title)
     if not title_kw:
         return True   # nothing to filter against
+    
     name_kw  = keywords(name)
     overlap  = title_kw & name_kw
-    return len(overlap) >= max(1, len(title_kw) // 2)
+    
+    # 1. Keyword Overlap: 70% threshold
+    if len(overlap) < max(1, int(len(title_kw) * 0.7)):
+        return False
+        
+    # 2. Year Filter: Strict matching
+    if year:
+        year_str = str(year)
+        is_one_piece_la = "one piece" in title.lower() and year_str == "2023"
+        found_years = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
+        
+        if year_str in found_years:
+            return True
+        if is_one_piece_la and "live action" in name.lower():
+            return True
+            
+        return False
+            
+    return True
 
-async def _enrich(result: Dict, title: str) -> Optional[Dict]:
+async def _enrich(result: Dict, title: str, year: Optional[str] = None) -> Optional[Dict]:
     """
     Enrich and filter a single search result against the search title.
 
@@ -364,7 +384,7 @@ async def _enrich(result: Dict, title: str) -> Optional[Dict]:
     if not _is_generic(name):
         # Strip quality prefix for relevance check
         clean = re.sub(r'^\[(?:4K|Remux|1080p|720p|mHD|CAM|HD)\]\s*', '', name).strip()
-        return result if _is_relevant(clean, title) else None
+        return result if _is_relevant(clean, title, year) else None
 
     fetched = await _fshare_fetch_name(result["url"])
 
@@ -374,7 +394,7 @@ async def _enrich(result: Dict, title: str) -> Optional[Dict]:
     if fetched is None:
         return result  # network error → keep with generic name
 
-    if not _is_relevant(fetched, title):
+    if not _is_relevant(fetched, title, year):
         return None
 
     quality = _parse_quality(fetched)
@@ -436,7 +456,7 @@ async def lookup_google_fshare(
 
     # 4. Enrich generic names via FShare page + filter irrelevant results
     enriched = await asyncio.gather(
-        *[_enrich(r, clean_title) for r in results],
+        *[_enrich(r, clean_title, year) for r in results],
         return_exceptions=True
     )
     results = [r for r in enriched if isinstance(r, dict)]

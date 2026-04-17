@@ -71,12 +71,37 @@ def _keywords(text: str) -> set:
     return {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
 
 
-def _is_relevant(name: str, title: str) -> bool:
+def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     title_kw = _keywords(title)
     if not title_kw:
         return True
-    overlap = title_kw & _keywords(name)
-    return len(overlap) >= max(1, len(title_kw) // 2)
+    
+    name_kw = _keywords(name)
+    overlap = title_kw & name_kw
+    
+    # 1. Keyword Overlap: Require 70% match
+    if len(overlap) < max(1, int(len(title_kw) * 0.7)):
+        return False
+        
+    # 2. Year Filter: Strict matching if year is provided
+    if year:
+        # Special case: One Piece (2023) is often named "Live Action" without the year
+        is_one_piece_la = "one piece" in title.lower() and year == "2023"
+        
+        found_years = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
+        if year in found_years:
+            return True
+        if is_one_piece_la and "live action" in name.lower():
+            return True
+            
+        # If result has a DIFFERENT year, it's definitely wrong
+        if found_years:
+            return False
+            
+        # If it has NO year at all, it's likely the old anime (irrelevant for 2023)
+        return False
+            
+    return True
 
 
 def _make_result(item: dict, source: str) -> Optional[Dict]:
@@ -176,7 +201,7 @@ async def lookup_timfshare(
         url = item.get("url", "").split("?")[0]
         if not url or url in seen:
             continue
-        if not _is_relevant(item.get("name", ""), title):
+        if not _is_relevant(item.get("name", ""), title, year):
             continue
         result = _make_result(item, source_tag)
         if result:

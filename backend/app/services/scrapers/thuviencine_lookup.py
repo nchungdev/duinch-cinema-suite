@@ -35,22 +35,41 @@ def _keywords(text: str) -> set:
     return {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
 
 
-def _is_relevant(name: str, title: str) -> bool:
+def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     title_kw = _keywords(title)
     if not title_kw:
         return True
-    overlap = title_kw & _keywords(name)
-    return len(overlap) >= max(1, len(title_kw) // 2)
+    
+    name_kw = _keywords(name)
+    overlap = title_kw & name_kw
+    
+    # 1. Keyword Overlap
+    if len(overlap) < max(1, int(len(title_kw) * 0.7)):
+        return False
+        
+    # 2. Year Filter: Strict
+    if year:
+        is_one_piece_la = "one piece" in title.lower() and year == "2023"
+        found_years = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
+        
+        if year in found_years:
+            return True
+        if is_one_piece_la and "live action" in name.lower():
+            return True
+            
+        return False
+            
+    return True
 
 
-async def lookup_thuviencine(title: str, filter_title: Optional[str] = None) -> List[Dict[str, str]]:
+async def lookup_thuviencine(title: str, filter_title: Optional[str] = None, year: Optional[str] = None) -> List[Dict[str, str]]:
     """
     Searches ThuVienCine for Fshare links.
     Flow: Search → Detail Page → Download Page → Extract Fshare links.
     filter_title: if provided, each result name is checked for relevance against this title.
     Results cached for 8 hours.
     """
-    cache_key = title.strip().lower()
+    cache_key = f"{title.strip().lower()}|{year or ''}"
     cached = get_from_cache(_CACHE_FILE, cache_key, _CACHE_TTL)
     if cached is not None:
         return cached
@@ -116,7 +135,7 @@ async def lookup_thuviencine(title: str, filter_title: Optional[str] = None) -> 
                         name = re.sub(r'^\[(?:4K|Remux|1080p|720p|mHD|CAM|HD)\]\s*', '', name).strip()
 
                         # Relevance filter
-                        if filter_title and not _is_relevant(name, filter_title):
+                        if filter_title and not _is_relevant(name, filter_title, year):
                             continue
 
                         quality = _parse_quality(name)
