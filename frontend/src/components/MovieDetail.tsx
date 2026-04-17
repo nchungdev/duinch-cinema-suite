@@ -471,7 +471,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                  className="w-full xl:w-[400px] h-full flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10"
                >
                 
-                {seasonBoundaries.length > 0 && (
+                {mediaType === 'tv' && seasonBoundaries.length > 0 && (
                   <div className="shrink-0 bg-white/[0.01] border-b border-white/10 flex items-center h-11 relative group/ribbon">
                     {!ribbonAtStart && (
                       <button onClick={() => scrollSeasonRibbon('l')} className="absolute left-0 top-0 bottom-0 px-1 bg-black/40 backdrop-blur-md z-20 opacity-0 group-hover/ribbon:opacity-100 transition-opacity border-r border-white/5">
@@ -506,59 +506,81 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
                 {/* Unified Continuous Episode List Container */}
                 <div ref={episodeListRef} className="flex-1 overflow-y-auto custom-scrollbar relative">
-                  {seasonBoundaries.length > 0 ? (
+                  {streamingLinks.length > 0 ? (
                       <div className="flex flex-col bg-white/[0.01]">
-                        {seasonBoundaries.map((s, sIdx) => {
-                            const seasonEpCount = s.end - s.start;
-                            const offsetStart = s.start;
-                            const serverData: any[] = streamingLinks?.[activeServerIdx]?.server_data ?? [];
-                            const extractNum = (name: string) => { const m = name?.match(/\d+/); return m ? parseInt(m[0]) : null; };
-                            const findEp = (epNum: number) => serverData.find(ep => extractNum(ep.name) === epNum);
+                        {mediaType === 'tv' ? (
+                            seasonBoundaries.map((s, sIdx) => {
+                                const seasonEpCount = s.end - s.start;
+                                const offsetStart = s.start;
+                                const serverData: any[] = streamingLinks?.[activeServerIdx]?.server_data ?? [];
+                                const extractNum = (name: string) => { const m = name?.match(/\d+/); return m ? parseInt(m[0]) : null; };
+                                const findEp = (epNum: number) => serverData.find(ep => extractNum(ep.name) === epNum);
 
-                            return (
-                                <div key={sIdx} ref={el => { seasonRefs.current[sIdx] = el; }} data-season={sIdx} className="flex flex-col">
-                                    {/* Sticky Season Header (Full Name) */}
-                                    <div className="sticky top-0 z-20 px-5 py-2.5 bg-[#0a0a0c]/90 backdrop-blur-md border-y border-white/5 flex items-center justify-between shadow-lg">
-                                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-500/80 truncate pr-4">{s.name}</span>
-                                        <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest shrink-0">{seasonEpCount} Episodes</span>
+                                return (
+                                    <div key={sIdx} ref={el => { seasonRefs.current[sIdx] = el; }} data-season={sIdx} className="flex flex-col">
+                                        <div className="sticky top-0 z-20 px-5 py-2.5 bg-[#0a0a0c]/90 backdrop-blur-md border-y border-white/5 flex items-center justify-between shadow-lg">
+                                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-500/80 truncate pr-4">{s.name}</span>
+                                            <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest shrink-0">{seasonEpCount} Episodes</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            {Array.from({ length: seasonEpCount }, (_, localIdx) => {
+                                                const epNum = localIdx + 1;
+                                                const globalIdx = offsetStart + localIdx;
+                                                const ep = findEp(epNum);
+                                                const hasLink = !!(ep?.m3u8 || ep?.embed || ep?.link_m3u8);
+                                                const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
+                                                const isPlaying = activeEpisodeIdx === globalIdx;
+                                                const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
+                                                const isLastWatched = history[slug]?.s_idx === sIdx && history[slug]?.e_idx === globalIdx;
+
+                                                return (
+                                                    <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
+                                                        <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
+                                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
+                                                            <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
+                                                        </div>
+                                                        <div className="flex flex-col min-w-0 items-start">
+                                                            <span className={`text-[11px] font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}>
+                                                                {epLabel}
+                                                            </span>
+                                                            {isLastWatched && !isPlaying && (
+                                                                <span className="text-[7px] font-black uppercase tracking-wider text-blue-500/60 leading-none">Last Watched</span>
+                                                            )}
+                                                        </div>
+                                                        </button>
+                                                        <div className="flex items-center px-2.5 gap-0.5">
+                                                            <button disabled={!hasLink} title="Download" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-blue-500/20 text-gray-600 hover:enabled:text-blue-400"><Download className="w-3 h-3" /></button>
+                                                            <button disabled={!hasLink} title="Cloud" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-purple-500/20 text-gray-600 hover:enabled:text-purple-400"><Cloud className="w-3 h-3" /></button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col">
-                                        {Array.from({ length: seasonEpCount }, (_, localIdx) => {
-                                            const epNum = localIdx + 1;
-                                            const globalIdx = offsetStart + localIdx;
-                                            const ep = findEp(epNum);
-                                            const hasLink = !!(ep?.m3u8 || ep?.embed || ep?.link_m3u8);
-                                            const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
-                                            const isPlaying = activeEpisodeIdx === globalIdx;
-                                            const history = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
-                                            const isLastWatched = history[slug]?.s_idx === sIdx && history[slug]?.e_idx === globalIdx;
-
-                                            return (
-                                                <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
-                                                    <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(globalIdx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed">
-                                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
-                                                        <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
-                                                    </div>
-                                                    <div className="flex flex-col min-w-0 items-start">
-                                                        <span className={`text-[11px] font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white font-black' : 'text-gray-400 group-hover/ep:text-white'}`}>
-                                                            {epLabel}
-                                                        </span>
-                                                        {isLastWatched && !isPlaying && (
-                                                            <span className="text-[7px] font-black uppercase tracking-wider text-blue-500/60 leading-none">Last Watched</span>
-                                                        )}
-                                                    </div>
-                                                    </button>
-                                                    <div className="flex items-center px-2.5 gap-0.5">
-                                                        <button disabled={!hasLink} title="Download" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-blue-500/20 text-gray-600 hover:enabled:text-blue-400"><Download className="w-3 h-3" /></button>
-                                                        <button disabled={!hasLink} title="Cloud" className="w-7 h-7 rounded-md transition-all flex items-center justify-center hover:enabled:bg-purple-500/20 text-gray-600 hover:enabled:text-purple-400"><Cloud className="w-3 h-3" /></button>
-                                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="flex flex-col">
+                                {streamingLinks[activeServerIdx]?.server_data.map((ep: any, idx: number) => {
+                                    const hasLink = !!(ep.m3u8 || ep.embed || ep.link_m3u8);
+                                    const isPlaying = activeEpisodeIdx === idx;
+                                    return (
+                                        <div key={idx} ref={el => { episodeRefs.current[idx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
+                                            <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(idx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 disabled:cursor-not-allowed">
+                                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
+                                                    <Play className={`w-2.5 h-2.5 ${isPlaying ? 'fill-current' : ''}`} />
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                                <div className="flex flex-col min-w-0 items-start">
+                                                    <span className={`text-xs font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-400 group-hover/ep:text-white'}`}>
+                                                        {ep.name || 'Full Movie'}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                       </div>
                ) : (
                       <div className="h-full flex flex-col items-center justify-center p-12 text-center gap-6">
