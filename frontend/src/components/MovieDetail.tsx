@@ -185,6 +185,11 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
   useEffect(() => {
     const fetchDetail = async () => {
+      // Reset sources on new slug
+      setStreamableSources({});
+      setStreamingLinks([]);
+      setActiveSrcId('');
+
       try {
         const res = await api.get<DetailResponse>(`/${mediaType}/${slug}`);
         const detailData = res.data;
