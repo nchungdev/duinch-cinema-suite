@@ -101,11 +101,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     }
   }, [streamableSources, userSettings, activeSrcId]);
   const [showSourceMenu, setShowSourceMenu] = useState(false);
-  const [miniPlayerFloating, setMiniPlayerFloating] = useState(false);
   const [ribbonAtStart, setRibbonAtStart] = useState(true);
   const [ribbonAtEnd, setRibbonAtEnd] = useState(false);
 
-  const playerContainerRef = useRef<HTMLDivElement>(null);
   const episodeListRef = useRef<HTMLDivElement>(null);
   const seasonRibbonRef = useRef<HTMLDivElement>(null);
   const seasonRibbonButtonsRef = useRef<{ [key: number]: HTMLButtonElement | null }>({});
@@ -184,25 +182,6 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     ribbon.addEventListener('scroll', update, { passive: true });
     return () => ribbon.removeEventListener('scroll', update);
   }, [seasonBoundaries]);
-
-  // Intersection Observer for PiP
-  useEffect(() => {
-    const options = {
-      root: null,
-      threshold: 0,
-      rootMargin: '-96px 0px 0px 0px' 
-    };
-
-    const observer = new IntersectionObserver(([entry]) => {
-      setMiniPlayerFloating(!entry.isIntersecting);
-    }, options);
-
-    if (playerContainerRef.current) {
-      observer.observe(playerContainerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, [loading]);
 
   useEffect(() => {
     const fetchDetail = async () => {
@@ -408,79 +387,22 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
       </div>
 
       <div className="flex flex-col xl:flex-row gap-8 w-full max-w-screen-2xl mx-auto px-4 md:px-10">
-         {/* Player Wrapper & Placeholder */}
-         <div ref={playerContainerRef} className="flex-1 w-full relative" 
+         <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative flex items-center justify-center group"
               style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}>
-            
-            <div className={`transition-all duration-700 ease-in-out group ${
-                  miniPlayerFloating 
-                    ? 'fixed bottom-8 right-8 flex items-stretch gap-0 z-[200] animate-in slide-in-from-bottom-10 duration-500' 
-                    : 'relative w-full h-full rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden bg-[#030303]'
-                 }`}
-            >
-               {/* Integrated Side Control Panel (Now on the left in PiP mode) */}
-               {miniPlayerFloating && (
-                   <div className="w-48 bg-[#08080a]/90 backdrop-blur-2xl border-2 border-r-0 border-blue-500/40 rounded-l-2xl flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in slide-in-from-right-4 duration-700 delay-150">
-                        <div className="flex-1 p-4 flex flex-col justify-center gap-3">
-                            <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_#22c55e]" />
-                                    <span className="text-[8px] font-black uppercase tracking-widest text-green-500/80">Transmission Active</span>
-                                </div>
-                                <h4 className="text-[11px] font-black text-white truncate leading-tight">{metadata.title}</h4>
-                            </div>
-
-                            <div className="space-y-2 pt-2 border-t border-white/5">
-                                {mediaType === 'tv' && (
-                                    <div className="flex items-center gap-2">
-                                        <div className="px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-[7px] font-black text-blue-400 uppercase">S{String(data?.metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number || 1).padStart(2, '0')}</div>
-                                        <span className="text-[8px] font-bold text-gray-400 uppercase tracking-tighter">Episode {activeEpisodeIdx + 1}</span>
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-2 text-gray-500">
-                                    <Globe className="w-2.5 h-2.5" />
-                                    <span className="text-[8px] font-bold uppercase truncate">{streamingLinks[activeServerIdx]?.server_name || 'Primary Server'}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <button 
-                            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                            className="p-3 bg-white/5 hover:bg-blue-600/20 text-[8px] font-black uppercase tracking-[0.2em] text-gray-500 hover:text-blue-400 transition-all border-t border-white/5"
-                        >
-                            Dock Player
-                        </button>
-                   </div>
-               )}
-
-               {/* Video Frame (Now on the right in PiP mode) */}
-               <div className={`bg-black transition-all duration-700 relative overflow-hidden ${
-                   miniPlayerFloating 
-                    ? 'w-[420px] h-[236px] rounded-r-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] ring-2 ring-blue-500/40 border-l-0' 
-                    : 'w-full h-full'
-               }`}>
-                  {activeEmbed ? (
-                     <>
-                        <iframe 
-                            key={activeEmbed}
-                            src={activeEmbed} 
-                            allowFullScreen 
-                            allow="autoplay; fullscreen"
-                            className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" 
-                        />
-                        {miniPlayerFloating && (
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="absolute top-3 left-3 px-2 py-1 bg-blue-600 rounded-md text-[7px] font-black uppercase tracking-widest text-white shadow-lg">Live Feed</div>
-                            </div>
-                        )}
-                     </>
-                  ) : (
-                      <div className="flex flex-col items-center gap-4 text-gray-500 h-full justify-center">
-                        <Play className="w-16 h-16 opacity-30" />
-                        <span className="text-[10px] uppercase tracking-[0.2em] font-black">Standing By</span>
-                      </div>
-                  )}
+            {activeEmbed ? (
+               <iframe 
+                  key={activeEmbed}
+                  src={activeEmbed} 
+                  allowFullScreen 
+                  allow="autoplay; fullscreen"
+                  className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" 
+               />
+            ) : (
+               <div className="flex flex-col items-center gap-4 text-gray-500">
+                  <Play className="w-16 h-16 opacity-30" />
+                  <span className="text-[10px] uppercase tracking-[0.2em] font-black">Standing By</span>
                </div>
-            </div>
+            )}
          </div>
 
          <div className="w-full xl:w-fit flex flex-col gap-3 min-h-0"
