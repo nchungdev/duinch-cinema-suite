@@ -560,25 +560,59 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                 );
                             })
                         ) : (
+                            /* Movie Mode: Simple list of all available servers/links */
                             <div className="flex flex-col">
-                                {streamingLinks[activeServerIdx]?.server_data.map((ep: any, idx: number) => {
-                                    const hasLink = !!(ep.m3u8 || ep.embed || ep.link_m3u8);
-                                    const isPlaying = activeEpisodeIdx === idx;
-                                    return (
-                                        <div key={idx} ref={el => { episodeRefs.current[idx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
-                                            <button disabled={!hasLink} onClick={() => { if (!hasLink) return; setActiveEpisodeIdx(idx); if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); }} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 disabled:cursor-not-allowed">
-                                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-500 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
-                                                    <Play className={`w-2.5 h-2.5 ${isPlaying ? 'fill-current' : ''}`} />
+                                <div className="px-5 py-3.5 border-b border-white/5 bg-white/[0.02]">
+                                    <span className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-500/60">Available Transmissions</span>
+                                </div>
+                                {streamingLinks.map((server: any, srvIdx: number) => (
+                                    <div key={srvIdx} className="flex flex-col border-b last:border-b-0 border-white/5">
+                                        {server.server_data.map((ep: any, epIdx: number) => {
+                                            const hasLink = !!(ep.m3u8 || ep.embed || ep.link_m3u8);
+                                            const isPlaying = activeServerIdx === srvIdx && activeEpisodeIdx === epIdx;
+                                            return (
+                                                <div key={epIdx} className={`flex items-stretch transition-all duration-300 ${!hasLink ? 'opacity-35 bg-black/20' : isPlaying ? 'bg-blue-600/20 shadow-inner' : 'hover:bg-white/[0.04] group/ep'}`}>
+                                                    <button 
+                                                        disabled={!hasLink} 
+                                                        onClick={() => { 
+                                                            if (!hasLink) return; 
+                                                            setActiveServerIdx(srvIdx);
+                                                            setActiveEpisodeIdx(epIdx); 
+                                                            if (!ep.embed) window.open(ep.m3u8 || ep.link_m3u8, '_blank'); 
+                                                            localStorage.setItem('omv_active_server_name', server.server_name);
+                                                        }} 
+                                                        className="flex-1 min-w-0 flex items-center gap-4 px-5 py-4 disabled:cursor-not-allowed"
+                                                    >
+                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-500 ${isPlaying ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] scale-110' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10 group-hover/ep:scale-105'}`}>
+                                                            <Play className={`w-3 h-3 ${isPlaying ? 'fill-current' : ''}`} />
+                                                        </div>
+                                                        <div className="flex flex-col min-w-0 items-start">
+                                                            <span className={`text-[11px] font-black uppercase tracking-[0.15em] transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-300 group-hover/ep:text-white'}`}>
+                                                                {server.server_name}
+                                                            </span>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-[8px] font-bold text-gray-600 uppercase tracking-widest leading-none">
+                                                                    {ep.name || 'Full Movie'}
+                                                                </span>
+                                                                <div className="w-1 h-1 rounded-full bg-white/10" />
+                                                                <span className="text-[8px] font-bold text-blue-500/40 uppercase tracking-widest leading-none">Primary Link</span>
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                    <div className="flex items-center px-4 gap-1">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${isPlaying ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-white/5'}`} />
+                                                    </div>
                                                 </div>
-                                                <div className="flex flex-col min-w-0 items-start">
-                                                    <span className={`text-xs font-black transition-colors truncate ${!hasLink ? 'text-gray-600' : isPlaying ? 'text-white' : 'text-gray-400 group-hover/ep:text-white'}`}>
-                                                        {ep.name || 'Full Movie'}
-                                                    </span>
-                                                </div>
-                                            </button>
-                                        </div>
-                                    );
-                                })}
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                                {streamingLinks.length === 0 && (
+                                    <div className="py-20 flex flex-col items-center justify-center gap-4 opacity-20">
+                                        <Globe className="w-8 h-8" />
+                                        <span className="text-[9px] font-black uppercase tracking-widest">No Streams Found</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                       </div>
@@ -673,8 +707,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                     )}
                   </div>
 
-                  {/* Server Section */}
-                  {streamingLinks.length > 0 && (
+                  {/* Server Section - Only for TV */}
+                  {mediaType === 'tv' && streamingLinks.length > 0 && (
                     <div ref={serverRibbonRef} className="w-9 max-h-[400px] overflow-y-auto no-scrollbar flex flex-col gap-1">
                       {streamingLinks.map((server: any, idx: number) => {
                         const isActive = idx === activeServerIdx;
