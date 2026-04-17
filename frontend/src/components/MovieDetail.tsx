@@ -122,13 +122,6 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     return Math.max(...counts);
   }, [data, totalEpisodes]);
 
-  const estimatedSectionHeight = useMemo(() => {
-    const rowHeight = 44;
-    const headerHeight = 44;
-    const padding = 4;
-    return (maxEpisodesInAnySeason * rowHeight) + headerHeight + padding;
-  }, [maxEpisodesInAnySeason]);
-
   const seasonBoundaries = useMemo(() => {
     const rawBoundaries = (data?.metadata.tmdb_seasons || []).reduce((acc: any[], s: any) => {
       const last = acc[acc.length - 1];
@@ -375,7 +368,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
       </div>
 
       <div className="flex flex-col xl:flex-row gap-8 w-full max-w-screen-2xl mx-auto px-4 md:px-10">
-         <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative aspect-video flex items-center justify-center group">
+         <div className="flex-1 w-full bg-[#030303] rounded-[2rem] shadow-[0_0_80px_rgba(37,99,235,0.1)] ring-1 ring-white/10 overflow-hidden relative flex items-center justify-center group"
+              style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}>
             {activeEmbed ? (
                <iframe src={activeEmbed} allowFullScreen className="w-full h-full border-0 absolute inset-0 animate-cinema-fade" />
             ) : (
@@ -460,7 +454,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
              <div className="relative group/panel">
                <div 
                  className="w-full xl:w-[400px] flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10"
-                 style={{ height: mediaType === 'tv' ? `${Math.min(estimatedSectionHeight, 600)}px` : 'fit-content', maxHeight: '600px' }}
+                 style={{ height: 'calc(100vh - 260px)', minHeight: '400px' }}
                >
                 
                 {seasonBoundaries.length > 0 && (
