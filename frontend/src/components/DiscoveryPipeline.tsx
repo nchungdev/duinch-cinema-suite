@@ -35,8 +35,8 @@ type LoadingKey = `${SourceType}:${string}`;
 // ── Source type display meta ──────────────────────────────────────────────────
 const SOURCE_TYPE_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   m3u8:        { label: 'Stream',      color: 'text-orange-400',  icon: <Zap      className="w-3 h-3" /> },
-  fshare:      { label: 'FShare',      color: 'text-green-400',   icon: <Search   className="w-3 h-3" /> },
-  torrent:     { label: 'Torrent',     color: 'text-blue-400',    icon: <Magnet   className="w-3 h-3" /> },
+  fshare:      { label: 'FShare',      color: 'text-red-400',     icon: <Search   className="w-3 h-3" /> },
+  torrent:     { label: 'Torrent',     color: 'text-green-400',   icon: <Magnet   className="w-3 h-3" /> },
   gdrive:      { label: 'Drive',       color: 'text-purple-400',  icon: <Globe    className="w-3 h-3" /> },
   dailymotion: { label: 'Dailymotion', color: 'text-red-400',     icon: <Tv       className="w-3 h-3" /> },
 };
@@ -128,7 +128,7 @@ export const DiscoveryPipeline = ({
             for (const group of items) {
               const srv = group.server || source;
               if (!existing[srv]) existing[srv] = [];
-              existing[srv].push(...(group.episodes ?? []));
+              existing[srv].push(...(group.episodes ?? []).map((ep: any) => ({ ...ep, source })));
             }
             next['m3u8'] = existing;
             return next;
@@ -198,6 +198,15 @@ export const DiscoveryPipeline = ({
     DISCOVERY_SOURCES.filter(d => d.source_type === st && loadingKeys.has(toKey(d.source_type, d.source)))
       .map(d => SOURCE_BADGE[d.source] ?? d.source);
 
+  // Group m3u8 server rows by source (kkphim / ophim / …)
+  const m3u8Groups: { src: string; entries: [string, any[]][] }[] = [];
+  for (const [serverName, eps] of Object.entries(streamableByType['m3u8'] ?? {})) {
+    const src = (eps[0] as any)?.source ?? '_';
+    const group = m3u8Groups.find(g => g.src === src);
+    if (group) group.entries.push([serverName, eps]);
+    else m3u8Groups.push({ src, entries: [[serverName, eps]] });
+  }
+
   return (
     <div className="glass-dark p-6 rounded-[2.5rem] border border-blue-500/10 space-y-4 relative overflow-hidden shadow-xl">
 
@@ -262,13 +271,31 @@ export const DiscoveryPipeline = ({
       {/* Tab content */}
       <div className="min-h-[56px] animate-cinema-fade" key={activeTab}>
 
-        {/* ── M3U8 streaming servers ── */}
-        {activeTab === 'm3u8' && streamableByType['m3u8'] && (
-          <div className="space-y-1">
-            {Object.entries(streamableByType['m3u8']).map(([serverName, eps]) => (
-              <QuickServerRow key={serverName} serverName={serverName} episodes={eps}
-                color={stMeta('m3u8').color} cloudTargets={cloudTargets} />
-            ))}
+        {/* ── M3U8 streaming servers — grouped by source ── */}
+        {activeTab === 'm3u8' && m3u8Groups.length > 0 && (
+          <div className="space-y-3">
+            {m3u8Groups.map(({ src, entries }) => {
+              const srcCls = src === 'kkphim'
+                ? 'text-blue-400 border-blue-500/20 bg-blue-500/5'
+                : src === 'ophim'
+                ? 'text-pink-400 border-pink-500/20 bg-pink-500/5'
+                : 'text-sky-400 border-sky-500/20 bg-sky-500/5';
+              return (
+                <div key={src} className="space-y-1">
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${srcCls}`}>
+                    <Globe className="w-2.5 h-2.5 shrink-0" />
+                    <span className="text-[8px] font-black uppercase tracking-[0.25em] flex-1">
+                      {SOURCE_BADGE[src] ?? src.toUpperCase()}
+                    </span>
+                    <span className="text-[7px] font-bold opacity-50">{entries.length} sv</span>
+                  </div>
+                  {entries.map(([serverName, eps]) => (
+                    <QuickServerRow key={serverName} serverName={serverName} episodes={eps}
+                      color={srcCls.split(' ')[0]} cloudTargets={cloudTargets} />
+                  ))}
+                </div>
+              );
+            })}
             {typeLoading('m3u8') && (
               <div className="flex items-center gap-2 px-3 py-2 text-[8px] font-black uppercase tracking-widest text-gray-600">
                 <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />
@@ -277,7 +304,7 @@ export const DiscoveryPipeline = ({
             )}
           </div>
         )}
-        {activeTab === 'm3u8' && !streamableByType['m3u8'] && typeLoading('m3u8') && (
+        {activeTab === 'm3u8' && m3u8Groups.length === 0 && typeLoading('m3u8') && (
           <LoadingHint sources={pendingSources('m3u8')} />
         )}
 

@@ -3,8 +3,21 @@ import axios from 'axios';
 // In production behind Nginx, we use the relative /api path to ensure Same-Origin requests
 export const API_BASE = '/api';
 
+// Anonymous Device Identification
+const getDeviceId = () => {
+  let id = localStorage.getItem('cinema_device_id');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('cinema_device_id', id);
+  }
+  return id;
+};
+
 export const api = axios.create({
   baseURL: API_BASE,
+  headers: {
+    'X-Device-ID': getDeviceId()
+  }
 });
 
 export const getProxiedImageUrl = (url: string) => {

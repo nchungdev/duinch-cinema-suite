@@ -83,11 +83,11 @@ function App() {
     window.location.hash = `#/search?q=${encodeURIComponent(searchQuery)}`;
   };
 
-  const executeSearch = useCallback(async (q: string, tab: SearchTab = 'all', page: number = 1) => {
+  const executeSearch = useCallback(async (q: string, tab: SearchTab = 'all', page: number = 1, background = false) => {
     if (page === 1) {
       setSearchResults([]);
       setSearchPage(1);
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      if (!background) window.scrollTo({ top: 0, behavior: 'instant' });
     }
     setSearchLoading(true);
     try {
@@ -101,8 +101,12 @@ function App() {
       setSearchQuery(q);
       lastSearchQuery.current = q;
       setSearchActive(true);
-      setView('discovery');
-      setSlug(null);
+      // background = true: chỉ populate results (dùng khi refresh từ detail page),
+      // không navigate ra khỏi detail view
+      if (!background) {
+        setView('discovery');
+        setSlug(null);
+      }
     } catch (err) {
       console.error('Search failed:', err);
       if (page === 1) setSearchResults([]);
@@ -143,7 +147,8 @@ function App() {
         setView('detail');
         
         if (cat === 'search' && q && !searchActive) {
-            executeSearch(q, 'all', 1);
+            // background=true: khôi phục search results mà không navigate ra khỏi detail view
+            executeSearch(q, 'all', 1, true);
         }
       } else if (parts.length >= 1) {
         const cat = parts[0];

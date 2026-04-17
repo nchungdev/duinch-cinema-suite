@@ -45,6 +45,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [data, setData] = useState<DetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
+  const [activeIsEmbed, setActiveIsEmbed] = useState(false); // true = iframe, false = HLS video
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
   const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
@@ -69,41 +70,36 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     loadSettings();
   }, []);
 
-  // Smart Source Selection Logic
+  // Smart Source Selection — chỉ chạy khi chưa có source nào được chọn.
+  // Không có activeSrcId trong deps để tránh re-run khi source switch → player khựng.
   useEffect(() => {
     const sources = Object.keys(streamableSources);
-    if (sources.length === 0 || !userSettings) return;
+    if (sources.length === 0 || !userSettings || activeSrcId) return; // đã chọn rồi → không đổi
 
     const preferred = userSettings.preferred_source || 'auto';
-
-    // 1. User has a specific preference
     if (preferred !== 'auto' && streamableSources[preferred]) {
-      if (activeSrcId !== preferred) setActiveSrcId(preferred);
+      setActiveSrcId(preferred);
       return;
     }
 
-    // 2. Auto Selection or Preferred source not found
-    // Criteria: 1. Most episodes, 2. Provider Weight (KKPhim > OPhim)
     const providerWeights: Record<string, number> = { kkphim: 10, ophim: 5 };
-    
     const bestSource = sources.reduce((best, current) => {
       const bestEpCount = streamableSources[best]?.[0]?.server_data?.length || 0;
       const currEpCount = streamableSources[current]?.[0]?.server_data?.length || 0;
-      
       if (currEpCount > bestEpCount) return current;
-      if (currEpCount === bestEpCount) {
+      if (currEpCount === bestEpCount)
         return (providerWeights[current] || 0) > (providerWeights[best] || 0) ? current : best;
-      }
       return best;
     });
-
-    if (activeSrcId !== bestSource) {
-      setActiveSrcId(bestSource);
-    }
-  }, [streamableSources, userSettings, activeSrcId]);
+    setActiveSrcId(bestSource);
+  }, [streamableSources, userSettings]); // activeSrcId intentionally excluded — guard at top
   const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [ribbonAtStart, setRibbonAtStart] = useState(true);
   const [ribbonAtEnd, setRibbonAtEnd] = useState(false);
+
+  // Ref so play effect can read latest sources without being in its dep array
+  const streamableSourcesRef = useRef<Record<string, any[]>>({});
+  streamableSourcesRef.current = streamableSources;
 
   const episodeListRef = useRef<HTMLDivElement>(null);
   const seasonRibbonRef = useRef<HTMLDivElement>(null);
@@ -245,11 +241,12 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   }, [activeSeasonIdx]);
 
   // Auto-focus active server tab in the sidebar
+  // block: 'nearest' — chỉ scroll trong container, không kéo cả viewport
   useEffect(() => {
     if (serverRibbonButtonsRef.current[activeServerIdx]) {
       serverRibbonButtonsRef.current[activeServerIdx]?.scrollIntoView({
         behavior: 'smooth',
-        block: 'center',
+        block: 'nearest',
         inline: 'nearest'
       });
     }
@@ -299,48 +296,39 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     }
   }, [activeSeasonIdx, activeEpisodeIdx, data, slug, mediaType, category]);
 
+  // Play effect — fires exactly once per meaningful selection change.
+  // Reads streamableSources via ref so it does NOT re-fire when new sources arrive
+  // (that would cause double-setup: once with server 0, again after sync effect restores saved server).
   useEffect(() => {
-    const servers = streamableSources[activeSrcId];
+    const servers = streamableSourcesRef.current[activeSrcId];
     const server = servers?.[activeServerIdx];
     if (!server) return;
 
     let ep = null;
     if (mediaType === 'movie') {
-        ep = server.server_data[activeEpisodeIdx];
+      ep = server.server_data[activeEpisodeIdx];
     } else {
-        // TV Mode: Find episode by matching number
-        // We need to know which episode number we're looking for.
-        // We derive this from the global index and season boundaries.
-        const currentEpNum = activeEpisodeIdx + 1; // Simplification: assume global sequential numbering
-        
-        const extractNum = (name: string) => { 
-            const m = name?.match(/\d+/); 
-            return m ? parseInt(m[0]) : null; 
-        };
-        
-        // Try to find exact match
-        ep = server.server_data.find((item: any) => extractNum(item.name) === currentEpNum);
-        
-        // Fallback to index if name matching fails
-        if (!ep) ep = server.server_data[activeEpisodeIdx];
+      const currentEpNum = activeEpisodeIdx + 1;
+      const extractNum = (name: string) => { const m = name?.match(/\d+/); return m ? parseInt(m[0]) : null; };
+      ep = server.server_data.find((item: any) => extractNum(item.name) === currentEpNum)
+        ?? server.server_data[activeEpisodeIdx];
     }
 
-    // embed takes priority for player (provider's own player, better quality/subtitles)
-    // m3u8 is fallback (HLS.js native player)
     const embedUrl = ep?.embed || null;
     const m3u8Url  = ep?.m3u8 || ep?.url || null;
-    const url = embedUrl || m3u8Url;
+    const url      = embedUrl || m3u8Url;
+    const isEmbed  = !!embedUrl;
 
     if (url && url !== activeEmbed) {
+      setActiveIsEmbed(isEmbed);
       setActiveEmbed(null);
       setTimeout(() => setActiveEmbed(url), 10);
     }
-  }, [streamableSources, activeSrcId, activeServerIdx, activeEpisodeIdx, userSettings, mediaType]);
+    // deps: only real selection signals — NOT streamableSources (via ref) or userSettings
+  }, [activeSrcId, activeServerIdx, activeEpisodeIdx, mediaType]);
 
-  // HLS.js — only activate when activeEmbed is an m3u8 URL (no embed available)
-  const isM3u8 = !!activeEmbed && !activeEmbed.includes('embed') && (
-    activeEmbed.includes('.m3u8') || activeEmbed.includes('/m3u8')
-  );
+  // Dùng flag thay vì đoán từ URL string — tránh trường hợp embed URL chứa ".m3u8" trong query param
+  const isM3u8 = !!activeEmbed && !activeIsEmbed;
 
   useEffect(() => {
     if (!isM3u8) return;                  // iframe mode — HLS.js not needed
@@ -366,17 +354,18 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     return () => { hlsRef.current?.destroy(); hlsRef.current = null; };
   }, [activeEmbed, isM3u8, userSettings?.auto_play]);
 
+  // Sync effect — updates UI list + restores saved server when source/sources change.
+  // Changing activeServerIdx here will trigger the play effect exactly once (its dep).
   useEffect(() => {
-    if (activeSrcId && streamableSources[activeSrcId]) {
-      const servers = streamableSources[activeSrcId];
-      setStreamingLinks(servers);
+    if (!activeSrcId || !streamableSources[activeSrcId]) return;
+    const servers = streamableSources[activeSrcId];
+    setStreamingLinks(servers);
 
-      const savedServerName = localStorage.getItem('omv_active_server_name');
-      if (savedServerName) {
-          const sIdx = servers.findIndex((s: any) => s.server_name === savedServerName);
-          if (sIdx !== -1 && sIdx !== activeServerIdx) {
-              setActiveServerIdx(sIdx);
-          }
+    const savedServerName = localStorage.getItem('omv_active_server_name');
+    if (savedServerName) {
+      const sIdx = servers.findIndex((s: any) => s.server_name === savedServerName);
+      if (sIdx !== -1 && sIdx !== activeServerIdx) {
+        setActiveServerIdx(sIdx); // play effect fires once with correct server
       }
     }
   }, [activeSrcId, streamableSources]);

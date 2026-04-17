@@ -304,10 +304,14 @@ class PhimAPIBase:
         if cached is not None:
             return cached
 
-        async def _try_slug(slug: str):
+        async def _try_slug(slug: str, validate_tmdb: bool = False):
             res = await self.get_formatted_details(client, slug)
             if not res or "error" in res or not res.get("title"):
                 return None
+            # When a tmdb_id was requested, reject slugs that resolve to a different movie
+            if validate_tmdb and tmdb_id and res.get("tmdb_id"):
+                if str(res.get("tmdb_id")) != str(tmdb_id):
+                    return None
             return res
 
         details = None
@@ -316,13 +320,13 @@ class PhimAPIBase:
         if not details and title:
             slug = title_to_slug(title)
             if slug:
-                details = await _try_slug(slug)
+                details = await _try_slug(slug, validate_tmdb=bool(tmdb_id))
 
         # 3. Direct slug from localized title
         if not details and localize_title:
             slug = title_to_slug(localize_title)
             if slug:
-                details = await _try_slug(slug)
+                details = await _try_slug(slug, validate_tmdb=bool(tmdb_id))
 
         # 4 & 5. Text search fallback
         if not details:
