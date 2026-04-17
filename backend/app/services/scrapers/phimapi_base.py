@@ -198,9 +198,14 @@ class PhimAPIBase:
                 "server_name": ep_group.get("server_name"),
                 "server_data": []
             }
+            seen_names = set()
             for ep in ep_group.get("server_data", []):
+                name = ep.get("name")
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
                 server["server_data"].append({
-                    "name": ep.get("name"),
+                    "name": name,
                     "m3u8": ep.get("link_m3u8"),
                     "embed": ep.get("link_embed")
                 })
