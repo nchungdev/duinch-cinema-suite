@@ -67,9 +67,9 @@ async def discovery(
         # ── FShare ────────────────────────────────────────────────────────────
         elif source_type == "fshare":
             if source == "timfshare":
-                results = await lookup_timfshare(clean_title, year, season, episode)
-                if clean_localize:
-                    sec = await lookup_timfshare(clean_localize, year, season, episode)
+                results = await lookup_timfshare(primary, year=year, filter_title=clean_title)
+                if secondary:
+                    sec = await lookup_timfshare(secondary, year=year, filter_title=clean_localize)
                     results = results + sec
             elif source == "thuviencine":
                 results = await lookup_thuviencine(primary, filter_title=clean_title, year=year)

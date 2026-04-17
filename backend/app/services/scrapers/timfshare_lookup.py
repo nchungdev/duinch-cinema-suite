@@ -68,7 +68,7 @@ def _format_size(size_bytes: int) -> str:
 
 def _keywords(text: str) -> set:
     words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
-    return {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
+    return {w for w in words if len(w) >= 3 and w not in _STOP_WORDS}
 
 
 def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
@@ -83,23 +83,29 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     if len(overlap) < max(1, int(len(title_kw) * 0.7)):
         return False
         
-    # 2. Year Filter: Strict matching if year is provided
+    # 2. Year Filter
     if year:
-        # Special case: One Piece (2023) is often named "Live Action" without the year
-        is_one_piece_la = "one piece" in title.lower() and year == "2023"
-        
+        year_str = str(year)
+        is_one_piece_la = "one piece" in title.lower() and year_str == "2023"
         found_years = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
-        if year in found_years:
+        
+        # If the name has the RIGHT year, always good
+        if year_str in found_years:
             return True
+            
+        # Special case: One Piece (2023) Live Action
         if is_one_piece_la and "live action" in name.lower():
             return True
             
-        # If result has a DIFFERENT year, it's definitely wrong
+        # If result has a DIFFERENT year, it's definitely wrong (e.g., 2023 vs 1999)
         if found_years:
             return False
             
-        # If it has NO year at all, it's likely the old anime (irrelevant for 2023)
-        return False
+        # If it has NO year:
+        # - For Movies: usually irrelevant (want specific year)
+        # - For TV: could be a long-running series (like Anime) where episodes don't carry the start year
+        # We allow it if overlap is very high (already checked above)
+        return True
             
     return True
 
@@ -169,39 +175,44 @@ async def _html_fallback(client: httpx.AsyncClient, query: str) -> List[dict]:
 # ── Public entry point ────────────────────────────────────────────────────────
 
 async def lookup_timfshare(
-    title: str,
+    query: str,
     year: Optional[str] = None,
     season: Optional[int] = None,
     episode: Optional[int] = None,
+    filter_title: Optional[str] = None,
 ) -> List[Dict]:
-    cache_key = f"{title.strip().lower()}|{year or ''}|{season or ''}|{episode or ''}"
+    cache_key = f"{query.strip().lower()}|{year or ''}|{season or ''}|{episode or ''}|{filter_title or ''}"
     cached = get_from_cache(_CACHE_FILE, cache_key, _CACHE_TTL)
     if cached is not None:
         return cached
 
-    # Build query: title [year] [SxxExx / Season N]
-    parts = [title]
-    if year: parts.append(year)
-    if season and episode: parts.append(f"S{season:02d}E{episode:02d}")
-    elif season: parts.append(f"Season {season}")
-    query = " ".join(parts)
+    # Use query as provided, or build default if query is missing (fallback)
+    search_q = query
+    if not search_q:
+        parts = []
+        if year: parts.append(year)
+        if season and episode: parts.append(f"S{season:02d}E{episode:02d}")
+        search_q = " ".join(parts)
 
     async with httpx.AsyncClient(headers=_HEADERS, timeout=15.0) as client:
-        raw_items = await _call_api(client, query)
+        raw_items = await _call_api(client, search_q)
         source_tag = "timfshareapi"
 
         if raw_items is None:
             # API failed → try HTML fallback
-            raw_items = await _html_fallback(client, query)
+            raw_items = await _html_fallback(client, search_q)
             source_tag = "timfsharehtml"
 
     results = []
     seen: set = set()
+    # If filter_title is provided, use it for relevance. Otherwise use the query itself.
+    rel_title = filter_title or query
+
     for item in (raw_items or []):
         url = item.get("url", "").split("?")[0]
         if not url or url in seen:
             continue
-        if not _is_relevant(item.get("name", ""), title, year):
+        if not _is_relevant(item.get("name", ""), rel_title, year):
             continue
         result = _make_result(item, source_tag)
         if result:

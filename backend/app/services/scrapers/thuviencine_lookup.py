@@ -32,7 +32,7 @@ def _parse_quality(text: str) -> str:
 
 def _keywords(text: str) -> set:
     words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
-    return {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
+    return {w for w in words if len(w) >= 3 and w not in _STOP_WORDS}
 
 
 def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
@@ -49,15 +49,21 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
         
     # 2. Year Filter: Strict
     if year:
-        is_one_piece_la = "one piece" in title.lower() and year == "2023"
+        year_str = str(year)
+        is_one_piece_la = "one piece" in title.lower() and year_str == "2023"
         found_years = re.findall(r'\b(19\d{2}|20\d{2})\b', name)
         
-        if year in found_years:
+        if year_str in found_years:
             return True
         if is_one_piece_la and "live action" in name.lower():
             return True
             
-        return False
+        # If result has a DIFFERENT year, it's definitely wrong
+        if found_years:
+            return False
+            
+        # If it has NO year, we allow it (for TV series/Anime)
+        return True
             
     return True
 

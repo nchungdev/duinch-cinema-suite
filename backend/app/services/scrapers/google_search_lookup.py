@@ -337,7 +337,7 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
     """
     def keywords(text: str):
         words = re.sub(r'[^a-z0-9\s]', ' ', text.lower()).split()
-        return {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
+        return {w for w in words if len(w) >= 3 and w not in _STOP_WORDS}
 
     title_kw = keywords(title)
     if not title_kw:
@@ -361,7 +361,12 @@ def _is_relevant(name: str, title: str, year: Optional[str] = None) -> bool:
         if is_one_piece_la and "live action" in name.lower():
             return True
             
-        return False
+        # If result has a DIFFERENT year, it's definitely wrong
+        if found_years:
+            return False
+            
+        # If it has NO year, we allow it (for TV series/Anime)
+        return True
             
     return True
 
