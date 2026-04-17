@@ -193,22 +193,34 @@ class PhimAPIBase:
             "links": []
         }
         
+        # Merge server entries with the same name (KKPhim often returns the same
+        # server twice — one with m3u8 links, one with embed links for identical episodes).
+        merged: Dict[str, Dict] = {}   # server_name → {server_data: [...], _ep_index: {name: idx}}
         for ep_group in episodes:
-            server = {
-                "server_name": ep_group.get("server_name"),
-                "server_data": []
-            }
-            seen_names = set()
+            sname = ep_group.get("server_name") or "Server"
+            if sname not in merged:
+                merged[sname] = {"server_name": sname, "server_data": [], "_ep_index": {}}
+
             for ep in ep_group.get("server_data", []):
-                name = ep.get("name")
-                if name in seen_names:
-                    continue
-                seen_names.add(name)
-                server["server_data"].append({
-                    "name": name,
-                    "m3u8": ep.get("link_m3u8"),
-                    "embed": ep.get("link_embed")
-                })
+                name = ep.get("name") or ""
+                m3u8  = ep.get("link_m3u8") or ""
+                embed = ep.get("link_embed") or ""
+
+                if name in merged[sname]["_ep_index"]:
+                    # Episode already exists — fill in any missing link type
+                    idx = merged[sname]["_ep_index"][name]
+                    existing = merged[sname]["server_data"][idx]
+                    if not existing.get("m3u8") and m3u8:
+                        existing["m3u8"] = m3u8
+                    if not existing.get("embed") and embed:
+                        existing["embed"] = embed
+                else:
+                    idx = len(merged[sname]["server_data"])
+                    merged[sname]["_ep_index"][name] = idx
+                    merged[sname]["server_data"].append({"name": name, "m3u8": m3u8, "embed": embed})
+
+        for sname, server in merged.items():
+            del server["_ep_index"]   # remove internal bookkeeping
             output["links"].append(server)
             
         return output
