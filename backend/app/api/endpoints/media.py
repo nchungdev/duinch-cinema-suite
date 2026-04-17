@@ -10,6 +10,7 @@ from app.services.scrapers.google_search_lookup import lookup_google_fshare
 from app.services.scrapers.fshare_lookup import resolve_fshare_url
 from app.services.scrapers.gdrive_lookup import lookup_gdrive
 from app.services.scrapers.torrent_lookup import lookup_torrent
+from app.services.scrapers.timfshare_lookup import lookup_timfshare
 
 router = APIRouter()
 
@@ -79,6 +80,7 @@ async def media_detail(request: Request, media_type: str, tmdb_id: int):
         "error_msg": "",
     }
 
+
 @router.get("/discovery")
 async def discovery(
     request: Request,
@@ -89,14 +91,18 @@ async def discovery(
     year: str = Query(None),
     season: int = Query(None),
     episode: int = Query(None),
-    provider: str = Query(...),  # kkphim, ophim, torrent, fshare, thuviencine, gdrive
+    source_type: str = Query(...),  # m3u8, torrent, fshare, gdrive, dailymotion
+    source: str = Query(None),      # kkphim, ophim | timfshare, thuviencine, web | googlesearch | dailymotion
 ):
-    """Unified discovery endpoint for all providers. Supports streamable and downloadable types."""
+    """
+    Unified discovery endpoint.
+    source_type = what kind of link (m3u8, fshare, torrent, gdrive, dailymotion)
+    source      = which scraper/API provides it
+    """
     client = request.app.state.http_client
     clean_title    = re.sub(r'\(.*?\)', '', title).strip()
     clean_localize = re.sub(r'\(.*?\)', '', localize_title).strip() if localize_title else None
 
-    # Helper to build search queries (consistent with previous refined logic)
     def _build_query(base: str) -> str:
         parts = [base]
         if media_type == "movie" and year:
@@ -113,35 +119,55 @@ async def discovery(
     secondary = _build_query(clean_localize) if clean_localize else None
 
     results = []
-    
+
     try:
-        if provider == "kkphim":
-            results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
-        elif provider == "ophim":
-            results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
-        elif provider == "torrent":
+        # ── M3U8 streaming ────────────────────────────────────────────────────
+        if source_type == "m3u8":
+            if source == "kkphim":
+                results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
+            elif source == "ophim":
+                results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
+
+        # ── Torrent ───────────────────────────────────────────────────────────
+        elif source_type == "torrent":
             results = await lookup_torrent(clean_title, tmdb_id, media_type, season, episode, year)
-        elif provider == "fshare":
-            results = await lookup_google_fshare(clean_title, year, season, episode)
-            if clean_localize:
-                sec_res = await lookup_google_fshare(clean_localize, year, season, episode)
-                results.extend(sec_res)
-        elif provider == "thuviencine":
-            results = await lookup_thuviencine(primary)
-            if secondary:
-                sec_res = await lookup_thuviencine(secondary)
-                results.extend(sec_res)
-        elif provider == "gdrive":
+
+        # ── FShare ────────────────────────────────────────────────────────────
+        elif source_type == "fshare":
+            if source == "timfshare":
+                results = await lookup_timfshare(clean_title, year, season, episode)
+                if clean_localize:
+                    sec = await lookup_timfshare(clean_localize, year, season, episode)
+                    results = results + sec
+            elif source == "thuviencine":
+                results = await lookup_thuviencine(primary, filter_title=clean_title)
+                if secondary:
+                    sec = await lookup_thuviencine(secondary, filter_title=clean_localize)
+                    results = results + sec
+            elif source == "web":
+                results = await lookup_google_fshare(clean_title, year, season, episode)
+                if clean_localize:
+                    sec = await lookup_google_fshare(clean_localize, year, season, episode)
+                    results = results + sec
+
+        # ── Google Drive ──────────────────────────────────────────────────────
+        elif source_type == "gdrive":
             results = await lookup_gdrive(primary)
             if secondary:
-                sec_res = await lookup_gdrive(secondary)
-                results.extend(sec_res)
-        
-        # Standardize results structure if needed (ensure each item has 'type' and 'provider')
-        # Scrapers should already return the correct format now.
-        
-        # Deduplicate results by URL
-        seen_urls = set()
+                sec = await lookup_gdrive(secondary)
+                results.extend(sec)
+
+        # ── Dailymotion ───────────────────────────────────────────────────────
+        elif source_type == "dailymotion":
+            results = []  # TODO: implement dailymotion scraper
+
+        # ── Normalize: set source_type on every result, drop legacy provider ──
+        for r in results:
+            r["source_type"] = source_type
+            r.pop("provider", None)
+
+        # ── Deduplicate by URL ────────────────────────────────────────────────
+        seen_urls: set = set()
         final_results = []
         for r in results:
             url = r.get("url") or r.get("m3u8") or r.get("embed")
@@ -151,20 +177,21 @@ async def discovery(
 
         return {
             "data": {
+                "source_type": source_type,
+                "source": source,
                 "results": final_results,
-                "provider": provider,
-                "success": True
             },
             "error_code": 0,
             "error_msg": ""
         }
     except Exception as e:
-        print(f"Discovery error for {provider}: {e}")
+        print(f"Discovery error for {source_type}/{source}: {e}")
         return {
-            "data": {"results": [], "provider": provider, "success": False},
+            "data": {"source_type": source_type, "source": source, "results": []},
             "error_code": 500,
             "error_msg": str(e)
         }
+
 
 @router.get("/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):

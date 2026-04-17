@@ -50,9 +50,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [isInternalScrolling, setIsInternalScrolling] = useState(false);
   const isInternalScrollingRef = useRef(false);
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
-  const [streamableProviders, setStreamableProviders] = useState<Record<string, any[]>>({});
-  const [activeProviderId, setActiveProviderId] = useState<string>('');
-  const [showProviderMenu, setShowProviderMenu] = useState(false);
+  const [streamableSources, setStreamableSources] = useState<Record<string, any[]>>({});
+  const [activeSrcId, setActiveSrcId] = useState<string>('');
+  const [showSourceMenu, setShowSourceMenu] = useState(false);
   const [miniPlayerFloating, setMiniPlayerFloating] = useState(false);
   const [ribbonAtStart, setRibbonAtStart] = useState(true);
   const [ribbonAtEnd, setRibbonAtEnd] = useState(false);
@@ -67,6 +67,19 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const miniPlayerSentinelRef = useRef<HTMLDivElement>(null);
 
   const totalEpisodes = streamingLinks?.[0]?.server_data?.length ?? 0;
+
+  const maxEpisodesInAnySeason = useMemo(() => {
+    const counts = data?.metadata.tmdb_seasons?.map(s => s.episode_count) || [];
+    if (counts.length === 0) return totalEpisodes || 10; 
+    return Math.max(...counts);
+  }, [data, totalEpisodes]);
+
+  const estimatedSectionHeight = useMemo(() => {
+    const rowHeight = 44;
+    const headerHeight = 44;
+    const padding = 4;
+    return (maxEpisodesInAnySeason * rowHeight) + headerHeight + padding;
+  }, [maxEpisodesInAnySeason]);
 
   const seasonBoundaries = useMemo(() => {
     const rawBoundaries = (data?.metadata.tmdb_seasons || []).reduce((acc: any[], s: any) => {
@@ -228,12 +241,9 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     const sNum = data.metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number;
     const eNum = activeEpisodeIdx + 1;
     
-    // Recovery: Check for saved provider/server names on mount or data change
-    if (!activeProviderId) {
-        const savedProvider = localStorage.getItem('omv_active_provider');
-        if (savedProvider) {
-            // We wait for DiscoveryPipeline to populate providers
-        }
+    // Recovery: Check for saved source on mount or data change
+    if (!activeSrcId) {
+        // We wait for DiscoveryPipeline to populate sources
     }
 
     const hash = window.location.hash;
@@ -256,16 +266,15 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   }, [activeSeasonIdx, activeEpisodeIdx, data, slug, mediaType, category]);
 
   useEffect(() => {
-    const ep = streamableProviders[activeProviderId]?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
+    const ep = streamableSources[activeSrcId]?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
     if (ep?.embed) setActiveEmbed(ep.embed);
-  }, [streamableProviders, activeProviderId, activeServerIdx, activeEpisodeIdx]);
+  }, [streamableSources, activeSrcId, activeServerIdx, activeEpisodeIdx]);
 
   useEffect(() => {
-    if (activeProviderId && streamableProviders[activeProviderId]) {
-      const servers = streamableProviders[activeProviderId];
+    if (activeSrcId && streamableSources[activeSrcId]) {
+      const servers = streamableSources[activeSrcId];
       setStreamingLinks(servers);
 
-      // Persistence: Try to restore saved server name
       const savedServerName = localStorage.getItem('omv_active_server_name');
       if (savedServerName) {
           const sIdx = servers.findIndex((s: any) => s.server_name === savedServerName);
@@ -274,7 +283,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
           }
       }
     }
-  }, [activeProviderId, streamableProviders]);
+  }, [activeSrcId, streamableSources]);
 
   if (loading) return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
@@ -398,7 +407,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
            })()}
 
              <div className="relative group/panel">
-              <div className="w-full xl:w-[400px] max-h-[500px] flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10">
+               <div 
+                 className="w-full xl:w-[400px] flex flex-col rounded-2xl bg-[#08080a]/90 backdrop-blur-3xl border border-white/10 overflow-hidden shadow-2xl relative z-10"
+                 style={{ height: mediaType === 'tv' ? `${Math.min(estimatedSectionHeight, 600)}px` : 'fit-content', maxHeight: '600px' }}
+               >
                 
                 {seasonBoundaries.length > 0 && (
                   <div className="shrink-0 bg-white/[0.01] border-b border-white/10 flex items-center h-11 relative group/ribbon">
@@ -500,51 +512,54 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                 </div>
               </div>
 
-               {/* 2. Floating/Pinned Side Dock (Providers + Servers) */}
+               {/* 2. Floating/Pinned Side Dock (Sources + Servers) */}
                <div className="absolute left-full top-1/2 -translate-y-1/2 flex flex-col gap-2 py-1 z-40">
-                  {/* Settings / Provider Toggle */}
+                  {/* Settings / Source Toggle */}
                   <div className="relative">
-                    <button 
-                      onClick={() => setShowProviderMenu(!showProviderMenu)}
+                    <button
+                      onClick={() => setShowSourceMenu(!showSourceMenu)}
                       className={`w-9 h-9 rounded-r-xl border-y border-r flex items-center justify-center transition-all ${
-                        showProviderMenu 
-                        ? 'bg-blue-600/30 border-blue-500/50 text-blue-400' 
+                        showSourceMenu
+                        ? 'bg-blue-600/30 border-blue-500/50 text-blue-400'
                         : 'bg-white/5 border-white/5 text-gray-600 hover:text-gray-400 hover:bg-white/10'
                       }`}
                     >
-                      <Settings className={`w-4 h-4 ${showProviderMenu ? 'animate-spin-slow' : ''}`} />
+                      <Settings className={`w-4 h-4 ${showSourceMenu ? 'animate-spin-slow' : ''}`} />
                     </button>
 
-                    {/* Popover Source Menu */}
-                    {showProviderMenu && Object.keys(streamableProviders).length > 0 && (
-                      <div className="absolute right-full top-0 mr-3 w-48 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl p-2 flex flex-col gap-1 z-50 animate-slide-left">
+                    {/* Popover: Stream Sources (kkphim / ophim) */}
+                    {showSourceMenu && Object.keys(streamableSources).length > 0 && (
+                      <div className="absolute right-full top-0 mr-3 w-52 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl p-2 flex flex-col gap-1 z-50 animate-slide-left">
                         <div className="px-3 py-2 border-b border-white/5 mb-1">
-                          <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-500">Select Source</span>
+                          <span className="text-[7px] font-black uppercase tracking-[0.3em] text-gray-500">Stream Source</span>
+                          <p className="text-[6px] text-gray-700 uppercase tracking-widest mt-0.5">M3U8 provider</p>
                         </div>
-                        {Object.keys(streamableProviders).map(pId => {
-                          const isActive = pId === activeProviderId;
-                          const colors: Record<string, string> = {
-                            kkphim: 'text-orange-400 bg-orange-500/10',
-                            ophim: 'text-pink-400 bg-pink-500/10',
-                            thuviencine: 'text-emerald-400 bg-emerald-500/10'
+                        {Object.keys(streamableSources).map(srcId => {
+                          const isActive = srcId === activeSrcId;
+                          const srcMeta: Record<string, { label: string; color: string }> = {
+                            kkphim: { label: 'KKPhim',  color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
+                            ophim:  { label: 'OPhim',   color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
                           };
+                          const meta = srcMeta[srcId] ?? { label: srcId, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
+                          const serverCount = streamableSources[srcId]?.length ?? 0;
                           return (
-                            <button key={pId}
-                              onClick={() => { 
-                                setActiveProviderId(pId); 
-                                setActiveServerIdx(0); 
-                                setShowProviderMenu(false); 
-                                localStorage.setItem('omv_active_provider', pId);
+                            <button key={srcId}
+                              onClick={() => {
+                                setActiveSrcId(srcId);
+                                setActiveServerIdx(0);
+                                setShowSourceMenu(false);
+                                localStorage.setItem('omv_active_source', srcId);
                               }}
                               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                                isActive 
-                                  ? `border-white/20 ${colors[pId] || 'text-blue-400 bg-blue-500/10'}` 
+                                isActive
+                                  ? meta.color
                                   : 'border-transparent text-gray-600 hover:text-gray-400 hover:bg-white/5'
                               }`}
                             >
                               <Globe className="w-3 h-3" />
-                              {pId}
-                              {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
+                              <span className="flex-1 text-left">{meta.label}</span>
+                              <span className="text-[7px] text-gray-600 font-bold normal-case tracking-normal">{serverCount} sv</span>
+                              {isActive && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
                             </button>
                           );
                         })}
@@ -664,39 +679,28 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
               year={String(metadata.year || '')}
               mediaType={mediaType}
               season={metadata.tmdb_seasons?.[activeSeasonIdx]?.season_number}
-              onStreamingReady={(links) => {
-                // Determine provider
-                const sample = links[0];
-                const providerId = sample?.provider || 'Unknown';
-                
-                // Group flat items by server field
+              onStreamingReady={(links, source) => {
+                // Group flat items by server name
                 const grouped: Record<string, any> = {};
                 for (const item of links) {
-                  const key = item.server || item.server_name || 'Server';
+                  const key = item.server || item.server_name || source;
                   if (!grouped[key]) grouped[key] = { server_name: key, server_data: [] };
                   grouped[key].server_data.push({
-                    name: item.name,
-                    m3u8: item.m3u8 || item.url || '',
+                    name:  item.name,
+                    m3u8:  item.m3u8 || item.url || '',
                     embed: item.embed || '',
                   });
                 }
-                
                 const serverList = Object.values(grouped);
-                setStreamableProviders(prev => ({
-                    ...prev,
-                    [providerId]: serverList
-                }));
+                setStreamableSources(prev => ({ ...prev, [source]: serverList }));
 
-                // Auto-restore provider if possible
-                const savedProvider = localStorage.getItem('omv_active_provider');
-                if (!activeProviderId) {
-                    if (savedProvider && providerId === savedProvider) {
-                        setActiveProviderId(providerId);
-                    } else if (!activeProviderId) {
-                        // Fallback to the first found provider if nothing set yet
-                        setActiveProviderId(providerId);
-                    }
-                }
+                // Auto-activate: restore saved source or use first available
+                const savedSrc = localStorage.getItem('omv_active_source');
+                setActiveSrcId(prev => {
+                  if (prev) return prev;                      // already set
+                  if (savedSrc === source) return source;     // restore saved
+                  return source;                              // first arrived
+                });
               }}
             />
         </div>
