@@ -6,7 +6,7 @@ import { useHlsPlayer } from '../../hooks/useHlsPlayer';
 export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const dailymotionPollRef = useRef<NodeJS.Timeout | null>(null);
+    const dailymotionPollRef = useRef<number | null>(null);
     
     const { 
         activeEmbed, activeType, activeProvider,
@@ -116,7 +116,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
 
         window.addEventListener('message', handleMessage);
         // Poll for time every 10 seconds, start after 2 seconds to let player initialize
-        dailymotionPollRef.current = setInterval(sendGetCurrentTime, 10000) as any;
+        dailymotionPollRef.current = window.setInterval(sendGetCurrentTime, 10000);
         const initialTimer = setTimeout(sendGetCurrentTime, 2000);
 
         return () => {
