@@ -217,7 +217,7 @@ function App() {
       </div>
 
       <nav className={`fixed top-0 left-0 right-0 z-[100] h-20 px-10 flex items-center justify-between transition-all duration-500 border-b ${
-        scrolled ? 'bg-black/80 backdrop-blur-2xl border-white/10' : 'bg-transparent border-transparent'
+        scrolled || view === 'detail' ? 'bg-black/80 backdrop-blur-2xl border-white/10' : 'bg-transparent border-transparent'
       }`}>
         <div className="flex items-center gap-16">
           <div onClick={() => navToDiscoveryClear('new')} className="flex items-center gap-3 cursor-pointer group">

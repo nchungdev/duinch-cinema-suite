@@ -86,20 +86,23 @@ interface MovieDetailProps {
 const DetailContent = () => {
   const {
     loading, metadata, mediaType, onBack,
-    isTorrentStreaming, isFshareResolving
   } = useMovieDetail();
 
   useMovieDetailData();
   const { handleStreamingReady } = useStreamRegistry();
-  const { streamingLinks } = useStreamNavigation();
+  useStreamNavigation();
 
   const playerRef = useRef<HTMLDivElement>(null);
   const [playerHeight, setPlayerHeight] = useState<number | null>(null);
 
+  // Derive height from width (aspect-video = 9/16) so we never read a stale
+  // offsetHeight that fires before the CSS aspect-ratio is applied.
   useEffect(() => {
     const el = playerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setPlayerHeight(el.offsetHeight));
+    const ro = new ResizeObserver(([entry]) => {
+      setPlayerHeight(Math.round(entry.contentRect.width * 9 / 16));
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -148,14 +151,13 @@ const DetailContent = () => {
               />
             </div>
 
-            {/* Right Column: Stream Control — exact player height via ResizeObserver */}
+            {/* Right Column: Stream Control — explicit height = player height */}
             <div
               className="lg:col-span-4 sticky top-24"
-              style={playerHeight ? { height: playerHeight } : { aspectRatio: '8/9' }}
+              style={playerHeight ? { height: playerHeight } : undefined}
             >
               <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-3xl shadow-3xl flex flex-col h-full">
                 <NowPlayingHeader />
-
                 <div className="flex-1 overflow-hidden rounded-b-3xl">
                   {mediaType === 'tv' ? <TVGallery /> : <MovieGallery />}
                 </div>
