@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import { Play, Loader2, ChevronDown } from 'lucide-react';
 import { MarqueeText } from '../MarqueeText';
 import { useStreamResolvers } from '../../hooks/useStreamResolvers';
@@ -15,7 +15,9 @@ export const TVGallery = () => {
     
     const episodeListRef = useRef<HTMLDivElement>(null);
     const episodeRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const seasonHeaderRefs = useRef<(HTMLButtonElement | null)[]>([]);
     const [collapsedSeasons, setCollapsedSeasons] = useState<Set<number>>(new Set());
+    const [activeSeason, setActiveSeason] = useState(0);
 
     const toggleSeason = (idx: number) =>
         setCollapsedSeasons(prev => {
@@ -23,6 +25,47 @@ export const TVGallery = () => {
             next.has(idx) ? next.delete(idx) : next.add(idx);
             return next;
         });
+
+    // Jump to season: expand it if collapsed, then scroll its header into view
+    const jumpToSeason = useCallback((sIdx: number) => {
+        setCollapsedSeasons(prev => {
+            if (prev.has(sIdx)) {
+                const next = new Set(prev);
+                next.delete(sIdx);
+                return next;
+            }
+            return prev;
+        });
+        setActiveSeason(sIdx);
+        
+        requestAnimationFrame(() => {
+            const container = episodeListRef.current;
+            const target = seasonHeaderRefs.current[sIdx];
+            if (container && target) {
+                // Calculate position relative to container
+                const top = target.offsetTop;
+                container.scrollTo({ top, behavior: 'smooth' });
+            }
+        });
+    }, []);
+
+    // Scroll-spy: update activeSeason based on which season header is nearest the top
+    useEffect(() => {
+        const container = episodeListRef.current;
+        if (!container) return;
+        const onScroll = () => {
+            let best = 0;
+            let bestDist = Infinity;
+            seasonHeaderRefs.current.forEach((el, i) => {
+                if (!el) return;
+                const dist = Math.abs(el.getBoundingClientRect().top - container.getBoundingClientRect().top);
+                if (dist < bestDist) { bestDist = dist; best = i; }
+            });
+            setActiveSeason(best);
+        };
+        container.addEventListener('scroll', onScroll, { passive: true });
+        return () => container.removeEventListener('scroll', onScroll);
+    }, []);
 
     // Calculate Season Boundaries (Same logic as before)
     const seasonBoundaries = useMemo(() => {
@@ -76,6 +119,24 @@ export const TVGallery = () => {
     return (
         <div className="flex flex-col h-full bg-[#0a0a0c]">
 
+            {/* Season quick-jump dropdown — only show when there are multiple seasons */}
+            {seasonBoundaries.length > 1 && (
+                <div className="shrink-0 px-3 py-2 border-b border-white/5">
+                    <select
+                        value={activeSeason}
+                        onChange={e => jumpToSeason(Number(e.target.value))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-300 cursor-pointer focus:outline-none focus:border-blue-500/50 focus:bg-white/8 transition-all appearance-none"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center' }}
+                    >
+                        {seasonBoundaries.map((s, sIdx) => (
+                            <option key={sIdx} value={sIdx} className="bg-[#0c0c0e] text-gray-300">
+                                Season {s.season_number}{s.name && !/^(season|mùa|mua)\s*\d+$/i.test(s.name.trim()) ? ` · ${s.name}` : ''}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
             <div ref={episodeListRef} className="flex-1 overflow-y-auto custom-scrollbar">
                 {seasonBoundaries.map((s, sIdx) => {
                     const serverData = streamingLinks?.[activeServerIdx]?.server_data ?? [];
@@ -84,6 +145,7 @@ export const TVGallery = () => {
                     return (
                         <div key={sIdx} className="flex flex-col">
                             <button
+                                ref={el => { seasonHeaderRefs.current[sIdx] = el; }}
                                 onClick={() => toggleSeason(sIdx)}
                                 className="sticky top-0 z-20 px-5 py-2.5 bg-[#0a0a0c]/90 backdrop-blur-md border-y border-white/5 flex items-center justify-between w-full hover:bg-white/[0.02] transition-colors"
                             >
