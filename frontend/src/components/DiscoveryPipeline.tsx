@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Loader2, Activity, Zap, Magnet, Globe, Box, Tv } from 'lucide-react';
-import { MediaRepository } from '../repositories/MediaRepository';
+import { MediaRepository } from '../data/repositories/MediaRepository';
 import { RankingService } from '../domain/services/RankingService';
 import type { MediaLink } from '../api/config';
 import { useCloudTargets } from '../hooks/useCloudTargets';
