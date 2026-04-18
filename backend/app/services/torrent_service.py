@@ -4,6 +4,7 @@ import os
 import signal
 import socket
 from typing import Dict, Optional
+from app.core.config import TORRENT_CACHE
 
 # Track active streams: {magnet_hash: {port, process}}
 _active_streams: Dict[str, dict] = {}
@@ -36,6 +37,8 @@ def start_torrent_stream(magnet: str) -> Optional[str]:
     
     # Run webtorrent: --out (download path), --port, --quiet
     # We use sequential download by default
+    os.makedirs(TORRENT_CACHE, exist_ok=True)
+    
     import shutil
     webtorrent_bin = shutil.which("webtorrent")
     if not webtorrent_bin:
@@ -52,6 +55,7 @@ def start_torrent_stream(magnet: str) -> Optional[str]:
     cmd = [
         webtorrent_bin, magnet,
         "--port", str(port),
+        "--out", TORRENT_CACHE,
         "--quiet"
     ]
     

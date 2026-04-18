@@ -9,3 +9,11 @@ data/
 
 # Backend
 backend/data/
+*.mkv
+*.mp4
+*.mp3
+*.zip
+*.torrent
+.pytest_cache/
+.venv/
+venv/
