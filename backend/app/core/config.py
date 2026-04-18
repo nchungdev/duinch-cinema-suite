@@ -35,7 +35,7 @@ TIMFSHARE_CACHE = os.path.join(CACHE_ROOT, "timfshare")
 GOOGLE_SEARCH_CACHE = os.path.join(CACHE_ROOT, "google-search")
 GOOGLE_SEARCH_NAME_CACHE = os.path.join(CACHE_ROOT, "fshare-names")
 FSHARE_FOLDER_CACHE = os.path.join(CACHE_ROOT, "fshare-folders")
-TORRENT_CACHE = os.path.join(CACHE_ROOT, "api-torrent")
+TORRENT_CACHE = os.path.join(CACHE_ROOT, "stream-torrent")
 OTHERS_CACHE = os.path.join(CACHE_ROOT, "others")
 
 # 2. Persistent Content (User Data - keep always)
