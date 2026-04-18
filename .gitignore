@@ -7,10 +7,10 @@ __pycache__/
 .claude/
 .agents/
 logs/
-/data/
+data/
 
 # Backend
-/backend/data/
+backend/data/
 *.mkv
 *.mp4
 *.mp3

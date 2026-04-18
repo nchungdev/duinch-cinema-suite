@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { api } from '../api/config';
 import { useMovieDetail } from '../components/detail/MovieDetailContext';
-import { MediaRepository } from '../data/repositories/MediaRepository';
+import { MediaRepository } from '../infrastructure/repositories/MediaRepository';
 
 export const useMovieDetailData = () => {
   const { 

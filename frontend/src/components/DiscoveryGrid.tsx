@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api, getProxiedImageUrl } from '../api/config';
 import { PlayCircle, Loader2 } from 'lucide-react';
-import { MediaRepository } from '../data/repositories/MediaRepository';
+import { MediaRepository } from '../infrastructure/repositories/MediaRepository';
 
 interface DiscoveryItem {
   title: string;
