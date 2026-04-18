@@ -1,9 +1,9 @@
-import React, { useRef } from 'react';
+import React, { forwardRef, useRef } from 'react';
 import { Loader2, Zap, Activity } from 'lucide-react';
 import { useMovieDetail } from './MovieDetailContext';
 import { useHlsPlayer } from '../../hooks/useHlsPlayer';
 
-export const MediaStreamer = () => {
+export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const { 
         activeEmbed, isTorrentStreaming, isFshareResolving,
         activeType, activeProvider, streamableSources,
@@ -17,7 +17,7 @@ export const MediaStreamer = () => {
     const showLoadingOverlay = (isInternalLoading || (!!activeEmbed && !activeEmbed.includes('iframe') && !isPlayerReady)) && !playerError;
 
     return (
-        <div className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group">
+        <div ref={containerRef} className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group">
             {activeEmbed ? (
                 <>
                     {activeEmbed.includes('iframe') || activeType === 'EMBED' ? (
@@ -92,4 +92,6 @@ export const MediaStreamer = () => {
             )}
         </div>
     );
-};
+});
+
+MediaStreamer.displayName = 'MediaStreamer';

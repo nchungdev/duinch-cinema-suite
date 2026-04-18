@@ -29,19 +29,28 @@ class KKPhimProvider(PhimAPIBase):
         year: int = None,
     ) -> List[Dict[str, Any]]:
         """KKPhim-specific lookup with TMDB ID endpoint support."""
-        
-        # 1. TMDB ID via phimapi TMDB endpoint
+        anchor_slug = None
+
+        # 1. TMDB ID via phimapi TMDB endpoint. We only use this as a hint:
+        # TV shows may be split into one entity per season, and /tmdb/tv/{id}
+        # does not consistently point to the requested season.
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
-                slug = res.get("movie", {}).get("slug")
-                if slug:
-                    details = await self.get_formatted_details(client, slug)
-                    if details and not "error" in details:
-                        return self.extract_streaming_links(details, media_type, season, episode)
+                anchor_slug = res.get("movie", {}).get("slug")
 
         # 2-5. Fallback to base lookup (slug from titles, search)
-        return await super().lookup(client, tmdb_id, title, localize_title, media_type, season, episode, year)
+        return await super().lookup(
+            client,
+            tmdb_id,
+            title,
+            localize_title,
+            media_type,
+            season,
+            episode,
+            year,
+            anchor_slug=anchor_slug,
+        )
 
 _kkphim = KKPhimProvider()
 

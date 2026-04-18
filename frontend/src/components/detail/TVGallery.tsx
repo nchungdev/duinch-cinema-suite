@@ -137,7 +137,7 @@ export const TVGallery = () => {
                 </div>
             )}
 
-            <div ref={episodeListRef} className="flex-1 overflow-y-auto custom-scrollbar">
+            <div ref={episodeListRef} className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
                 {seasonBoundaries.map((s, sIdx) => {
                     const serverData = streamingLinks?.[activeServerIdx]?.server_data ?? [];
                     const eps = Array.from({ length: s.end - s.start }, (_, i) => s.start + i);

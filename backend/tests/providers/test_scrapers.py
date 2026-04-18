@@ -16,6 +16,15 @@ async def test_kkphim_provider():
             assert "name" in results[0]
 
 @pytest.mark.asyncio
+async def test_kkphim_provider_merges_split_seasons():
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        results = await lookup_kkphim(client, title="The Boys", media_type="tv", tmdb_id="76479")
+        assert isinstance(results, list)
+        if results:
+            seasons = {item.get("season") for item in results if item.get("season") is not None}
+            assert len(seasons) > 1
+
+@pytest.mark.asyncio
 async def test_ophim_provider():
     async with httpx.AsyncClient(timeout=25.0) as client:
         results = await lookup_ophim(client, tmdb_id=37854, title="One Piece", media_type="tv")

@@ -17,7 +17,7 @@ export const MovieGallery = () => {
                 <span className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-500/60">Available Transmissions</span>
             </div>
             
-            <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar">
                 {streamingLinks.map((server, srvIdx) => (
                     <div key={srvIdx} className="flex flex-col border-b last:border-b-0 border-white/5">
                         {server.server_data.map((ep: any, epIdx: number) => {

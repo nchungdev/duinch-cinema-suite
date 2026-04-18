@@ -2,6 +2,7 @@ import httpx
 import json
 import os
 import re
+import html
 import unicodedata
 import asyncio
 from typing import List, Dict, Optional, Any
@@ -118,6 +119,131 @@ class PhimAPIBase:
         if "error" in data:
             return []
         return data.get("data", {}).get("items", [])
+
+    def _normalize_compare_text(self, value: Optional[str]) -> str:
+        if not value:
+            return ""
+        value = html.unescape(str(value))
+        value = unicodedata.normalize("NFKD", value)
+        value = "".join(ch for ch in value if not unicodedata.combining(ch))
+        return re.sub(r"\s+", " ", value).strip().lower()
+
+    def _extract_season_number(self, *values: Optional[str]) -> Optional[int]:
+        patterns = [
+            r'[\(\[\s-](?:phan|phần|season)\s*(\d+)',
+            r'[\(\[\s-]s\s*(\d+)(?:\b|\))',
+        ]
+        for raw in values:
+            if not raw:
+                continue
+            text = self._normalize_compare_text(raw)
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    return int(match.group(1))
+        return None
+
+    def _item_tmdb_id(self, item: Dict[str, Any]) -> Optional[str]:
+        tmdb_data = item.get("tmdb")
+        if isinstance(tmdb_data, dict) and tmdb_data.get("id"):
+            return str(tmdb_data.get("id"))
+        return None
+
+    def _base_slug_variants(self, slug: Optional[str]) -> List[str]:
+        if not slug:
+            return []
+        variants = [slug]
+        stripped = re.sub(r'-(?:phan|ph%E1%BA%A7n|season)-\d+$', '', slug, flags=re.IGNORECASE)
+        stripped = re.sub(r'-s\d+$', '', stripped, flags=re.IGNORECASE)
+        if stripped and stripped not in variants:
+            variants.append(stripped)
+        return variants
+
+    def _score_search_item(
+        self,
+        item: Dict[str, Any],
+        query: str,
+        tmdb_id: Optional[Any] = None,
+        year: Optional[int] = None,
+        anchor_slug: Optional[str] = None,
+    ) -> int:
+        score = 0
+        query_norm = self._normalize_compare_text(query)
+        name_norm = self._normalize_compare_text(item.get("name"))
+        origin_norm = self._normalize_compare_text(item.get("origin_name"))
+        slug_norm = self._normalize_compare_text(item.get("slug"))
+        item_tmdb = self._item_tmdb_id(item)
+
+        if tmdb_id and item_tmdb == str(tmdb_id):
+            score += 100
+
+        if query_norm:
+            if query_norm == name_norm or query_norm == origin_norm:
+                score += 40
+            elif query_norm in name_norm or query_norm in origin_norm:
+                score += 25
+            elif query_norm in slug_norm:
+                score += 20
+
+        if year and str(item.get("year") or "") == str(year):
+            score += 10
+
+        if item.get("type") in {"series", "tv", "tvshows", "hoathinh"}:
+            score += 5
+
+        if anchor_slug and item.get("slug") == anchor_slug:
+            score += 30
+
+        return score
+
+    async def _collect_search_candidates(
+        self,
+        client: httpx.AsyncClient,
+        queries: List[str],
+        tmdb_id: Optional[Any] = None,
+        year: Optional[int] = None,
+        anchor_slug: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        candidates: Dict[str, Dict[str, Any]] = {}
+
+        for query in queries:
+            items = await self.search(client, query)
+            if not items:
+                continue
+
+            clean_query = query.lower().strip()
+            for item in items:
+                if self._should_skip_item(item, clean_query):
+                    continue
+
+                slug = item.get("slug")
+                if not slug:
+                    continue
+
+                score = self._score_search_item(item, query, tmdb_id=tmdb_id, year=year, anchor_slug=anchor_slug)
+                season_no = self._extract_season_number(item.get("name"), item.get("origin_name"), slug)
+                payload = {
+                    "item": item,
+                    "slug": slug,
+                    "score": score,
+                    "season": season_no,
+                    "tmdb_id": self._item_tmdb_id(item),
+                }
+
+                existing = candidates.get(slug)
+                if existing is None or payload["score"] > existing["score"]:
+                    candidates[slug] = payload
+
+        ranked = sorted(
+            candidates.values(),
+            key=lambda c: (
+                -(1 if tmdb_id and c["tmdb_id"] == str(tmdb_id) else 0),
+                -c["score"],
+                c["season"] if c["season"] is not None else 10**6,
+                c["slug"],
+            )
+        )
+        return ranked
 
     async def get_details(self, client: httpx.AsyncClient, slug: str) -> Dict[str, Any]:
         path = f"/phim/{slug}"
@@ -263,7 +389,7 @@ class PhimAPIBase:
                     entry: dict = {
                         "type": "streamable",
                         "provider": self.provider_name,
-                        "season": season or details.get("season", 1),
+                        "season": details.get("season", season or 1),
                         "episode": parsed_ep,
                         "name": ep_name,
                         "m3u8": m3u8,
@@ -295,6 +421,7 @@ class PhimAPIBase:
         season: int = None,
         episode: int = None,
         year: int = None,
+        anchor_slug: str = None,
     ) -> List[Dict[str, Any]]:
         
         # 0. Check Cache
@@ -327,6 +454,103 @@ class PhimAPIBase:
             slug = title_to_slug(localize_title)
             if slug:
                 details = await _try_slug(slug, validate_tmdb=bool(tmdb_id))
+
+        # TV shows can be split into separate provider entities per season.
+        # For those cases, search first and merge all matching season shards.
+        if media_type == "tv":
+            seeded_details: Dict[str, Dict[str, Any]] = {}
+
+            queries = [q for q in [title, localize_title] if q]
+            queries = list(dict.fromkeys(queries))
+            candidates = await self._collect_search_candidates(
+                client,
+                queries,
+                tmdb_id=tmdb_id,
+                year=year,
+                anchor_slug=anchor_slug,
+            )
+
+            if tmdb_id and any(c["tmdb_id"] == str(tmdb_id) for c in candidates):
+                candidates = [c for c in candidates if c["tmdb_id"] == str(tmdb_id)]
+
+            probe_slugs: List[str] = []
+            if details and details.get("slug"):
+                probe_slugs.extend(self._base_slug_variants(details["slug"]))
+            if anchor_slug:
+                probe_slugs.extend(self._base_slug_variants(anchor_slug))
+            if title:
+                probe_slugs.extend(self._base_slug_variants(title_to_slug(title)))
+            if localize_title:
+                probe_slugs.extend(self._base_slug_variants(title_to_slug(localize_title)))
+            for candidate in candidates:
+                probe_slugs.extend(self._base_slug_variants(candidate.get("slug")))
+
+            seen_probe_slugs: set[str] = set()
+            for probe_slug in probe_slugs:
+                if not probe_slug or probe_slug in seen_probe_slugs:
+                    continue
+                seen_probe_slugs.add(probe_slug)
+                probe_details = await _try_slug(probe_slug, validate_tmdb=bool(tmdb_id))
+                if probe_details and probe_details.get("slug"):
+                    seeded_details[probe_details["slug"]] = probe_details
+
+            selected_candidates: List[Dict[str, Any]] = []
+
+            if season is not None:
+                season_matches = [c for c in candidates if c["season"] == season]
+                if season_matches:
+                    selected_candidates = [season_matches[0]]
+            else:
+                season_map: Dict[int, Dict[str, Any]] = {}
+                no_season_candidates: List[Dict[str, Any]] = []
+                for candidate in candidates:
+                    c_season = candidate.get("season")
+                    if c_season is None:
+                        no_season_candidates.append(candidate)
+                        continue
+                    if c_season not in season_map:
+                        season_map[c_season] = candidate
+                if season_map:
+                    selected_candidates = [season_map[key] for key in sorted(season_map.keys())]
+                elif candidates:
+                    selected_candidates = [candidates[0]]
+                elif no_season_candidates:
+                    selected_candidates = [no_season_candidates[0]]
+
+            details_list: List[Dict[str, Any]] = []
+            seen_slugs: set[str] = set()
+
+            for seeded in seeded_details.values():
+                seeded_season = seeded.get("season")
+                if season is not None and seeded_season not in (None, season):
+                    continue
+                details_list.append(seeded)
+                if seeded.get("slug"):
+                    seen_slugs.add(seeded["slug"])
+
+            for candidate in selected_candidates:
+                if candidate["slug"] in seen_slugs:
+                    continue
+                candidate_details = await _try_slug(candidate["slug"], validate_tmdb=bool(tmdb_id))
+                if candidate_details:
+                    details_list.append(candidate_details)
+                    if candidate_details.get("slug"):
+                        seen_slugs.add(candidate_details["slug"])
+
+            if details_list:
+                print(f"[{self.provider_name}] TV details_list summary:")
+                for current_details in details_list:
+                    print({
+                        "slug": current_details.get("slug"),
+                        "season": current_details.get("season"),
+                        "servers": [server.get("server_name") for server in current_details.get("links", [])],
+                    })
+                merged_results: List[Dict[str, Any]] = []
+                for current_details in details_list:
+                    merged_results.extend(self.extract_streaming_links(current_details, media_type, season, episode))
+                if merged_results:
+                    cache_manager.set_to_cache(cache_dir, cache_key, merged_results)
+                return merged_results
 
         # 4 & 5. Text search fallback
         if not details:

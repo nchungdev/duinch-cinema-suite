@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useLayoutEffect } from 'react';
 import { ChevronLeft, Radio, Zap, Activity, Disc3 } from 'lucide-react';
 import { MarqueeText } from './MarqueeText';
 import { useMovieDetail, MovieDetailProvider } from './detail/MovieDetailContext';
@@ -95,17 +95,28 @@ const DetailContent = () => {
   const playerRef = useRef<HTMLDivElement>(null);
   const [playerHeight, setPlayerHeight] = useState<number | null>(null);
 
-  // Derive height from width (aspect-video = 9/16) so we never read a stale
-  // offsetHeight that fires before the CSS aspect-ratio is applied.
-  useEffect(() => {
+  // Track the real MediaStreamer shell height and clamp the right column to it.
+  useLayoutEffect(() => {
     const el = playerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      setPlayerHeight(Math.round(entry.contentRect.width * 9 / 16));
-    });
+    
+    const updateHeight = () => {
+      const height = el.getBoundingClientRect().height;
+      if (height > 0) {
+        setPlayerHeight(Math.round(height));
+      }
+    };
+
+    const rafId = requestAnimationFrame(updateHeight);
+    const ro = new ResizeObserver(updateHeight);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    updateHeight();
+    
+    return () => {
+      cancelAnimationFrame(rafId);
+      ro.disconnect();
+    };
+  }, [loading, metadata]);
 
   if (loading && !metadata) {
     return (
@@ -139,7 +150,7 @@ const DetailContent = () => {
 
             {/* Left Column: Player, Info & Discovery */}
             <div className="lg:col-span-8 space-y-6">
-              <div ref={playerRef}><MediaStreamer /></div>
+              <MediaStreamer ref={playerRef} />
               <MediaInfo />
               <DiscoveryPipeline
                 tmdbId={metadata?.tmdb_id || 0}
@@ -153,12 +164,12 @@ const DetailContent = () => {
 
             {/* Right Column: Stream Control — explicit height = player height */}
             <div
-              className="lg:col-span-4 sticky top-24"
-              style={playerHeight ? { height: playerHeight } : undefined}
+              className="lg:col-span-4 sticky top-24 self-start min-h-0"
+              style={playerHeight ? { height: playerHeight, minHeight: playerHeight, maxHeight: playerHeight } : undefined}
             >
-              <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-3xl shadow-3xl flex flex-col h-full">
+              <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-3xl shadow-3xl flex flex-col h-full min-h-0 overflow-hidden">
                 <NowPlayingHeader />
-                <div className="flex-1 overflow-hidden rounded-b-3xl">
+                <div className="flex-1 min-h-0 overflow-hidden rounded-b-3xl">
                   {mediaType === 'tv' ? <TVGallery /> : <MovieGallery />}
                 </div>
               </div>

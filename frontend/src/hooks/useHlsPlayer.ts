@@ -11,6 +11,15 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
   
   const hlsRef = useRef<Hls | null>(null);
 
+  const attemptAutoplay = (video: HTMLVideoElement) => {
+    const maybePromise = video.play();
+    if (maybePromise && typeof maybePromise.catch === 'function') {
+      maybePromise.catch((err: unknown) => {
+        console.warn('[Player] Autoplay was blocked or failed:', err);
+      });
+    }
+  };
+
   // Sync Player with active stream
   useEffect(() => {
     if (activeType === 'P2P' || activeType === 'DIRECT') return;
@@ -41,14 +50,21 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
 
     if (activeType === 'P2P' || activeType === 'DIRECT') {
       video.src = activeEmbed;
+      video.load();
+      attemptAutoplay(video);
     } else if (Hls.isSupported()) {
       if (hlsRef.current) hlsRef.current.destroy();
       const hls = new Hls();
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        attemptAutoplay(video);
+      });
       hls.loadSource(activeEmbed);
       hls.attachMedia(video);
       hlsRef.current = hls;
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = activeEmbed;
+      video.load();
+      attemptAutoplay(video);
     }
 
     return () => {
