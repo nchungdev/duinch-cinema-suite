@@ -123,7 +123,7 @@ export const useMovieDetailViewModel = () => {
     });
   }, [setStreamableSources]);
 
-  // 4. Logic: Điều hướng luồng phát (Navigation)
+  // 4. Logic: Điều hướng luồng phát (Navigation & Link Selection)
   useEffect(() => {
     const selector = new SelectBestStream();
     const result = selector.execute(
@@ -136,14 +136,42 @@ export const useMovieDetailViewModel = () => {
         if (result.type !== activeType) setActiveType(result.type);
         if (result.provider !== activeProvider) setActiveProvider(result.provider);
         
-        const links = streamableSources[result.type]?.[result.provider] || [];
-        setStreamingLinks(links);
+        const server = streamableSources[result.type]?.[result.provider]?.[activeServerIdx];
+        if (!server?.server_data) return;
 
-        if (links.length > 0 && activeServerIdx >= links.length) {
+        // Unified URL selection logic (Moved from Player Controller)
+        const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
+        const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : (activeEpisodeIdx + 1);
+        
+        const extractNum = (name: string) => { 
+            const m = name?.match(/\d+/); 
+            return m ? parseInt(m[0]) : null; 
+        };
+        
+        let ep = server.server_data.find((item: any) => extractNum(item.name) === localEpNum);
+        if (!ep) {
+            const globalEpNum = activeEpisodeIdx + 1;
+            ep = server.server_data.find((item: any) => extractNum(item.name) === globalEpNum);
+        }
+        if (!ep) ep = server.server_data[activeEpisodeIdx];
+
+        if (ep) {
+            const link = new StreamLink(ep);
+            const targetUrl = result.type === 'HLS' ? link.hlsUrl : link.embedUrl;
+            const finalUrl = targetUrl || link.bestUrl;
+            
+            if (finalUrl && finalUrl !== activeEmbed) {
+                setActiveEmbed(finalUrl);
+            }
+        }
+        
+        setStreamingLinks(streamableSources[result.type]?.[result.provider] || []);
+
+        if (streamingLinks.length > 0 && activeServerIdx >= streamingLinks.length) {
             setActiveServerIdx(0);
         }
     }
-  }, [streamableSources, userSettings, activeType, activeProvider, activeServerIdx, setActiveType, setActiveProvider, setStreamingLinks, setActiveServerIdx]);
+  }, [streamableSources, userSettings, activeType, activeProvider, activeServerIdx, activeEpisodeIdx, seasonBoundaries, setActiveType, setActiveProvider, setStreamingLinks, setActiveServerIdx, setActiveEmbed, activeEmbed, streamingLinks.length]);
 
   // 5. Logic: Xử lý Resolvers (Fshare Login...)
   const handleFshareLogin = async (email: string, password: string) => {
