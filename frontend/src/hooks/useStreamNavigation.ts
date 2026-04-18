@@ -1,68 +1,38 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useMovieDetail } from '../components/detail/MovieDetailContext';
+import { SelectBestStream } from '../core/use-cases/SelectBestStream';
 
 export const useStreamNavigation = () => {
   const { 
-    streamableSources, mediaType, userSettings,
+    streamableSources, userSettings,
     activeType, setActiveType,
     activeProvider, setActiveProvider,
     activeServerIdx, setActiveServerIdx,
-    activeEpisodeIdx, setActiveEpisodeIdx,
-    activeSeasonIdx, setActiveSeasonIdx,
-    streamingLinks, setStreamingLinks
+    setStreamingLinks
   } = useMovieDetail();
 
-  // Smart Source Selection Logic
+  // Smart Source Selection
   useEffect(() => {
-    if (Object.keys(streamableSources).length === 0) return;
+    const selector = new SelectBestStream();
+    const result = selector.execute(
+        streamableSources, 
+        userSettings?.preferred_source || 'auto',
+        activeType
+    );
 
-    const typesOrder = ['EMBED', 'HLS'];
-    const preferred = userSettings?.preferred_source || 'auto';
-    
-    let targetType = activeType;
-    let targetProvider = activeProvider;
-
-    // Auto-selection if not set or preferred source changed
-    if (!targetType || preferred !== 'auto') {
-        let found = false;
+    if (result) {
+        if (result.type !== activeType) setActiveType(result.type);
+        if (result.provider !== activeProvider) setActiveProvider(result.provider);
         
-        // 1. Try to find the preferred source across all types
-        if (preferred !== 'auto') {
-            for (const type of typesOrder) {
-                if (streamableSources[type]?.[preferred]) {
-                    targetType = type;
-                    targetProvider = preferred;
-                    found = true;
-                    break;
-                }
-            }
+        const links = streamableSources[result.type]?.[result.provider] || [];
+        setStreamingLinks(links);
+
+        // Safety: ensure server index is valid
+        if (links.length > 0 && activeServerIdx >= links.length) {
+            setActiveServerIdx(0);
         }
-
-        // 2. Fallback to default priority if preferred not found or not set
-        if (!found && !activeType) {
-            for (const type of typesOrder) {
-                const providers = Object.keys(streamableSources[type] || {});
-                if (providers.length > 0) {
-                    targetType = type;
-                    targetProvider = providers[0];
-                    break;
-                }
-            }
-        }
-    }
-
-    if (targetType && targetType !== activeType) setActiveType(targetType);
-    if (targetProvider && targetProvider !== activeProvider) setActiveProvider(targetProvider);
-    
-    // Final link synchronization
-    const links = streamableSources[targetType]?.[targetProvider] || [];
-    setStreamingLinks(links);
-
-    // Safety: ensure server index is valid for the new link set
-    if (links.length > 0 && activeServerIdx >= links.length) {
-        setActiveServerIdx(0);
     }
   }, [streamableSources, userSettings, activeType, activeProvider, activeServerIdx, setActiveType, setActiveProvider, setStreamingLinks, setActiveServerIdx]);
 
-  return { streamingLinks };
+  return {};
 };

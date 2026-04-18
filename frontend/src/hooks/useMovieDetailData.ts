@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { api } from '../api/config';
 import { useMovieDetail } from '../components/detail/MovieDetailContext';
-import { MediaRepository } from '../infrastructure/repositories/MediaRepository';
+import { GetMediaDetail } from '../core/use-cases/GetMediaDetail';
 
 export const useMovieDetailData = () => {
   const { 
@@ -14,13 +14,14 @@ export const useMovieDetailData = () => {
       if (!slug) return;
       setLoading(true);
       try {
-        const mediaInstance = await MediaRepository.getDetails(mediaType, slug);
+        const useCase = new GetMediaDetail();
+        const mediaInstance = await useCase.execute(mediaType, slug);
         setMedia(mediaInstance);
         
-        // Fetch local status separately (still simple for now)
+        // Fetch local status (To be moved to a Use Case later)
         const endpoint = mediaType === 'tv' ? `/tv/${slug}` : `/movie/${slug}`;
         const res = await api.get(endpoint);
-        setLocalExists(res.data.local?.exists || false);
+        setLocalExists(res.data.data.local?.exists || false);
       } catch (err) {
         console.error(`[Detail] Failed to fetch ${mediaType} details:`, err);
       } finally {
