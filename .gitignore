@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-.gitnexus
+.gitnexus/
+.claude/
+.agents/
 logs/
 data/
 
