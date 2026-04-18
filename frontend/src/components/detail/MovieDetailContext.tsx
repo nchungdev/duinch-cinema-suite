@@ -25,8 +25,6 @@ interface MovieDetailContextType {
   setActiveEmbed: (url: string | null) => void;
   
   // Discovery & Resolvers
-  isTorrentStreaming: boolean;
-  isFshareResolving: boolean;
   isPlayerReady: boolean;
   playerError: string | null;
   setIsPlayerReady: (ready: boolean) => void;
@@ -35,8 +33,6 @@ interface MovieDetailContextType {
   setUserSettings: (s: any) => void;
   
   // Handlers
-  handleTorrentStream: (magnet: string, serverName: string, epIdx: number, srvIdx: number) => Promise<void>;
-  handleFshareStream: (url: string, serverName: string, epIdx: number, srvIdx: number) => Promise<void>;
   handleFshareLogin: (e: React.FormEvent) => Promise<void>;
   
   // Helpers
@@ -68,8 +64,6 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
-  const [isTorrentStreaming, setIsTorrentStreaming] = useState(false);
-  const [isFshareResolving, setIsFshareResolving] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<any>(null);
@@ -112,14 +106,10 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
     activeSeasonIdx, setActiveSeasonIdx,
     activeEmbed, setActiveEmbed,
     streamingLinks, setStreamingLinks,
-    isTorrentStreaming, setIsTorrentStreaming,
-    isFshareResolving, setIsFshareResolving,
     isPlayerReady, setIsPlayerReady,
     playerError, setPlayerError,
     userSettings, setUserSettings,
     seasonBoundaries,
-    handleTorrentStream: initialValues.handleTorrentStream,
-    handleFshareStream: initialValues.handleFshareStream,
     handleFshareLogin: initialValues.handleFshareLogin,
     onBack: initialValues.onBack,
     slug: initialValues.slug,

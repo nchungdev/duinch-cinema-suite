@@ -5,16 +5,13 @@ import { useHlsPlayer } from '../../hooks/useHlsPlayer';
 
 export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const { 
-        activeEmbed, isTorrentStreaming, isFshareResolving,
-        activeType, activeProvider, streamableSources,
+        activeEmbed, activeType, activeProvider,
         isPlayerReady, playerError
     } = useMovieDetail();
     
     const videoRef = useRef<HTMLVideoElement>(null);
     useHlsPlayer(videoRef);
 
-    const isInternalLoading = isTorrentStreaming || isFshareResolving;
-    
     // Consistent detection logic
     const isEmbedMode = !!activeEmbed && (
         activeEmbed.includes('iframe') || 
@@ -23,7 +20,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
         activeType === 'EMBED'
     );
 
-    const showLoadingOverlay = (isInternalLoading || (!!activeEmbed && !isEmbedMode && !isPlayerReady)) && !playerError;
+    const showLoadingOverlay = (!!activeEmbed && !isEmbedMode && !isPlayerReady) && !playerError;
 
     return (
         <div ref={containerRef} className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group">
@@ -53,14 +50,8 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                                 <Loader2 className="w-12 h-12 text-blue-500 animate-spin relative z-10" />
                             </div>
                             <div className="mt-8 text-center space-y-2">
-                                <h3 className="text-xl font-black text-white uppercase tracking-[0.2em]">
-                                    {isTorrentStreaming ? 'Igniting P2P Engine' : 
-                                     isFshareResolving ? 'Resolving Cloud Link' : 'Synchronizing Stream'}
-                                </h3>
-                                <p className="text-xs text-gray-500 font-bold uppercase tracking-widest animate-pulse">
-                                    {isTorrentStreaming ? 'Establishing peer connections...' : 
-                                     isFshareResolving ? 'Bypassing Fshare restrictions...' : 'Buffering media segments...'}
-                                </p>
+                                <h3 className="text-xl font-black text-white uppercase tracking-[0.2em]">Synchronizing Stream</h3>
+                                <p className="text-xs text-gray-500 font-bold uppercase tracking-widest animate-pulse">Buffering media segments...</p>
                             </div>
                         </div>
                     )}

@@ -159,17 +159,6 @@ export const DiscoveryPipeline = ({
             return { ...prev, [source_type]: [...existing, ...fresh] };
           });
 
-          // Notify parent (sidebar) about torrent and fshare links so they appear as playable
-          if (items.length > 0 && (source_type === 'torrent' || source_type === 'fshare')) {
-             onStreamingReady?.(items.map((it: any) => ({ 
-                 ...it, 
-                 source_type, 
-                 source,
-                 // Ensure server name is present for grouping
-                 server: it.server || source 
-             })), source);
-          }
-
         }
 
         markDone(key);

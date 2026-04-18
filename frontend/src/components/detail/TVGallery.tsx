@@ -223,40 +223,21 @@ export const TVGallery = () => {
                                 });
 
                                 const isPlaying = activeEpisodeIdx === globalIdx;
-                                if (globalIdx === activeEpisodeIdx) {
-                                    console.log('[TVGallery] active episode match', {
-                                        activeServerIdx,
-                                        seasonNumber: s.season_number,
-                                        globalIdx,
-                                        expectedLocalEp: localEpNum,
-                                        matchedEpisode: finalEp,
-                                    });
-                                }
                                 
-                                const isFshare = finalEp?.source_type === 'fshare' || finalEp?.url?.includes('fshare.vn');
-                                if (isFshare && !userSettings?.fshare_session) return null;
-
                                 const hasLink = !!finalEp;
-                                const isLoading = isPlaying && (isTorrentStreaming || isFshareResolving);
 
                                 return (
                                     <div key={globalIdx} ref={el => { episodeRefs.current[globalIdx] = el; }} className={`flex items-stretch transition-all duration-200 border-b last:border-b-0 border-white/5 ${!hasLink ? 'opacity-35 bg-black/20 text-gray-700' : isPlaying ? 'bg-blue-600/20' : 'hover:bg-white/[0.04]'}`}>
                                         <button 
-                                            disabled={!hasLink || isLoading}
+                                            disabled={!hasLink}
                                             onClick={() => {
                                                 if (!finalEp) return;
-                                                if (finalEp.isTorrent) {
-                                                    handleTorrentStream(finalEp.magnet, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
-                                                } else if (isFshare) {
-                                                    handleFshareStream(finalEp.url, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
-                                                } else {
-                                                    setActiveEpisodeIdx(globalIdx);
-                                                }
+                                                setActiveEpisodeIdx(globalIdx);
                                             }}
                                             className="flex-1 flex items-center gap-3 px-4 py-3"
                                         >
                                             <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${isPlaying ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-600'}`}>
-                                                {isLoading ? <Loader2 className="w-2 h-2 animate-spin" /> : <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />}
+                                                <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />
                                             </div>
                                             <div className="flex flex-col items-start">
                                                 <span className={`text-[10px] font-black uppercase ${isPlaying ? 'text-white' : 'text-gray-400'}`}>Episode {String(globalIdx + 1).padStart(2, '0')}</span>

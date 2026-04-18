@@ -22,8 +22,6 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
 
   // Sync Player with active stream
   React.useEffect(() => {
-    if (activeType === 'P2P' || activeType === 'DIRECT') return;
-
     const server = streamingLinks?.[activeServerIdx];
     if (!server?.server_data) return;
 
@@ -39,35 +37,33 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
         return m ? parseInt(m[0]) : null; 
     };
     
-    // Try to find the episode that matches the local number (e.g., "Tập 01" in Season 2)
+    // Try to find the episode that matches the local number
     ep = server.server_data.find((item: any) => extractNum(item.name) === localEpNum);
     
-    // Fallback: search for global episode number if local fails
     if (!ep) {
         const globalEpNum = activeEpisodeIdx + 1;
         ep = server.server_data.find((item: any) => extractNum(item.name) === globalEpNum);
     }
     
-    // Final fallback: index-based
     if (!ep) ep = server.server_data[activeEpisodeIdx];
 
     if (ep && (ep.m3u8 || ep.embed)) {
         setActiveEmbed(ep.m3u8 || ep.embed);
     }
-  }, [activeType, activeServerIdx, activeEpisodeIdx, streamingLinks, setActiveEmbed, seasonBoundaries]);
+  }, [activeServerIdx, activeEpisodeIdx, streamingLinks, setActiveEmbed, seasonBoundaries]);
 
   // HLS Instance Management
   React.useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeEmbed) return;
 
-    // Strict Embed detection: if it's an EMBED type or contains common embed patterns
+    // Strict Embed detection
     const isEmbedUrl = activeEmbed.includes('iframe') || 
                        activeEmbed.includes('player.') || 
                        activeEmbed.includes('/embed/') ||
                        activeType === 'EMBED';
 
-    if (isEmbedUrl) return; // Exit: MediaStreamer will render an <iframe> instead
+    if (isEmbedUrl) return;
 
     setIsPlayerReady(false);
     setPlayerError(null);
@@ -81,11 +77,7 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('error', onError);
 
-    if (activeType === 'P2P' || activeType === 'DIRECT') {
-      video.src = activeEmbed;
-      video.load();
-      attemptAutoplay(video);
-    } else if (Hls.isSupported()) {
+    if (Hls.isSupported()) {
       if (hlsRef.current) hlsRef.current.destroy();
       const hls = new Hls();
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
