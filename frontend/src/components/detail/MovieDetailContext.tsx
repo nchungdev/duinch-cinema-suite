@@ -41,6 +41,7 @@ interface MovieDetailContextType {
   
   // Helpers
   streamingLinks: any[];
+  seasonBoundaries: any[];
   setStreamingLinks: (links: any[]) => void;
   setStreamableSources: React.Dispatch<React.SetStateAction<Record<string, Record<string, any[]>>>>;
   
@@ -48,6 +49,8 @@ interface MovieDetailContextType {
   onBack: () => void;
   slug: string;
   mediaType: string;
+  initialSeason?: number;
+  initialEpisode?: number;
 }
 
 const MovieDetailContext = createContext<MovieDetailContextType | undefined>(undefined);
@@ -70,6 +73,16 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<any>(null);
+
+  const seasonBoundaries = useMemo(() => {
+    if (!metadata?.tmdb_seasons) return [];
+    let current = 0;
+    return metadata.tmdb_seasons.map(s => {
+        const boundary = { name: s.name, season_number: s.season_number, start: current, end: current + s.episode_count };
+        current += s.episode_count;
+        return boundary;
+    });
+  }, [metadata]);
 
   // Reset state on slug change
   useEffect(() => {
@@ -104,12 +117,15 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
     isPlayerReady, setIsPlayerReady,
     playerError, setPlayerError,
     userSettings, setUserSettings,
+    seasonBoundaries,
     handleTorrentStream: initialValues.handleTorrentStream,
     handleFshareStream: initialValues.handleFshareStream,
     handleFshareLogin: initialValues.handleFshareLogin,
     onBack: initialValues.onBack,
     slug: initialValues.slug,
     mediaType: initialValues.mediaType,
+    initialSeason: initialValues.initialSeason,
+    initialEpisode: initialValues.initialEpisode,
   };
 
   return (

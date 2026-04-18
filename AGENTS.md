@@ -99,3 +99,11 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+<claude-mem-context>
+# Memory Context
+
+# [omv-jdownloader-dashboard] recent context, 2026-04-18 6:03pm GMT+7
+
+No previous sessions found.
+</claude-mem-context>

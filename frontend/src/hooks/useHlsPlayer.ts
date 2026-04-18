@@ -25,16 +25,40 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
     if (activeType === 'P2P' || activeType === 'DIRECT') return;
 
     const server = streamingLinks?.[activeServerIdx];
-    const ep = server?.server_data?.[activeEpisodeIdx];
+    if (!server?.server_data) return;
+
+    // Use robust matching logic
+    let ep = null;
+    const currentEpNum = activeEpisodeIdx + 1; // Global 1-based episode number
+    
+    const extractNum = (name: string) => { 
+        const m = name?.match(/\d+/); 
+        return m ? parseInt(m[0]) : null; 
+    };
+    
+    // Find the episode that matches currentEpNum
+    ep = server.server_data.find((item: any) => extractNum(item.name) === currentEpNum);
+    
+    // Fallback only if no match found
+    if (!ep) ep = server.server_data[activeEpisodeIdx];
+
     if (ep && (ep.m3u8 || ep.embed)) {
         setActiveEmbed(ep.m3u8 || ep.embed);
     }
-  }, [activeType, activeServerIdx, activeEpisodeIdx, streamingLinks]);
+  }, [activeType, activeServerIdx, activeEpisodeIdx, streamingLinks, setActiveEmbed]);
 
   // HLS Instance Management
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeEmbed || activeEmbed.includes('iframe')) return;
+    if (!video || !activeEmbed) return;
+
+    // Strict Embed detection: if it's an EMBED type or contains common embed patterns
+    const isEmbedUrl = activeEmbed.includes('iframe') || 
+                       activeEmbed.includes('player.') || 
+                       activeEmbed.includes('/embed/') ||
+                       activeType === 'EMBED';
+
+    if (isEmbedUrl) return; // Exit: MediaStreamer will render an <iframe> instead
 
     setIsPlayerReady(false);
     setPlayerError(null);

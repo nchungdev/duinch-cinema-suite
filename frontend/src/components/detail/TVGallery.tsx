@@ -7,8 +7,9 @@ import { useMovieDetail } from './MovieDetailContext';
 export const TVGallery = () => {
     const {
         metadata, streamingLinks, activeServerIdx, activeEpisodeIdx, setActiveEpisodeIdx,
-        activeType,
-        isTorrentStreaming, isFshareResolving, userSettings, slug, activeEmbed
+        activeType, initialSeason, initialEpisode,
+        isTorrentStreaming, isFshareResolving, userSettings, slug, activeEmbed,
+        seasonBoundaries
     } = useMovieDetail();
     const { handleTorrentStream, handleFshareStream } = useStreamResolvers();
 
@@ -67,16 +68,52 @@ export const TVGallery = () => {
         return () => container.removeEventListener('scroll', onScroll);
     }, []);
 
-    // Calculate Season Boundaries (Same logic as before)
-    const seasonBoundaries = useMemo(() => {
-        if (!metadata?.tmdb_seasons) return [];
-        let current = 0;
-        return metadata.tmdb_seasons.map(s => {
-            const boundary = { name: s.name, season_number: s.season_number, start: current, end: current + s.episode_count };
-            current += s.episode_count;
-            return boundary;
+    useEffect(() => {
+        if (!seasonBoundaries.length) return;
+        if (!initialSeason && !initialEpisode) return;
+
+        const seasonNumber = initialSeason ?? 1;
+        const targetSeasonIdx = seasonBoundaries.findIndex(s => s.season_number === seasonNumber);
+        if (targetSeasonIdx === -1) return;
+
+        const targetSeason = seasonBoundaries[targetSeasonIdx];
+        const localEpisode = Math.max(1, initialEpisode ?? 1);
+        const targetGlobalEpisode = Math.min(targetSeason.end - 1, targetSeason.start + localEpisode - 1);
+
+        console.log('[TVGallery] apply initial season/episode', {
+            initialSeason,
+            initialEpisode,
+            targetSeasonIdx,
+            targetSeason,
+            targetGlobalEpisode,
         });
-    }, [metadata]);
+
+        setActiveSeason(targetSeasonIdx);
+        setActiveEpisodeIdx(targetGlobalEpisode);
+    }, [seasonBoundaries, initialSeason, initialEpisode, setActiveEpisodeIdx]);
+
+    useEffect(() => {
+        if (!seasonBoundaries.length) return;
+
+        let seasonNumber = seasonBoundaries[0].season_number;
+        let episodeNumber = activeEpisodeIdx + 1;
+        for (const season of seasonBoundaries) {
+            if (activeEpisodeIdx >= season.start && activeEpisodeIdx < season.end) {
+                seasonNumber = season.season_number;
+                episodeNumber = activeEpisodeIdx - season.start + 1;
+                break;
+            }
+        }
+
+        const [fullPath, queryPart] = (window.location.hash || '').split('?');
+        const params = new URLSearchParams(queryPart || '');
+        params.set('s', String(seasonNumber));
+        params.set('e', String(episodeNumber));
+        const nextHash = `${fullPath || window.location.hash || '#'}?${params.toString()}`;
+        if (window.location.hash !== nextHash) {
+            window.history.replaceState(null, '', nextHash);
+        }
+    }, [seasonBoundaries, activeEpisodeIdx]);
 
     // P2P / DIRECT: render items flat, no episode matching needed
     if (activeType === 'P2P' || activeType === 'DIRECT') {
@@ -176,6 +213,15 @@ export const TVGallery = () => {
                                     const m = e.name?.match(/\d+/);
                                     return m ? parseInt(m[0]) === (globalIdx + 1) : false;
                                 });
+                                if (globalIdx === activeEpisodeIdx) {
+                                    console.log('[TVGallery] active episode match', {
+                                        activeServerIdx,
+                                        seasonNumber: s.season_number,
+                                        globalIdx,
+                                        expectedEpisodeInSeason: globalIdx - s.start + 1,
+                                        matchedEpisode: ep,
+                                    });
+                                }
                                 const isPlaying = activeEpisodeIdx === globalIdx;
                                 const isFshare = ep?.source_type === 'fshare' || ep?.url?.includes('fshare.vn');
                                 if (isFshare && !userSettings?.fshare_session) return null;

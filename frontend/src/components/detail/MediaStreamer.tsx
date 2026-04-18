@@ -14,13 +14,22 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     useHlsPlayer(videoRef);
 
     const isInternalLoading = isTorrentStreaming || isFshareResolving;
-    const showLoadingOverlay = (isInternalLoading || (!!activeEmbed && !activeEmbed.includes('iframe') && !isPlayerReady)) && !playerError;
+    
+    // Consistent detection logic
+    const isEmbedMode = !!activeEmbed && (
+        activeEmbed.includes('iframe') || 
+        activeEmbed.includes('player.') || 
+        activeEmbed.includes('/embed/') ||
+        activeType === 'EMBED'
+    );
+
+    const showLoadingOverlay = (isInternalLoading || (!!activeEmbed && !isEmbedMode && !isPlayerReady)) && !playerError;
 
     return (
         <div ref={containerRef} className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group">
             {activeEmbed ? (
                 <>
-                    {activeEmbed.includes('iframe') || activeType === 'EMBED' ? (
+                    {isEmbedMode ? (
                         <iframe
                             src={activeEmbed}
                             className="w-full h-full border-0"

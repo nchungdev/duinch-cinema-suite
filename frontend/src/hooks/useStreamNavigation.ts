@@ -16,7 +16,7 @@ export const useStreamNavigation = () => {
   useEffect(() => {
     if (Object.keys(streamableSources).length === 0) return;
 
-    const typesOrder = ['HLS', 'EMBED', 'DIRECT', 'P2P'];
+    const typesOrder = ['EMBED', 'HLS', 'DIRECT', 'P2P'];
     const preferred = userSettings?.preferred_source || 'auto';
     
     let targetType = activeType;
