@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/config';
-import { DiscoveryGrid } from './components/DiscoveryGrid';
-import { MovieDetail } from './components/MovieDetail';
+import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
+import { MovieDetail } from './presentation/components/MovieDetail';
 import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2 } from 'lucide-react';
 
 type SearchTab = 'all' | 'movie' | 'tv';
