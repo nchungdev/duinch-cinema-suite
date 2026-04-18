@@ -139,7 +139,7 @@ export const DiscoveryPipeline = ({
           setStreamingNotified(prev => {
             if (prev.has(source)) return prev;
             const flat = items.flatMap((g: any) =>
-              (g.episodes ?? []).map((ep: any) => ({ ...ep, server: g.server }))
+              (g.episodes ?? []).map((ep: any) => ({ ...ep, server: g.server, source_type }))
             );
             onStreamingReady?.(flat, source);
             return new Set(prev).add(source);

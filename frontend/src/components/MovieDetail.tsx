@@ -92,6 +92,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const [showFshareLogin, setShowFshareLogin] = useState(false);
   const [fshareEmail, setFshareEmail] = useState('');
   const [fsharePassword, setFsharePassword] = useState('');
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
 
   const handleTorrentStream = async (magnet: string, serverName: string, epIdx: number, srvIdx: number) => {
     setIsTorrentStreaming(true);
@@ -152,35 +153,69 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     setStreamableSources(prev => {
         const next = { ...prev };
         for (const item of links) {
-            const type = item.stream_type || 'HLS';
-            const provider = (item.provider || sourceId).toUpperCase();
-            const url = item.m3u8 || item.url || item.embed || item.magnet;
+            const url = item.m3u8 || item.link_m3u8 || item.link_hls || item.url || item.link || item.embed || item.link_embed || item.magnet || '';
             if (!url) continue;
 
-            if (!next[type]) next[type] = {};
-            if (!next[type][provider]) next[type][provider] = [];
+            // Determine all applicable types for this item
+            const types: Set<string> = new Set();
+            const source_type = (item.source_type || sourceId || '').toLowerCase();
+            const rawType = (item.stream_type || item.source_type || '').toUpperCase();
             
-            const serverKey = item.server || provider;
-            let targetServer = next[type][provider].find(s => s.server_name === serverKey);
-            
-            if (!targetServer) {
-                targetServer = { server_name: serverKey, server_data: [] };
-                next[type][provider].push(targetServer);
+            if (rawType === 'P2P' || url.startsWith('magnet:')) {
+                types.add('P2P');
+            } else if (rawType === 'FSHARE' || rawType === 'GDRIVE' || url.includes('fshare.vn') || url.includes('drive.google.com')) {
+                types.add('DIRECT');
+            } else {
+                // Determine if it should be HLS or EMBED or both
+                if (source_type === 'm3u8') types.add('HLS');
+                if (item.m3u8 || item.link_m3u8 || item.link_hls || url.includes('.m3u8') || url.includes('hls')) types.add('HLS');
+                if (item.embed || item.link_embed || url.includes('embed') || source_type === 'dailymotion') types.add('EMBED');
+                
+                // Fallback
+                if (types.size === 0) types.add('HLS');
             }
 
-            // Deduplicate URLs
-            if (!targetServer.server_data.some((ep: any) => (ep.m3u8 || ep.url || ep.embed || ep.magnet) === url)) {
-                const isP2P = type === 'P2P' || (url && url.startsWith('magnet:'));
-                targetServer.server_data.push({
-                    name: item.name,
-                    m3u8: isP2P ? '' : (item.m3u8 || item.url || ''),
-                    embed: item.embed || '',
-                    magnet: isP2P ? url : '',
-                    isTorrent: isP2P,
-                    stream_type: type,
-                    provider: provider,
-                    url: url
-                });
+            for (const type of Array.from(types)) {
+                // Determine Level 2 Platform
+                const up = (item.provider || sourceId || '').toUpperCase();
+                const ul = url.toLowerCase();
+                let platform = up;
+                if (type === 'P2P' || up.includes('TORRENT')) platform = 'TORRENT';
+                else if (ul.includes('fshare.vn')) platform = 'FSHARE';
+                else if (ul.includes('drive.google.com') || ul.includes('google.com/file')) platform = 'GDRIVE';
+                else if (ul.includes('dailymotion.com')) platform = 'DAILYMOTION';
+                else if (up.includes('KKPHIM')) platform = 'KKPHIM';
+                else if (up.includes('OPHIM')) platform = 'OPHIM';
+
+                const scraper = (item.provider || sourceId).toUpperCase();
+
+                if (!next[type]) next[type] = {};
+                if (!next[type][platform]) next[type][platform] = [];
+                
+                const serverKey = item.server || platform;
+                let targetServer = next[type][platform].find(s => s.server_name === serverKey);
+                
+                if (!targetServer) {
+                    targetServer = { server_name: serverKey, server_data: [] };
+                    next[type][platform].push(targetServer);
+                }
+
+                const currentUrl = type === 'HLS' ? (item.m3u8 || item.link_m3u8 || url) : 
+                                   type === 'EMBED' ? (item.embed || item.link_embed || url) : url;
+
+                if (!targetServer.server_data.some((ep: any) => ep.url === currentUrl)) {
+                    targetServer.server_data.push({
+                        name: item.name,
+                        m3u8: type === 'HLS' ? currentUrl : '',
+                        embed: type === 'EMBED' ? currentUrl : '',
+                        magnet: type === 'P2P' ? currentUrl : '',
+                        isTorrent: type === 'P2P',
+                        stream_type: type,
+                        provider: platform,
+                        scraper: scraper,
+                        url: currentUrl
+                    });
+                }
             }
         }
         return next;
@@ -815,7 +850,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                             }} 
                                                             className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2 disabled:cursor-not-allowed"
                                                         >
-                                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
+                                                        <div className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center transition-all ${isPlaying ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10'}`}>
                                                             {isLoading ? <Loader2 className="w-2 h-2 animate-spin" /> : <Play className={`w-2 h-2 ${isPlaying ? 'fill-current' : ''}`} />}
                                                         </div>
                                                         <div className="flex flex-col min-w-0 items-start">
@@ -882,7 +917,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                         }} 
                                                         className="flex-1 min-w-0 flex items-center gap-4 px-5 py-4 disabled:cursor-not-allowed"
                                                     >
-                                                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-500 ${isPlaying ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] scale-110' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10 group-hover/ep:scale-105'}`}>
+                                                        <div className={`w-8 h-8 shrink-0 rounded-xl flex items-center justify-center transition-all duration-500 ${isPlaying ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)] scale-110' : 'bg-white/5 text-gray-500 group-hover/ep:bg-white/10 group-hover/ep:scale-105'}`}>
                                                             {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className={`w-3 h-3 ${isPlaying ? 'fill-current' : ''}`} />}
                                                         </div>
                                                         <div className="flex flex-col min-w-0 items-start">
@@ -953,7 +988,7 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
                     {/* Popover: Stream Sources grouped by Type */}
                     {showSourceMenu && (
-                      <div className="absolute right-full top-0 mr-3 w-64 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl overflow-hidden flex flex-col z-50 animate-slide-left">
+                      <div className="absolute right-full bottom-0 mr-3 w-64 bg-[#0c0c0e]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-3xl overflow-hidden flex flex-col z-50 animate-slide-left">
                         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
                           <div>
                             <span className="text-[8px] font-black uppercase tracking-[0.3em] text-blue-500/80">Transmission Protocols</span>
@@ -978,70 +1013,86 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
 
                         <div className="max-h-[70vh] overflow-y-auto custom-scrollbar p-2 space-y-4">
                           {[
-                            { type: 'EMBED', icon: <Layout className="w-2.5 h-2.5" />, sources: ['DAILYMOTION'] },
-                            { type: 'HLS', icon: <Zap className="w-2.5 h-2.5" />, sources: ['KKPHIM', 'OPHIM'] },
-                            { type: 'P2P', icon: <Activity className="w-2.5 h-2.5" />, sources: ['TORRENT'] },
-                            { type: 'DIRECT', icon: <Cloud className="w-2.5 h-2.5" />, sources: ['TIMFSHARE', 'THUVIENCINE', 'WEB'] },
+                            { type: 'EMBED',  icon: <Layout className="w-2.5 h-2.5" />, sources: ['DAILYMOTION', 'KKPHIM', 'OPHIM', 'WEB'] },
+                            { type: 'HLS',    icon: <Zap className="w-2.5 h-2.5" />,    sources: ['KKPHIM', 'OPHIM', 'WEB'] },
+                            { type: 'P2P',    icon: <Activity className="w-2.5 h-2.5" />, sources: ['TORRENT'] },
+                            { type: 'DIRECT', icon: <Cloud className="w-2.5 h-2.5" />, sources: ['FSHARE', 'GDRIVE', 'WEB'] },
                           ].map((group) => {
                             const availableProviders = group.sources.filter(p => (streamableSources[group.type]?.[p]?.length ?? 0) > 0);
                             const isGroupAvailable = availableProviders.length > 0;
+                            const isExpanded = expandedGroup === group.type || (!expandedGroup && activeType === group.type);
+
+                            if (!isGroupAvailable) return null;
 
                             return (
-                              <div key={group.type} className={`space-y-1.5 ${!isGroupAvailable ? 'opacity-30 grayscale' : ''}`}>
-                                <div className="px-2 flex items-center gap-2">
-                                  <div className={`p-1 rounded-md ${isGroupAvailable ? 'bg-blue-500/10 text-blue-500' : 'bg-gray-800 text-gray-600'}`}>
-                                    {group.icon}
-                                  </div>
-                                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-gray-500">{group.type} FEED</span>
+                              <div key={group.type} className="space-y-1.5">
+                                <div 
+                                    className="px-2 flex items-center justify-between cursor-pointer group/header py-1 hover:bg-white/[0.02] rounded-lg transition-all"
+                                    onClick={() => isGroupAvailable && setExpandedGroup(isExpanded ? null : group.type)}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className={`p-1 rounded-md transition-all ${isGroupAvailable ? (isExpanded ? 'bg-blue-500 text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-blue-500/10 text-blue-500') : 'bg-gray-800 text-gray-600'}`}>
+                                            {group.icon}
+                                        </div>
+                                        <span className={`text-[8px] font-black uppercase tracking-[0.2em] transition-colors ${isExpanded ? 'text-blue-400' : 'text-gray-500 group-hover/header:text-gray-400'}`}>{group.type} FEED</span>
+                                    </div>
+                                    {isGroupAvailable && (
+                                        <ChevronRight className={`w-3 h-3 text-gray-700 transition-transform duration-300 ${isExpanded ? 'rotate-90 text-blue-500' : ''}`} />
+                                    )}
                                 </div>
                                 
-                                <div className="grid grid-cols-1 gap-1 pl-1">
-                                  {group.sources.map(provId => {
-                                    const isActive = provId === activeProvider;
-                                    const serverCount = streamableSources[group.type]?.[provId]?.length ?? 0;
-                                    const isAvailable = serverCount > 0;
-                                    
-                                    const srcMeta: Record<string, { label: string; color: string }> = {
-                                      KKPHIM:     { label: 'KKPhim',     color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
-                                      OPHIM:      { label: 'OPhim',      color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
-                                      TORRENT:    { label: 'Torrent',    color: 'text-green-400  bg-green-500/10  border-green-500/30'  },
-                                      TIMFSHARE:  { label: 'TimFshare',  color: 'text-blue-400   bg-blue-500/10   border-blue-500/30'   },
-                                      THUVIENCINE:{ label: 'ThuVienCine',color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
-                                      WEB:        { label: 'Web/Google', color: 'text-sky-400    bg-sky-500/10    border-sky-500/30'    },
-                                    };
-                                    const meta = srcMeta[provId] ?? { label: provId, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
+                                {isExpanded && (
+                                  <div className="grid grid-cols-1 gap-1 pl-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    {group.sources.map(provId => {
+                                      const isActive = provId === activeProvider;
+                                      const serverCount = streamableSources[group.type]?.[provId]?.length ?? 0;
+                                      const isAvailable = serverCount > 0;
+                                      
+                                      const srcMeta: Record<string, { label: string; color: string }> = {
+                                        KKPHIM:      { label: 'KKPhim',     color: 'text-orange-400 bg-orange-500/10 border-orange-500/30' },
+                                        OPHIM:       { label: 'OPhim',      color: 'text-pink-400   bg-pink-500/10   border-pink-500/30'   },
+                                        TORRENT:     { label: 'BitTorrent', color: 'text-green-400  bg-green-500/10  border-green-500/30'  },
+                                        FSHARE:      { label: 'Fshare.vn',  color: 'text-red-400    bg-red-500/10    border-red-500/30'    },
+                                        GDRIVE:      { label: 'G-Drive',    color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
+                                        DAILYMOTION: { label: 'DailyMotion',color: 'text-blue-400   bg-blue-500/10   border-blue-500/30'   },
+                                        WEB:         { label: 'Web/Cloud',  color: 'text-sky-400    bg-sky-500/10    border-sky-500/30'    },
+                                      };
+                                      const meta = srcMeta[provId] ?? { label: provId, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
 
-                                    return (
-                                      <button key={provId}
-                                        disabled={!isAvailable}
-                                        onClick={async () => {
-                                          if (!isAvailable) return;
-                                          setActiveType(group.type);
-                                          setActiveProvider(provId);
-                                          setShowSourceMenu(false);
-                                          
-                                          const newSettings = { ...userSettings, preferred_source: provId };
-                                          setUserSettings(newSettings);
-                                          await api.post('/user/settings', newSettings);
-                                        }}
-                                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                                          !isAvailable
-                                            ? 'opacity-40 border-transparent text-gray-600'
-                                            : isActive
-                                              ? meta.color
-                                              : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                                        }`}
-                                      >
-                                        <Globe className={`w-2.5 h-2.5 ${!isAvailable ? 'text-gray-800' : ''}`} />
-                                        <span className="flex-1 text-left">{meta.label}</span>
-                                        <span className="text-[7px] font-bold normal-case tracking-normal opacity-50">
-                                          {isAvailable ? `${serverCount} sv` : 'N/A'}
-                                        </span>
-                                        {isActive && isAvailable && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
+                                      if (!isAvailable) return null;
+
+                                      return (
+                                        <button key={provId}
+                                          disabled={!isAvailable}
+                                          onClick={async () => {
+                                            if (!isAvailable) return;
+                                            setActiveType(group.type);
+                                            setActiveProvider(provId);
+                                            setShowSourceMenu(false);
+                                            
+                                            const newSettings = { ...userSettings, preferred_source: provId };
+                                            setUserSettings(newSettings);
+                                            await api.post('/user/settings', newSettings);
+                                          }}
+                                          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                                            !isAvailable
+                                              ? 'opacity-40 border-transparent text-gray-600'
+                                              : isActive
+                                                ? meta.color
+                                                : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                                          }`}
+                                        >
+                                          <Globe className={`w-2.5 h-2.5 ${!isAvailable ? 'text-gray-800' : ''}`} />
+                                          <span className="flex-1 text-left">{meta.label}</span>
+                                          <span className="text-[7px] font-bold normal-case tracking-normal opacity-50">
+                                            {isAvailable ? `${serverCount} sv` : 'N/A'}
+                                          </span>
+                                          {isActive && isAvailable && <div className="w-1 h-1 rounded-full bg-current shadow-[0_0_8px_currentColor]" />}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

@@ -74,10 +74,30 @@ echo -e "${GREEN}   [OK] Frontend dependencies satisfied${NC}"
 
 # --- 5. REDIS CHECK ---
 echo -e "${YELLOW}--- 5. Service Dependencies ---${NC}"
-if ! redis-cli ping > /dev/null 2>&1; then
-    echo -e "${RED}   [WARN] Redis is not running! Fallback to File Cache.${NC}"
+if ! command -v redis-cli &> /dev/null; then
+    echo -e "${RED}   [ERR] redis-cli not found. Please install redis (e.g. brew install redis)${NC}"
+elif ! redis-cli ping > /dev/null 2>&1; then
+    echo -e "${YELLOW}   [Redis] Redis is not running. Attempting to start via brew...${NC}"
+    if command -v brew &> /dev/null; then
+        brew services start redis > /dev/null 2>&1
+        # Chờ một chút để Redis khởi động hoàn toàn
+        for i in {1..5}; do
+            if redis-cli ping > /dev/null 2>&1; then
+                break
+            fi
+            sleep 1
+        done
+    fi
+    
+    if ! redis-cli ping > /dev/null 2>&1; then
+        echo -e "${RED}   [WARN] Could not start Redis. Fallback to File Cache.${NC}"
+    else
+        REDIS_VER=$(redis-cli info server | grep redis_version | cut -d: -f2 | tr -d '\r')
+        echo -e "${GREEN}   [OK] Redis $REDIS_VER started successfully${NC}"
+    fi
 else
-    echo -e "${GREEN}   [OK] Redis is active${NC}"
+    REDIS_VER=$(redis-cli info server | grep redis_version | cut -d: -f2 | tr -d '\r')
+    echo -e "${GREEN}   [OK] Redis $REDIS_VER is active${NC}"
 fi
 
 # --- 6. START SERVICES ---

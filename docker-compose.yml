@@ -1,8 +1,17 @@
 services:
+  redis:
+    image: redis:alpine
+    container_name: omv-jd-dashboard-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
   backend:
     image: ghcr.io/nchungdev/omv-jdownloader-dashboard-api:latest
     container_name: omv-jd-dashboard-api
     restart: unless-stopped
+    depends_on:
+      - redis
     ports:
       - "8086:8086"
     environment:
@@ -12,8 +21,10 @@ services:
       - STORAGE_PATH=/storage
       - JD_DOWNLOAD_BASE=/storage
       - JD_INTERNAL_PATH=/downloads
+      - REDIS_URL=redis://redis:6379
     volumes:
       - ${HOST_STORAGE_PATH}:/storage
+
   frontend:
     image: ghcr.io/nchungdev/omv-jdownloader-dashboard-ui:latest
     container_name: omv-jd-dashboard-ui
