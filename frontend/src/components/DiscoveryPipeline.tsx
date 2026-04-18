@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Loader2, HardDrive, Activity, Zap, Magnet, Globe, Download, ExternalLink, ChevronDown, Server, Box, Cloud, Search, Tv } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Loader2, HardDrive, Activity, Zap, Magnet, Globe, Download, ExternalLink, ChevronDown, Server, Box, Cloud, Search, Tv, Users, File } from 'lucide-react';
 import { api } from '../api/config';
 import type { MediaLink } from '../api/config';
 import { useCloudTargets } from '../hooks/useCloudTargets';
@@ -79,7 +79,7 @@ export const DiscoveryPipeline = ({
   const [loadingKeys, setLoadingKeys] = useState<Set<LoadingKey>>(new Set());
   const [doneKeys,    setDoneKeys]    = useState<Set<LoadingKey>>(new Set());
   const [activeTab,   setActiveTab]   = useState<string>('');
-  const [, setStreamingNotified] = useState<Set<string>>(new Set());
+  const streamingNotifiedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -89,9 +89,8 @@ export const DiscoveryPipeline = ({
     setLoadingKeys(new Set(ALL_KEYS));
     setDoneKeys(new Set());
     setActiveTab('');
-    setStreamingNotified(new Set());
+    streamingNotifiedRef.current = new Set();
 
-    let firstSettledTab = '';
 
     const markDone = (key: LoadingKey) => {
       setLoadingKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -135,17 +134,14 @@ export const DiscoveryPipeline = ({
           });
 
           // Notify MovieDetail for player — flatten grouped [{server,episodes}] back to flat list
-          // Re-attach server name to each episode so MovieDetail can re-group correctly
-          setStreamingNotified(prev => {
-            if (prev.has(source)) return prev;
+          if (!streamingNotifiedRef.current.has(source)) {
+            streamingNotifiedRef.current.add(source);
             const flat = items.flatMap((g: any) =>
               (g.episodes ?? []).map((ep: any) => ({ ...ep, server: g.server, source_type }))
             );
             onStreamingReady?.(flat, source);
-            return new Set(prev).add(source);
-          });
+          }
 
-          if (!firstSettledTab) { firstSettledTab = 'm3u8'; setActiveTab('m3u8'); }
         } else {
           // Downloadable: append deduped items to source_type bucket
           setDownloadableByType(prev => {
@@ -167,7 +163,6 @@ export const DiscoveryPipeline = ({
              })), source);
           }
 
-          if (!firstSettledTab) { firstSettledTab = source_type; setActiveTab(source_type); }
         }
 
         markDone(key);
@@ -204,6 +199,13 @@ export const DiscoveryPipeline = ({
 
   const isLoading = loadingKeys.size > 0;
   const allDone   = loadingKeys.size === 0;
+
+  // Always focus the first tab in order that has results
+  useEffect(() => {
+    if (tabs.length > 0 && (!activeTab || !tabs.find(t => t.id === activeTab))) {
+      setActiveTab(tabs[0].id);
+    }
+  }, [tabs.map(t => t.id).join(',')]);
 
   // Pending sub-sources for a source_type (for in-tab loading hint)
   const pendingSources = (st: string) =>
@@ -324,13 +326,13 @@ export const DiscoveryPipeline = ({
         {activeTab !== 'm3u8' && downloadableByType[activeTab] && (
           <div className="space-y-1">
             {downloadableByType[activeTab].map((l, i) => (
-              <DeepRow key={i} link={l}
-                actionLabel={activeTab === 'torrent' ? 'Magnet' : activeTab === 'gdrive' ? 'Drive' : activeTab === 'dailymotion' ? 'Watch' : 'FShare'}
-                color={stMeta(activeTab).color}
-                onAction={(url) => {
-                  window.open(url, '_blank');
-                }}
-              />
+              activeTab === 'torrent'
+                ? <TorrentRow key={i} link={l as any} />
+                : <DeepRow key={i} link={l}
+                    actionLabel={activeTab === 'gdrive' ? 'Drive' : activeTab === 'dailymotion' ? 'Watch' : 'FShare'}
+                    color={stMeta(activeTab).color}
+                    onAction={(url) => window.open(url, '_blank')}
+                  />
             ))}
             {typeLoading(activeTab) && (
               <div className="flex items-center gap-2 px-3 py-2 text-[8px] font-black uppercase tracking-widest text-gray-600">
@@ -548,6 +550,156 @@ function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; acti
           {actionLabel}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ── Torrent Row ───────────────────────────────────────────────────────────────
+interface TorrentLink {
+  url: string; name: string; size?: number; seeders?: number; leechers?: number;
+  quality?: string; num_files?: number; info_hash?: string; source?: string;
+}
+
+function estimateSpeed(seeders: number): string {
+  const kbps = seeders * 120; // ~120 KB/s per seeder (conservative estimate)
+  if (kbps >= 1024 * 10) return `~${(kbps / 1024).toFixed(0)} MB/s`;
+  if (kbps >= 1024) return `~${(kbps / 1024).toFixed(1)} MB/s`;
+  return `~${kbps} KB/s`;
+}
+
+function SpeedBar({ seeders }: { seeders: number }) {
+  // Map seeders to 1-5 bars: 0=0, 1-9=1, 10-29=2, 30-59=3, 60-99=4, 100+=5
+  const bars = seeders === 0 ? 0 : seeders < 10 ? 1 : seeders < 30 ? 2 : seeders < 60 ? 3 : seeders < 100 ? 4 : 5;
+  const color = bars >= 4 ? 'bg-green-400' : bars >= 3 ? 'bg-blue-400' : bars >= 2 ? 'bg-yellow-400' : 'bg-red-400';
+  const textColor = bars >= 4 ? 'text-green-400' : bars >= 3 ? 'text-blue-400' : bars >= 2 ? 'text-yellow-400' : 'text-red-400';
+  return (
+    <span className={`flex items-center gap-1.5 text-[7px] font-black uppercase tracking-wider ${textColor}`}>
+      <span className="flex items-end gap-px h-3">
+        {[1,2,3,4,5].map(b => (
+          <span key={b} className={`w-1 rounded-sm transition-all ${b <= bars ? color : 'bg-white/10'}`}
+            style={{ height: `${4 + b * 2}px` }} />
+        ))}
+      </span>
+      {estimateSpeed(seeders)}
+    </span>
+  );
+}
+
+function SeederBadge({ count }: { count: number }) {
+  const color = count >= 50 ? 'text-green-400' : count >= 10 ? 'text-yellow-400' : 'text-red-400';
+  return (
+    <span className={`flex items-center gap-1 text-[7px] font-black uppercase tracking-wider ${color}`}>
+      <Users className="w-2.5 h-2.5" />
+      {count}
+    </span>
+  );
+}
+
+function QualityBadge({ quality }: { quality: string }) {
+  const color =
+    quality === '4K' || quality === 'Remux' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
+    quality === '1080p' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' :
+    quality === '720p'  ? 'bg-green-500/20 text-green-300 border-green-500/30' :
+    quality === 'CAM'   ? 'bg-red-500/20 text-red-300 border-red-500/30' :
+    'bg-white/5 text-gray-400 border-white/10';
+  return (
+    <span className={`px-1.5 py-0.5 rounded border text-[7px] font-black uppercase tracking-wider ${color}`}>
+      {quality}
+    </span>
+  );
+}
+
+function TorrentRow({ link }: { link: TorrentLink }) {
+  const [expanded, setExpanded] = useState(false);
+  const [files, setFiles] = useState<{ name: string; size: number }[] | null>(null);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
+  const srcLabel = link.source ? (SOURCE_BADGE[link.source] ?? link.source.toUpperCase()) : null;
+  const canExpand = (link.num_files ?? 0) > 1 && link.info_hash;
+
+  const toggleFiles = async () => {
+    if (!canExpand) return;
+    if (expanded) { setExpanded(false); return; }
+    setExpanded(true);
+    if (files !== null) return;
+    setLoadingFiles(true);
+    try {
+      const res = await api.get(`/media/torrent-files?info_hash=${link.info_hash}`);
+      setFiles(res.data?.files ?? []);
+    } catch { setFiles([]); }
+    setLoadingFiles(false);
+  };
+
+  return (
+    <div className="rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-all overflow-hidden">
+      <div className="flex items-center gap-3 px-3 py-2.5 group">
+        {/* Info */}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
+            {link.name}
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {link.quality && <QualityBadge quality={link.quality} />}
+            {link.size != null && link.size > 0 && (
+              <span className="text-[7px] font-bold text-gray-500 uppercase tracking-wider">{formatSize(link.size)}</span>
+            )}
+            {link.seeders != null && (
+              <>
+                <SeederBadge count={link.seeders} />
+                <SpeedBar seeders={link.seeders} />
+              </>
+            )}
+            {link.leechers != null && (
+              <span className="flex items-center gap-1 text-[7px] font-bold text-gray-600 uppercase tracking-wider">
+                <Users className="w-2.5 h-2.5" />{link.leechers}↓
+              </span>
+            )}
+            {srcLabel && (
+              <span className="text-[6px] font-black uppercase tracking-widest px-1 py-0.5 rounded bg-white/5 text-gray-600">{srcLabel}</span>
+            )}
+            {canExpand && (
+              <span className="flex items-center gap-1 text-[7px] font-bold text-gray-500 uppercase tracking-wider">
+                <File className="w-2.5 h-2.5" />{link.num_files} files
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {canExpand && (
+            <button onClick={toggleFiles}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-all">
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+          <button onClick={() => window.open(link.url, '_blank')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest text-green-400">
+            <Magnet className="w-2.5 h-2.5" />
+            Magnet
+          </button>
+        </div>
+      </div>
+
+      {/* File list */}
+      {expanded && (
+        <div className="border-t border-white/5 px-3 py-2 space-y-1 animate-cinema-fade">
+          {loadingFiles ? (
+            <div className="flex items-center gap-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600">
+              <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />Fetching files…
+            </div>
+          ) : files && files.length > 0 ? (
+            files.map((f, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 py-1 border-b border-white/5 last:border-0">
+                <span className="text-[8px] font-medium text-gray-400 truncate flex-1">{f.name}</span>
+                <span className="text-[7px] font-bold text-gray-600 shrink-0">{formatSize(f.size)}</span>
+              </div>
+            ))
+          ) : (
+            <p className="text-[8px] text-gray-600 uppercase tracking-widest">No file data available</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

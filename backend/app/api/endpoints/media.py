@@ -161,6 +161,19 @@ async def discovery(
         }
 
 
+@router.get("/torrent-files")
+async def torrent_files(request: Request, info_hash: str):
+    """Fetch file list for a torrent from apibay."""
+    try:
+        client = request.app.state.http_client
+        resp = await client.get(f"https://apibay.org/f.php?id={info_hash}")
+        data = resp.json()
+        files = [{"name": f.get("name", ""), "size": int(f.get("size", 0))} for f in data if f.get("name") != ".pad"]
+        return {"data": {"files": files}, "error_code": 0, "error_msg": ""}
+    except Exception as e:
+        return {"data": {"files": []}, "error_code": 500, "error_msg": str(e)}
+
+
 @router.get("/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
     """Standalone endpoint to expand folder URLs."""

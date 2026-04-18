@@ -116,6 +116,17 @@ async def lookup_torrent(
         cache_manager.set_to_cache(config.TORRENT_CACHE, cache_key, final)
     return final
 
+def _parse_quality(name: str) -> str:
+    n = name.upper()
+    if '2160P' in n or '4K' in n or 'UHD' in n: return '4K'
+    if 'REMUX' in n: return 'Remux'
+    if '1080P' in n: return '1080p'
+    if '720P' in n: return '720p'
+    if '480P' in n: return '480p'
+    if 'HDCAM' in n or 'TELESYNC' in n or '.TS.' in n or 'HDTS' in n: return 'CAM'
+    return 'HD'
+
+
 async def lookup_solidtorrents_api(q: str) -> List[Dict[str, Any]]:
     """SolidTorrents API - Very reliable general purpose API."""
     try:
@@ -130,6 +141,10 @@ async def lookup_solidtorrents_api(q: str) -> List[Dict[str, Any]]:
                     "url": i.get("magnet"),
                     "name": f"SOLID | {i.get('title')}",
                     "size": int(i.get("size", 0)),
+                    "seeders": int(i.get("swarm", {}).get("seeders", 0)),
+                    "leechers": int(i.get("swarm", {}).get("leechers", 0)),
+                    "quality": _parse_quality(i.get("title", "")),
+                    "num_files": len(i.get("files", [])) or None,
                     "source": "solid"
                 } for i in items if i.get("magnet")]
     except Exception: pass
@@ -146,9 +161,14 @@ async def lookup_apibay_api(q: str) -> List[Dict[str, Any]]:
                 if data and isinstance(data, list) and data[0].get("id") != "0":
                     return [{
                         "type": "downloadable", "provider": "torrent",
-                        "url": f"magnet:?xt=urn:btih:{i.get('info_hash')}&dn={urllib.parse.quote(i.get('name'))}",
+                        "url": f"magnet:?xt=urn:btih:{i.get('info_hash')}&dn={urllib.parse.quote(i.get('name', ''))}",
                         "name": f"TPB | {i.get('name')}",
                         "size": int(i.get("size", 0)),
+                        "seeders": int(i.get("seeders", 0)),
+                        "leechers": int(i.get("leechers", 0)),
+                        "quality": _parse_quality(i.get("name", "")),
+                        "num_files": int(i.get("num_files", 0)) or None,
+                        "info_hash": i.get("info_hash"),
                         "source": "apibay"
                     } for i in data[:15]]
     except Exception: pass
@@ -157,7 +177,6 @@ async def lookup_apibay_api(q: str) -> List[Dict[str, Any]]:
 async def lookup_yts_api(q: str) -> List[Dict[str, Any]]:
     """YTS API - Best for high quality movies (YIFY)."""
     try:
-        # YTS works better with just the title for movie lookup
         url = f"https://yts.mx/api/v2/list_movies.json?query_term={urllib.parse.quote(q)}&sort_by=seeds"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url)
@@ -167,15 +186,19 @@ async def lookup_yts_api(q: str) -> List[Dict[str, Any]]:
                 results = []
                 for m in movies:
                     for tor in m.get("torrents", []):
-                        quality = tor.get("quality")
                         info_hash = tor.get("hash")
                         if info_hash:
-                            magnet = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(m.get('title'))}"
+                            quality = tor.get("quality", "HD")
+                            magnet = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(m.get('title', ''))}"
                             results.append({
                                 "type": "downloadable", "provider": "torrent",
                                 "url": magnet,
                                 "name": f"YTS | {m.get('title')} [{quality}]",
                                 "size": int(tor.get("size_bytes", 0)),
+                                "seeders": int(tor.get("seeds", 0)),
+                                "leechers": int(tor.get("peers", 0)),
+                                "quality": quality,
+                                "num_files": 1,
                                 "source": "yts"
                             })
                 return results

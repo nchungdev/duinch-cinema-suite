@@ -26,15 +26,23 @@ async def get_tmdb_alternative_titles(client: httpx.AsyncClient, tmdb_id: int, m
         return []
 
 async def get_tmdb_details(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> Dict[str, Any]:
-    """Fetch full details for a movie/TV show from TMDB."""
+    """Fetch full details for a movie/TV show from TMDB. Falls back to en-US if vi-VN has no overview."""
     if not config.TMDB_READ_ACCESS_TOKEN:
         return {}
-        
-    url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?language=vi-VN&append_to_response=credits"
+
     headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
-    
+
     try:
-        resp = await client.get(url, headers=headers)
-        return resp.json()
+        url_vi = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?language=vi-VN&append_to_response=credits"
+        resp = await client.get(url_vi, headers=headers)
+        data = resp.json()
+
+        if not data.get("overview"):
+            url_en = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}?language=en-US&append_to_response=credits"
+            resp_en = await client.get(url_en, headers=headers)
+            en = resp_en.json()
+            data["overview"] = en.get("overview", "")
+
+        return data
     except Exception:
         return {}

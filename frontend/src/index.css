@@ -144,19 +144,19 @@ h1, h2, h3 {
 }
 
 @keyframes marquee {
-  0% { transform: translateX(0); }
-  10% { transform: translateX(0); }
-  90% { transform: translateX(-100%); }
-  100% { transform: translateX(-100%); }
+  0%   { transform: translateX(0); }
+  15%  { transform: translateX(0); }
+  85%  { transform: translateX(var(--marquee-distance, -60%)); }
+  100% { transform: translateX(var(--marquee-distance, -60%)); }
 }
 
 .animate-marquee {
   display: inline-block;
   white-space: nowrap;
-  animation: marquee 10s linear infinite alternate;
+  animation: marquee 8s ease-in-out infinite alternate;
 }
 
 .marquee-container {
   overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(to right, black 70%, transparent 100%);
 }
