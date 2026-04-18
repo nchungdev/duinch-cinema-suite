@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
-import type { MovieMetadata, StreamingServer } from '../../api/config';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import type { BaseMedia } from '../../domain/models/Media';
 
 interface MovieDetailContextType {
   // Data
-  metadata: MovieMetadata | null;
+  media: BaseMedia | null;
   loading: boolean;
   localExists: boolean;
   
@@ -17,6 +17,7 @@ interface MovieDetailContextType {
   activeEmbed: string | null;
   
   // Handlers
+  setMedia: (m: BaseMedia | null) => void;
   setActiveType: (t: string) => void;
   setActiveProvider: (p: string) => void;
   setActiveServerIdx: (idx: number) => void;
@@ -24,16 +25,13 @@ interface MovieDetailContextType {
   setActiveSeasonIdx: (idx: number) => void;
   setActiveEmbed: (url: string | null) => void;
   
-  // Discovery & Resolvers
+  // Player State
   isPlayerReady: boolean;
   playerError: string | null;
   setIsPlayerReady: (ready: boolean) => void;
   setPlayerError: (error: string | null) => void;
   userSettings: any;
   setUserSettings: (s: any) => void;
-  
-  // Handlers
-  handleFshareLogin: (e: React.FormEvent) => Promise<void>;
   
   // Helpers
   streamingLinks: any[];
@@ -43,6 +41,9 @@ interface MovieDetailContextType {
   
   // Actions
   onBack: () => void;
+  handleFshareLogin: (e: React.FormEvent) => Promise<void>;
+  
+  // Metadata Shorthands
   slug: string;
   mediaType: string;
   initialSeason?: number;
@@ -52,8 +53,8 @@ interface MovieDetailContextType {
 const MovieDetailContext = createContext<MovieDetailContextType | undefined>(undefined);
 
 export const MovieDetailProvider = ({ children, initialValues }: { children: ReactNode, initialValues: any }) => {
-  const [metadata, setMetadata] = useState<MovieMetadata | null>(initialValues.metadata || null);
-  const [loading, setLoading] = useState(initialValues.loading ?? true);
+  const [media, setMedia] = useState<BaseMedia | null>(null);
+  const [loading, setLoading] = useState(true);
   const [localExists, setLocalExists] = useState(false);
   
   const [streamableSources, setStreamableSources] = useState<Record<string, Record<string, any[]>>>({});
@@ -68,19 +69,26 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<any>(null);
 
+  // Derived: Season boundaries for UI navigation
   const seasonBoundaries = React.useMemo(() => {
-    if (!metadata?.tmdb_seasons) return [];
+    if (!media || media.type !== 'tv') return [];
+    const tv = media as any; // Cast to access tv-specific seasons
     let current = 0;
-    return metadata.tmdb_seasons.map(s => {
-        const boundary = { name: s.name, season_number: s.season_number, start: current, end: current + s.episode_count };
+    return (tv.seasons || []).map((s: any) => {
+        const boundary = { 
+            name: s.name, 
+            season_number: s.season_number, 
+            start: current, 
+            end: current + s.episode_count 
+        };
         current += s.episode_count;
         return boundary;
     });
-  }, [metadata]);
+  }, [media]);
 
   // Reset state on slug change
   useEffect(() => {
-    setMetadata(null);
+    setMedia(null);
     setLoading(true);
     setStreamableSources({});
     setActiveType('');
@@ -95,7 +103,7 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   }, [initialValues.slug]);
 
   const value = {
-    metadata, setMetadata,
+    media, setMedia,
     loading, setLoading,
     localExists, setLocalExists,
     streamableSources, setStreamableSources,

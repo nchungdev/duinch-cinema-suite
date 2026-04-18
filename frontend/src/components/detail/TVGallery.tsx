@@ -6,10 +6,9 @@ import { useMovieDetail } from './MovieDetailContext';
 
 export const TVGallery = () => {
     const {
-        metadata, streamingLinks, activeServerIdx, activeEpisodeIdx, setActiveEpisodeIdx,
+        media, streamingLinks, activeServerIdx, activeEpisodeIdx, setActiveEpisodeIdx,
         activeType, initialSeason, initialEpisode,
-        isTorrentStreaming, isFshareResolving, userSettings, slug, activeEmbed,
-        seasonBoundaries
+        isTorrentStreaming, isFshareResolving, seasonBoundaries
     } = useMovieDetail();
     const { handleTorrentStream, handleFshareStream } = useStreamResolvers();
 

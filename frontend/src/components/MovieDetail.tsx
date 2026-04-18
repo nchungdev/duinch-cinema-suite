@@ -1,5 +1,5 @@
-import React, { useRef, useState, useLayoutEffect } from 'react';
-import { ChevronLeft, Radio, Zap, Activity, Disc3 } from 'lucide-react';
+import React, { useRef, useState, useLayoutEffect, useMemo } from 'react';
+import { ChevronLeft, Zap, Activity, Disc3, Radio, Loader2 } from 'lucide-react';
 import { MarqueeText } from './MarqueeText';
 import { useMovieDetail, MovieDetailProvider } from './detail/MovieDetailContext';
 import { useMovieDetailData } from '../hooks/useMovieDetailData';
@@ -11,41 +11,32 @@ import { TVGallery } from './detail/TVGallery';
 import { MovieGallery } from './detail/MovieGallery';
 import { MediaInfo } from './detail/MediaInfo';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
-import { Loader2 } from 'lucide-react';
+import type { TVShow } from '../domain/models/Media';
 
 const NowPlayingHeader = () => {
-  const { metadata, mediaType, activeEmbed, activeType, activeProvider, streamingLinks, activeServerIdx, activeEpisodeIdx } = useMovieDetail();
+  const { media, mediaType, activeEmbed, activeType, streamingLinks, activeServerIdx, activeEpisodeIdx } = useMovieDetail();
 
   const currentEp = streamingLinks?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
   const isLive = !!activeEmbed;
 
-  // For TV: derive season/episode from activeEpisodeIdx using tmdb_seasons
-  const tvLabel = (() => {
-    if (mediaType !== 'tv' || !metadata?.tmdb_seasons) return null;
-    let offset = 0;
-    for (const s of metadata.tmdb_seasons) {
-      if (activeEpisodeIdx < offset + s.episode_count) {
-        const ep = activeEpisodeIdx - offset + 1;
-        return `Mùa ${s.season_number} · Tập ${ep}`;
-      }
-      offset += s.episode_count;
+  // For TV: derive season/episode from activeEpisodeIdx using the domain model
+  const tvLabel = useMemo(() => {
+    if (mediaType !== 'tv' || !media) return null;
+    const tv = media as TVShow;
+    const s = tv.getSeasonAt(activeEpisodeIdx);
+    if (!s) return null;
+    
+    // Find relative episode number
+    let start = 0;
+    for (const item of tv.seasons) {
+        if (item.season_number === s.season_number) break;
+        start += item.episode_count;
     }
-    return `Tập ${activeEpisodeIdx + 1}`;
-  })();
+    const epNum = activeEpisodeIdx - start + 1;
+    return `Mùa ${s.season_number} · Tập ${epNum}`;
+  }, [media, mediaType, activeEpisodeIdx]);
 
-  const displayName = tvLabel ?? currentEp?.name ?? metadata?.title ?? '—';
-
-  const typeIcon =
-    activeType === 'P2P'    ? <Activity className="w-3 h-3" /> :
-    activeType === 'DIRECT' ? <Disc3     className="w-3 h-3" /> :
-    activeType === 'EMBED'  ? <Radio     className="w-3 h-3" /> :
-                              <Zap       className="w-3 h-3" />;
-
-  const typeColor =
-    activeType === 'P2P'    ? 'text-green-400'  :
-    activeType === 'DIRECT' ? 'text-red-400'    :
-    activeType === 'EMBED'  ? 'text-purple-400' :
-                              'text-blue-400';
+  const displayName = tvLabel ?? currentEp?.name ?? media?.title ?? '—';
 
   return (
     <div className="shrink-0 border-b border-white/5">
@@ -85,7 +76,7 @@ interface MovieDetailProps {
 
 const DetailContent = () => {
   const {
-    loading, metadata, mediaType, onBack, initialSeason, initialEpisode, slug
+    loading, media, mediaType, onBack, initialSeason, initialEpisode, slug
   } = useMovieDetail();
 
   useMovieDetailData();
@@ -95,7 +86,7 @@ const DetailContent = () => {
   const playerRef = useRef<HTMLDivElement>(null);
   const [playerHeight, setPlayerHeight] = useState<number | null>(null);
 
-  // Track the real MediaStreamer shell height and clamp the right column to it.
+  // Track the real MediaStreamer shell height
   useLayoutEffect(() => {
     const el = playerRef.current;
     if (!el) return;
@@ -107,18 +98,14 @@ const DetailContent = () => {
       }
     };
 
-    const rafId = requestAnimationFrame(updateHeight);
     const ro = new ResizeObserver(updateHeight);
     ro.observe(el);
     updateHeight();
     
-    return () => {
-      cancelAnimationFrame(rafId);
-      ro.disconnect();
-    };
-  }, [loading, metadata]);
+    return () => ro.disconnect();
+  }, [loading, media]);
 
-  if (loading && !metadata) {
+  if (loading && !media) {
     return (
       <div className="fixed inset-0 bg-[#0a0a0c] flex items-center justify-center z-[100]">
         <div className="flex flex-col items-center gap-6">
@@ -137,7 +124,6 @@ const DetailContent = () => {
       <div className="absolute inset-0 overflow-y-auto no-scrollbar">
         <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-24 pb-20">
 
-          {/* Back button */}
           <button
             onClick={onBack}
             className="group flex items-center gap-2 mb-6 px-3 py-1.5 bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl transition-all duration-200"
@@ -147,17 +133,15 @@ const DetailContent = () => {
           </button>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-
-            {/* Left Column: Player, Info & Discovery */}
             <div className="lg:col-span-8 space-y-6">
               <MediaStreamer ref={playerRef} />
               <MediaInfo />
               <DiscoveryPipeline
                 key={slug}
-                tmdbId={metadata?.tmdb_id || 0}
-                title={metadata?.title || ''}
-                localizeTitle={metadata?.origin_name}
-                year={metadata?.year}
+                tmdbId={Number(media?.id || 0)}
+                title={media?.title || ''}
+                localizeTitle={media?.originTitle}
+                year={media?.year}
                 mediaType={mediaType}
                 initialSeason={mediaType === 'tv' ? initialSeason : undefined}
                 initialEpisode={mediaType === 'tv' ? initialEpisode : undefined}
@@ -165,7 +149,6 @@ const DetailContent = () => {
               />
             </div>
 
-            {/* Right Column: Stream Control — explicit height = player height */}
             <div
               className="lg:col-span-4 sticky top-24 self-start min-h-0"
               style={playerHeight ? { height: playerHeight, minHeight: playerHeight, maxHeight: playerHeight } : undefined}
@@ -177,7 +160,6 @@ const DetailContent = () => {
                 </div>
               </div>
             </div>
-
           </div>
         </div>
       </div>

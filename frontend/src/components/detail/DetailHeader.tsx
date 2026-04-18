@@ -4,11 +4,11 @@ import { useMovieDetail } from './MovieDetailContext';
 import { getProxiedImageUrl } from '../../api/config';
 
 export const DetailHeader = () => {
-    const { metadata, onBack, localExists } = useMovieDetail();
-    if (!metadata) return null;
+    const { media, onBack } = useMovieDetail();
+    if (!media) return null;
 
-    const posterUrl = metadata.poster_url || getProxiedImageUrl(metadata.poster);
-    const bgUrl = metadata.thumb_url || posterUrl;
+    const posterUrl = getProxiedImageUrl(media.poster);
+    const bgUrl = getProxiedImageUrl(media.backdrop || media.poster);
 
     return (
         <div className="relative h-[45vh] min-h-[400px] w-full overflow-hidden">
