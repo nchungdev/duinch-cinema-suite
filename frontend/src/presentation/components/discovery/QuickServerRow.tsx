@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { ChevronDown, Globe, HardDrive, Cloud, Server, Box } from 'lucide-react';
-import type { CloudTarget } from '../../services/cloudTargets';
+import React, { useState, useRef, useLayoutEffect, useMemo, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
+import { ChevronDown, Globe, HardDrive } from 'lucide-react';
+import { CloudButtons, CloudIcon } from './CloudActions';
+import type { CloudTarget } from '../../../services/cloudTargets';
 
 interface QuickServerRowProps {
   serverName: string; 
@@ -9,42 +10,6 @@ interface QuickServerRowProps {
   cloudTargets: CloudTarget[];
   sourceBadge?: string | null;
 }
-
-const CloudIcon: React.FC<{ icon: string; cls?: string }> = ({ icon, cls }) => {
-  const c = cls ?? 'w-2.5 h-2.5';
-  if (icon === 'server')     return <Server    className={c} />;
-  if (icon === 'hard-drive') return <HardDrive className={c} />;
-  if (icon === 'box')        return <Box       className={c} />;
-  if (icon === 'globe')      return <Globe     className={c} />;
-  return <Cloud className={c} />;
-};
-
-const CloudButtons: React.FC<{ targets: CloudTarget[]; count?: number; compact?: boolean }> = ({ targets, count, compact = false }) => {
-  const label = (t: CloudTarget) => count ? `${t.label} (${count})` : t.label;
-  const px    = compact ? 'px-2 py-1' : 'px-3 py-1.5';
-
-  if (targets.length === 0) {
-    return (
-      <button title="Send to cloud"
-        className={`flex items-center gap-1.5 ${px} rounded-lg bg-white/5 text-gray-500 border border-white/10 hover:bg-white/10 hover:text-gray-300 transition-all text-[8px] font-black uppercase tracking-widest`}>
-        <Cloud className="w-2.5 h-2.5" />
-        {!compact && (count ? `Cloud (${count})` : 'Cloud')}
-      </button>
-    );
-  }
-
-  return (
-    <>
-      {targets.map(t => (
-        <button key={t.id} title={`Send to ${t.label}`}
-          className={`flex items-center gap-1.5 ${px} rounded-lg border transition-all text-[8px] font-black uppercase tracking-widest ${t.bgColor} ${t.color}`}>
-          <CloudIcon icon={t.icon} />
-          {!compact && label(t)}
-        </button>
-      ))}
-    </>
-  );
-};
 
 export const QuickServerRow: React.FC<QuickServerRowProps> = ({ 
   serverName, episodes, color = 'text-orange-400', cloudTargets, sourceBadge 
@@ -58,23 +23,36 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
   type SeasonGroupItem = { ep: any; index: number };
   type SeasonGroup = { season: number; items: SeasonGroupItem[] };
 
-  const seasonGroups = episodes.reduce<SeasonGroup[]>((acc, ep, index) => {
-    const rawSeason = Number(ep?.season);
-    const season = Number.isFinite(rawSeason) && rawSeason > 0 ? rawSeason : 1;
-    const entry = { ep, index };
-    const existing = acc.find(group => group.season === season);
-    if (existing) existing.items.push(entry);
-    else acc.push({ season, items: [entry] });
-    return acc;
-  }, [])
-    .sort((a, b) => a.season - b.season);
+  const seasonGroups = useMemo(() => {
+    const acc: SeasonGroup[] = [];
+    episodes.forEach((ep, index) => {
+        const rawSeason = Number(ep?.season);
+        const season = (Number.isFinite(rawSeason) && rawSeason > 0) ? rawSeason : 1;
+        const existing = acc.find(group => group.season === season);
+        if (existing) {
+            existing.items.push({ ep, index });
+        } else {
+            acc.push({ season, items: [{ ep, index }] });
+        }
+    });
+    
+    const final = [...acc];
+    final.sort((a, b) => a.season - b.season);
+    return final;
+  }, [episodes]);
 
-  const hasSeasonMetadata = episodes.some((ep) => Number.isFinite(Number(ep?.season)) && Number(ep?.season) > 0);
+  const toggleEp = (i: number) => {
+    setSelected(prev => {
+        const s = new Set(prev);
+        if (s.has(i)) s.delete(i);
+        else s.add(i);
+        return s;
+    });
+  };
 
-  const toggleEp  = (i: number) =>
-    setSelected(prev => { const s = new Set(prev); s.has(i) ? s.delete(i) : s.add(i); return s; });
-  const toggleAll = () =>
-    setSelected(prev => prev.size === episodes.length ? new Set() : new Set(episodes.map((_, i) => i)));
+  const toggleAll = () => {
+    setSelected(prev => (prev.size === episodes.length ? new Set() : new Set(episodes.map((_, i) => i))));
+  };
 
   const selectRange = (from: number, to: number) => {
     const start = Math.min(from, to);
@@ -91,7 +69,6 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
       const anchor = rangeAnchor ?? focusIndex ?? index;
       selectRange(anchor, index);
       setFocusIndex(index);
-      return;
     }
   };
 
@@ -132,11 +109,10 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
     if (e.shiftKey) {
       const anchor = rangeAnchor ?? focusIndex;
       selectRange(anchor, nextIndex);
-      return;
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setFocusIndex(prev => Math.min(prev, Math.max(episodes.length - 1, 0)));
   }, [open, episodes.length]);
@@ -158,7 +134,7 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
             </span>
           )}
           <span className="text-[9px] font-bold text-gray-600 shrink-0">
-            ({episodes.length} tập{hasSeasonMetadata ? ` · ${seasonGroups.length} mùa` : ''})
+            ({episodes.length} tập)
           </span>
         </button>
 
@@ -173,11 +149,16 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
               {allSelected ? 'Bỏ chọn' : 'Chọn tất cả'}
             </button>
           )}
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/8 text-gray-300 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest">
-            <HardDrive className="w-2.5 h-2.5" />
-            {selectMode ? `Device (${selected.size})` : 'Device'}
-          </button>
-          <CloudButtons targets={cloudTargets} count={selectMode ? selected.size : undefined} />
+          
+          <CloudButtons 
+            targets={cloudTargets}
+            count={selectMode ? selected.size : undefined}
+            onDeviceAction={() => {}}
+            onCloudAction={(target) => {
+                alert(`Gửi ${selected.size || 1} tập tới ${target.label}`);
+            }}
+          />
+
           <button onClick={() => setOpen(o => !o)} className="p-1 rounded-lg hover:bg-white/8 transition-all">
             <ChevronDown className={`w-3.5 h-3.5 text-gray-600 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
           </button>
@@ -188,41 +169,14 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
         <div className="border-t border-white/5 px-3 pb-3 pt-2 space-y-1.5 animate-cinema-fade">
           {seasonGroups.map(group => (
             <div key={group.season} className="space-y-1.5">
-              {hasSeasonMetadata && (
-                <div className="flex items-center gap-2 px-1 pt-1">
-                  <span className={`text-[8px] font-black uppercase tracking-[0.25em] ${color}`}>
-                    Mùa {group.season}
-                  </span>
-                  <span className="text-[7px] font-bold uppercase tracking-widest text-gray-600">
-                    {group.items.length} tập
-                  </span>
-                  <button
-                    onClick={() => {
-                      const indices = group.items.map(item => item.index);
-                      const isFullySelected = indices.every(i => selected.has(i));
-                      setSelected(prev => {
-                        const next = new Set(prev);
-                        for (const i of indices) {
-                          if (isFullySelected) next.delete(i);
-                          else next.add(i);
-                        }
-                        return next;
-                      });
-                      if (indices.length > 0) {
-                        setRangeAnchor(indices[0]);
-                        setFocusIndex(indices[0]);
-                      }
-                    }}
-                    className={`ml-auto px-2 py-1 rounded-md border text-[7px] font-black uppercase tracking-widest transition-all ${
-                      group.items.every(item => selected.has(item.index))
-                        ? 'bg-blue-600/20 text-blue-400 border-blue-500/30'
-                        : 'bg-white/5 text-gray-500 border-white/10 hover:text-gray-300 hover:bg-white/8'
-                    }`}
-                  >
-                    {group.items.every(item => selected.has(item.index)) ? 'Bỏ mùa' : 'Chọn mùa'}
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center gap-2 px-1 pt-1">
+                <span className={`text-[8px] font-black uppercase tracking-[0.25em] ${color}`}>
+                  Mùa {group.season}
+                </span>
+                <span className="text-[7px] font-bold uppercase tracking-widest text-gray-600">
+                  {group.items.length} tập
+                </span>
+              </div>
 
               <div
                 ref={gridRef}
@@ -252,21 +206,20 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
                       </button>
                       {!selectMode && (
                         <>
-                          <button title="Device" className="px-1.5 flex items-center justify-center border-l border-white/5 hover:bg-white/10 transition-all group/dev">
-                            <HardDrive className="w-2.5 h-2.5 text-gray-600 group-hover/dev:text-gray-300 transition-colors" />
-                          </button>
-                          {cloudTargets.length === 0 ? (
-                            <button title="Cloud" className="px-1.5 flex items-center justify-center border-l border-white/5 hover:bg-white/10 transition-all rounded-r-lg group/cl">
-                              <Cloud className="w-2.5 h-2.5 text-gray-600 group-hover/cl:text-gray-300 transition-colors" />
+                          <div className="flex items-stretch">
+                            <button title="Device" className="px-1.5 flex items-center justify-center border-l border-white/5 hover:bg-white/10 transition-all group/dev">
+                                <HardDrive className="w-2.5 h-2.5 text-gray-600 group-hover/dev:text-gray-300 transition-colors" />
                             </button>
-                          ) : cloudTargets.map((t, ti) => (
-                            <button key={t.id} title={t.label}
-                              className={`px-1.5 flex items-center justify-center border-l border-white/5 transition-all ${ti === cloudTargets.length - 1 ? 'rounded-r-lg' : ''} hover:bg-white/10 group/ct`}>
-                              <span className={`text-gray-600 group-hover/ct:${t.color} transition-colors`}>
-                                <CloudIcon icon={t.icon} />
-                              </span>
-                            </button>
-                          ))}
+                            {cloudTargets.map((t, ti) => (
+                                <button key={t.id} title={t.label}
+                                    onClick={() => alert(`Gửi tập ${epLabel} tới ${t.label}`)}
+                                    className={`px-1.5 flex items-center justify-center border-l border-white/5 transition-all ${ti === cloudTargets.length - 1 ? 'rounded-r-lg' : ''} hover:bg-white/10 group/ct`}>
+                                    <span className={`text-gray-600 group-hover/ct:${t.color} transition-colors`}>
+                                        <CloudIcon icon={t.icon} />
+                                    </span>
+                                </button>
+                            ))}
+                          </div>
                         </>
                       )}
                     </div>

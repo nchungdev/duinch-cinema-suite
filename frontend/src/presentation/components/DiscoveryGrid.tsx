@@ -8,44 +8,36 @@ interface DiscoveryItem {
   origin_name: string;
   slug: string;
   poster: string;
-  year: number | string;
+  year: string;
   media_type: 'movie' | 'tv';
 }
 
-interface DiscoveryResponse {
-  results: DiscoveryItem[];
-  pagination: any;
-}
-
-interface Props {
-  category?: string;
-  mediaType?: 'all' | 'movie' | 'tv';
-  staticItems?: DiscoveryItem[];
-  onMovieClick: (slug: string, mediaType: string) => void;
-}
-
-export function DiscoveryGrid({ category, mediaType = 'all', staticItems, onMovieClick }: Props) {
+export function DiscoveryGrid({ 
+  category, 
+  mediaType, 
+  onItemClick 
+}: { 
+  category: string; 
+  mediaType: string; 
+  onItemClick: (item: DiscoveryItem) => void;
+}) {
   const [items, setItems] = useState<DiscoveryItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pageNum, setPageNum] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-
-  const isFetching = useRef(false);
+  
+  const loaderRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchItems = useCallback(async (page: number, isInitial: boolean = false) => {
-    if (staticItems || !category || (isFetching.current && isInitial)) return;
+  const fetchItems = useCallback(async (isInitial = false) => {
+    if (loading || (!hasMore && !isInitial)) return;
     
-    if (isInitial && abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    abortControllerRef.current = new AbortController();
-    isFetching.current = true;
     setLoading(true);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
     
     try {
-      let newItems = [];
+      let newItems: DiscoveryItem[] = [];
       if (category === 'phim-le') {
         const { data } = await api.get(`/movies?category=popular&page=${page}`, { signal: abortControllerRef.current.signal });
         newItems = data.results || [];
@@ -62,123 +54,99 @@ export function DiscoveryGrid({ category, mediaType = 'all', staticItems, onMovi
       else setHasMore(true);
 
     } catch (err: any) {
-      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
-      console.error('Discovery fetch failed:', err);
+      if (err.name !== 'CanceledError') {
+        console.error('Discovery fetch failed:', err);
+      }
     } finally {
       setLoading(false);
-      isFetching.current = false;
     }
-  }, [category, mediaType, staticItems]);
+  }, [category, mediaType, page, loading, hasMore]);
 
+  // Initial load or reset
   useEffect(() => {
-    if (staticItems) {
-      setItems(staticItems);
-      setHasMore(false);
-      setLoading(false);
-      return;
-    }
     setItems([]);
-    setPageNum(1);
+    setPage(1);
     setHasMore(true);
-    fetchItems(1, true);
-  }, [category, staticItems, fetchItems]);
+    fetchItems(true);
+  }, [category, mediaType]);
 
-  const observer = useRef<IntersectionObserver | null>(null);
-  const lastElementRef = useCallback((node: HTMLDivElement) => {
-    if (loading) return;
-    if (observer.current) observer.current.disconnect();
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore) {
-        setPageNum(prev => prev + 1);
-      }
-    });
-    if (node) observer.current.observe(node);
-  }, [loading, hasMore]);
+  // Infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loading) {
+          setPage(prev => prev + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentLoader = loaderRef.current;
+    if (currentLoader) observer.observe(currentLoader);
+    return () => {
+      if (currentLoader) observer.unobserve(currentLoader);
+    };
+  }, [hasMore, loading]);
 
   useEffect(() => {
-    if (pageNum > 1) fetchItems(pageNum, false);
-  }, [pageNum, fetchItems]);
+    if (page > 1) fetchItems();
+  }, [page]);
 
   return (
-    <div className="space-y-12 pb-20">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7 gap-x-6 gap-y-10 animate-cinema-fade">
+    <div className="space-y-12">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 md:gap-8">
         {items.map((item, idx) => (
-          <div 
+          <div
             key={`${item.slug}-${idx}`}
-            ref={idx === items.length - 1 ? lastElementRef : null}
-            onClick={() => onMovieClick(item.slug, item.media_type)}
+            onClick={() => onItemClick(item)}
             className="group relative cursor-pointer"
           >
-            <div className="aspect-cinema relative rounded-[2rem] overflow-hidden bg-white/5 shadow-2xl transition-all duration-700 group-hover:scale-105 group-hover:-translate-y-3 ring-1 ring-white/10 group-hover:ring-blue-500/50">
-              {item.poster ? (
-                <img 
-                  src={getProxiedImageUrl(item.poster)} 
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-90 group-hover:opacity-100"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center p-8 text-center text-[10px] font-black uppercase tracking-widest text-gray-600">
-                  {item.title}
-                </div>
-              )}
+            <div className="aspect-[2/3] rounded-2xl overflow-hidden bg-white/5 border border-white/5 transition-all duration-500 group-hover:scale-[1.03] group-hover:border-blue-500/30 group-hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)]">
+              <img
+                src={getProxiedImageUrl(item.poster)}
+                alt={item.title}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                loading="lazy"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               
-              <div className="absolute inset-0 ring-1 ring-inset ring-white/10 group-hover:ring-white/20 transition-all pointer-events-none rounded-[2rem]" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 scale-75 group-hover:scale-100">
+                 <div className="w-14 h-14 rounded-full bg-blue-600 flex items-center justify-center shadow-2xl shadow-blue-600/50">
+                    <PlayCircle className="w-8 h-8 text-white fill-white/10" />
+                 </div>
+              </div>
               
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-4 group-hover:translate-y-0">
-                <div className="w-14 h-14 rounded-full bg-blue-600/90 flex items-center justify-center backdrop-blur-md shadow-[0_0_40px_rgba(37,99,235,0.6)] border border-white/20">
-                  <PlayCircle className="w-7 h-7 text-white fill-white/20" />
-                </div>
-              </div>
-
-              <div className="absolute top-4 right-4 translate-x-1 group-hover:translate-x-0 transition-transform duration-500">
-                <div className={`px-2.5 py-1 rounded-lg backdrop-blur-md text-[8px] font-black uppercase tracking-tighter shadow-lg border border-white/10 ${
-                  item.media_type === 'tv' ? 'bg-purple-600/80 text-white' : 'bg-blue-600/80 text-white'
-                }`}>
-                  {item.media_type === 'tv' ? 'SERIES' : 'MOVIE'}
-                </div>
-              </div>
-
-              <div className="absolute bottom-6 left-6 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-2 group-hover:translate-y-0">
-                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">{item.year}</span>
+              <div className="absolute top-3 right-3 px-2 py-1 bg-black/60 backdrop-blur-md rounded-lg border border-white/10">
+                <span className="text-[8px] font-black uppercase tracking-widest text-white/80">
+                  {item.year || 'N/A'}
+                </span>
               </div>
             </div>
 
-            <div className="mt-5 px-1 space-y-1.5 transition-all duration-500 group-hover:px-2">
-              <h3 className="text-xs font-black line-clamp-1 group-hover:text-blue-400 transition-colors uppercase tracking-tight font-outfit leading-tight">
+            <div className="mt-4 space-y-1 px-1">
+              <h3 className="text-xs font-black text-gray-200 group-hover:text-white transition-colors line-clamp-1 uppercase tracking-wider">
                 {item.title}
               </h3>
-              <p className="text-[9px] text-gray-500 font-bold truncate uppercase tracking-widest opacity-60">
-                {item.origin_name}
+              <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest line-clamp-1">
+                {item.origin_name || item.title}
               </p>
             </div>
           </div>
         ))}
-
-        {loading && Array.from({ length: 14 }).map((_, i) => (
-          <div key={i} className="space-y-4">
-             <div className="aspect-cinema rounded-[2rem] bg-white/5 animate-pulse border border-white/5" />
-             <div className="h-3 w-3/4 bg-white/5 rounded-full animate-pulse ml-1" />
-             <div className="h-2 w-1/2 bg-white/5 rounded-full animate-pulse ml-1" />
-          </div>
-        ))}
       </div>
 
-      {!loading && hasMore && items.length > 0 && (
-        <div className="flex justify-center pt-20">
-             <div className="flex flex-col items-center gap-4">
-                 <Loader2 className="w-6 h-6 text-blue-600 animate-spin opacity-40" />
-                 <span className="text-[9px] font-bold uppercase tracking-[0.5em] text-gray-700">Incepting Data...</span>
-             </div>
-        </div>
-      )}
-
-      {!hasMore && items.length > 0 && (
-        <div className="flex justify-center pt-20">
+      <div ref={loaderRef} className="flex flex-col items-center justify-center py-12 gap-4">
+        {loading ? (
+          <div className="flex flex-col items-center gap-3">
+             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+             <span className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-600 animate-pulse">Expanding Universe</span>
+          </div>
+        ) : !hasMore && items.length > 0 && (
+          <div className="flex justify-center pt-20">
              <span className="text-[9px] font-bold uppercase tracking-[0.4em] text-gray-800">End of Recorded Universe</span>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

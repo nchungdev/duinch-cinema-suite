@@ -1,20 +1,23 @@
 import { useEffect, useCallback } from 'react';
 import { api } from '../../api/config';
-import { useMovieDetail } from '../context/MovieDetailContext';
+import { useMediaDetail } from '../context/MediaDetailContext';
 import { GetMediaDetail } from '../../core/use-cases/GetMediaDetail';
 import { SelectBestStream } from '../../core/use-cases/SelectBestStream';
-import { StreamLink, type StreamType } from '../../domain/models/StreamLink';
+import { StreamLink, type StreamType, type RawLinkData } from '../../domain/models/StreamLink';
+import type { StreamingEpisode, StreamingServer } from '../../api/config';
 
 /**
- * ViewModel: MovieDetailViewModel
+ * ViewModel: MediaDetailViewModel
  * Người đại diện (Presenter) duy nhất cho View chi tiết phim.
  * Gom tất cả logic dữ liệu, điều hướng và đăng ký luồng phát.
  */
-export const useMovieDetailViewModel = () => {
+export const useMediaDetailViewModel = () => {
+  const context = useMediaDetail();
+  
   const { 
     slug, mediaType, media, setMedia, 
     loading, setLoading, 
-    localExists, setLocalExists,
+    setLocalExists,
     userSettings, setUserSettings,
     streamableSources, setStreamableSources,
     activeType, setActiveType,
@@ -24,10 +27,11 @@ export const useMovieDetailViewModel = () => {
     activeSeasonIdx, setActiveSeasonIdx,
     streamingLinks, setStreamingLinks,
     activeEmbed, setActiveEmbed,
-    isPlayerReady, setIsPlayerReady,
-    playerError, setPlayerError,
-    onBack, seasonBoundaries
-  } = useMovieDetail();
+    setIsPlayerReady,
+    setPlayerError,
+    onBack, seasonBoundaries,
+    initialSeason, initialEpisode
+  } = context;
 
   // 1. Logic: Tải dữ liệu Metadata
   useEffect(() => {
@@ -67,7 +71,7 @@ export const useMovieDetailViewModel = () => {
   }, [setUserSettings]);
 
   // 3. Logic: Đăng ký luồng phát (Registry)
-  const handleStreamingReady = useCallback((links: any[], sourceId: string) => {
+  const handleStreamingReady = useCallback((links: RawLinkData[], sourceId: string) => {
     setStreamableSources(prev => {
         const next = { ...prev };
         
@@ -91,14 +95,14 @@ export const useMovieDetailViewModel = () => {
                 if (!next[type]) next[type] = {};
                 if (!next[type][platform]) next[type][platform] = [];
                 
-                let targetServer = next[type][platform].find((s: any) => s.server_name === serverKey);
+                let targetServer = next[type][platform].find((s: StreamingServer) => s.server_name === serverKey);
                 if (!targetServer) {
                     targetServer = { server_name: serverKey, server_data: [] };
                     next[type][platform].push(targetServer);
                 }
 
                 const epName = link.name;
-                let existingEp = targetServer.server_data.find((e: any) => e.name === epName);
+                const existingEp = targetServer.server_data.find((e: StreamingEpisode) => e.name === epName);
 
                 if (existingEp) {
                     if (link.hlsUrl)   existingEp.m3u8 = link.hlsUrl;
@@ -139,7 +143,7 @@ export const useMovieDetailViewModel = () => {
         const server = streamableSources[result.type]?.[result.provider]?.[activeServerIdx];
         if (!server?.server_data) return;
 
-        // Unified URL selection logic (Moved from Player Controller)
+        // Unified URL selection logic
         const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
         const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : (activeEpisodeIdx + 1);
         
@@ -148,10 +152,10 @@ export const useMovieDetailViewModel = () => {
             return m ? parseInt(m[0]) : null; 
         };
         
-        let ep = server.server_data.find((item: any) => extractNum(item.name) === localEpNum);
+        let ep = server.server_data.find((item: StreamingEpisode) => extractNum(item.name) === localEpNum);
         if (!ep) {
             const globalEpNum = activeEpisodeIdx + 1;
-            ep = server.server_data.find((item: any) => extractNum(item.name) === globalEpNum);
+            ep = server.server_data.find((item: StreamingEpisode) => extractNum(item.name) === globalEpNum);
         }
         if (!ep) ep = server.server_data[activeEpisodeIdx];
 
@@ -180,7 +184,7 @@ export const useMovieDetailViewModel = () => {
         const res = await api.get('/user/settings');
         setUserSettings(res.data);
         return true;
-    } catch (err) {
+    } catch {
         return false;
     }
   };
@@ -191,7 +195,6 @@ export const useMovieDetailViewModel = () => {
         mediaType,
         media,
         loading,
-        localExists,
         userSettings,
         streamableSources,
         activeType,
@@ -201,13 +204,11 @@ export const useMovieDetailViewModel = () => {
         activeSeasonIdx,
         streamingLinks,
         activeEmbed,
-        isPlayerReady,
-        playerError,
-        seasonBoundaries
+        seasonBoundaries,
+        initialSeason,
+        initialEpisode
     },
     actions: {
-        setMedia,
-        setLoading,
         setActiveType,
         setActiveProvider,
         setActiveServerIdx,

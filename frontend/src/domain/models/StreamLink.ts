@@ -89,6 +89,13 @@ export class StreamLink {
   get isDirect(): boolean {
     const rawType = (this.data.stream_type || '').toUpperCase();
     const url = (this.data.url || '').toLowerCase();
+    
+    // Check if it's explicitly NOT a folder (has common file extensions)
+    const knownExts = ['.mkv', '.mp4', '.avi', '.zip', '.rar'];
+    const isFile = knownExts.some(ext => this.name.toLowerCase().endsWith(ext));
+    
+    if (isFile) return true; // It's still a direct link, but logic outside should handle it as a file
+
     return rawType === 'DIRECT' || url.includes('fshare.vn') || url.includes('drive.google.com') || url.includes('google.com/file');
   }
 

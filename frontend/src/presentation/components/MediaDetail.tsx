@@ -1,8 +1,8 @@
-import React, { useRef, useState, useLayoutEffect, useMemo } from 'react';
+import { useRef, useState, useLayoutEffect, useMemo } from 'react';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import { MarqueeText } from './MarqueeText';
-import { useMovieDetail, MovieDetailProvider } from '../context/MovieDetailContext';
-import { useMovieDetailViewModel } from '../view-models/MovieDetailViewModel';
+import { MediaDetailProvider } from '../context/MediaDetailContext';
+import { useMediaDetailViewModel } from '../view-models/MediaDetailViewModel';
 import { MediaStreamer } from './detail/MediaStreamer';
 import { SourceMenu } from './detail/SourceMenu';
 import { TVGallery } from './detail/TVGallery';
@@ -12,7 +12,7 @@ import { DiscoveryPipeline } from './DiscoveryPipeline';
 import type { TVShow } from '../../domain/models/Media';
 
 const NowPlayingHeader = () => {
-  const { state } = useMovieDetailViewModel();
+  const { state } = useMediaDetailViewModel();
   const { media, mediaType, activeEmbed, streamingLinks, activeServerIdx, activeEpisodeIdx } = state;
 
   const currentEp = streamingLinks?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
@@ -63,7 +63,7 @@ const NowPlayingHeader = () => {
 };
 
 const DetailContent = () => {
-  const { state, actions } = useMovieDetailViewModel();
+  const { state, actions } = useMediaDetailViewModel();
   const { loading, media, mediaType, slug, initialSeason, initialEpisode } = state;
   const { onBack, handleStreamingReady } = actions;
 
@@ -138,10 +138,10 @@ const DetailContent = () => {
   );
 };
 
-export function MovieDetail(props: any) {
+export function MediaDetail(props: any) {
   return (
-    <MovieDetailProvider initialValues={props}>
+    <MediaDetailProvider initialValues={props}>
       <DetailContent />
-    </MovieDetailProvider>
+    </MediaDetailProvider>
   );
 }

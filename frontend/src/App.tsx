@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/config';
 import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
-import { MovieDetail } from './presentation/components/MovieDetail';
+import { MediaDetail } from './presentation/components/MediaDetail';
 import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2 } from 'lucide-react';
 
 type SearchTab = 'all' | 'movie' | 'tv';
@@ -26,7 +26,7 @@ function App() {
   const [category, setCategory] = useState('new');
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery,   setSearchQuery]   = useState('');
-  const [searchActive,  setSearchActive]  = useState(false);   // are we in search mode?
+  const [searchActive,  setSearchActive]  = useState(false);
   const [searchTab,     setSearchTab]     = useState<SearchTab>('all');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchPage,    setSearchPage]    = useState(1);
@@ -48,25 +48,19 @@ function App() {
       const res = await api.post<any>('/user/sync', { progress, history });
       const data = res.data;
 
-      // Update local with merged data from server
       if (data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(data.progress));
       if (data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(data.history));
 
-      } catch (err) {
-
+    } catch (err) {
       console.error('[Sync] Background sync failed:', err);
     }
   }, []);
 
-  // Sync on Mount + Periodic (15 mins)
   useEffect(() => {
-    performSync(); // Initial sync
-    const interval = setInterval(performSync, 15 * 60 * 1000); // 15 mins
+    performSync();
+    const interval = setInterval(performSync, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [performSync]);
-  // --------------------
-
-  // Load recent searches on mount
 
   const saveSearch = (q: string) => {
     if (!q.trim()) return;
@@ -101,8 +95,6 @@ function App() {
       setSearchQuery(q);
       lastSearchQuery.current = q;
       setSearchActive(true);
-      // background = true: chỉ populate results (dùng khi refresh từ detail page),
-      // không navigate ra khỏi detail view
       if (!background) {
         setView('discovery');
         setSlug(null);
@@ -121,7 +113,6 @@ function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // MASTER ROUTING: /:category/:type/:slug
   useEffect(() => {
     const handleUrlSync = () => {
       const hash = window.location.hash || '#/new';
@@ -133,10 +124,9 @@ function App() {
       const q = params.get('q') || undefined;
       setUrlParams({ s, e, q });
 
-      const parts = fullPath.split('/').filter(p => p && p !== '#'); // [":category", ":type", ":slug"]
+      const parts = fullPath.split('/').filter(p => p && p !== '#');
       
       if (parts.length >= 3) {
-        // Detail Path: #/new/tv/76479 or #/search/movie/123
         const cat = parts[0];
         const type = parts[1];
         const id = parts[2];
@@ -147,7 +137,6 @@ function App() {
         setView('detail');
         
         if (cat === 'search' && q && !searchActive) {
-            // background=true: khôi phục search results mà không navigate ra khỏi detail view
             executeSearch(q, 'all', 1, true);
         }
       } else if (parts.length >= 1) {
@@ -178,7 +167,7 @@ function App() {
       window.removeEventListener('popstate', handleUrlSync);
       window.removeEventListener('hashchange', handleUrlSync);
     };
-  }, [searchActive, executeSearch]);
+  }, [searchActive, executeSearch, searchQuery]);
 
   const handleMovieClick = (clickedSlug: string, mType: string = 'movie') => {
     const currentCat = searchActive ? 'search' : category;
@@ -186,7 +175,6 @@ function App() {
     window.location.hash = `#/${currentCat}/${mType}/${clickedSlug}${qParam}`;
   };
 
-  // Infinite scroll sentinel
   useEffect(() => {
     if (!searchActive || !sentinelRef.current) return;
     const obs = new IntersectionObserver(entries => {
@@ -198,7 +186,6 @@ function App() {
     return () => obs.disconnect();
   }, [searchActive, searchLoading, searchPage, searchTotal, searchTab, executeSearch]);
 
-  // Tab switch — re-run search with new tab
   const handleSearchTabChange = (tab: SearchTab) => {
     setSearchTab(tab);
     if (lastSearchQuery.current) executeSearch(lastSearchQuery.current, tab, 1);
@@ -236,12 +223,12 @@ function App() {
                 key={cat.id}
                 onClick={() => navToDiscoveryClear(cat.id)}
                 className={`flex items-center gap-2.5 px-4 py-2 rounded-xl transition-all duration-300 group ${
-                  category === cat.id && !searchResults && view === 'discovery'
+                  category === cat.id && !searchActive && view === 'discovery'
                     ? 'bg-white/10 text-white' 
                     : 'text-gray-500 hover:text-gray-300'
                 }`}
               >
-                <div className={`transition-colors ${category === cat.id ? 'text-blue-500' : 'group-hover:text-blue-400'}`}>
+                <div className={`transition-colors ${category === cat.id && !searchActive ? 'text-blue-500' : 'group-hover:text-blue-400'}`}>
                   {cat.icon}
                 </div>
                 <span className="text-[10px] font-black uppercase tracking-widest">{cat.label}</span>
@@ -265,7 +252,6 @@ function App() {
                 />
               </form>
 
-              {/* Recent Searches Dropdown */}
               {showRecent && recentSearches.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-[200] animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="p-4 border-b border-white/5 flex items-center justify-between">
@@ -318,7 +304,6 @@ function App() {
             <div className="max-w-screen-2xl mx-auto space-y-12">
             {searchActive ? (
                <div className="space-y-6">
-                 {/* Header row */}
                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                    <div className="flex items-center gap-6">
                      <h2 className="text-xl font-black uppercase italic tracking-tighter text-blue-400">
@@ -331,7 +316,6 @@ function App() {
                    </button>
                  </div>
 
-                 {/* Tabs: All / Movies / TV */}
                  <div className="flex items-center gap-1 border-b border-white/5 pb-0">
                    {SEARCH_TABS.map(tab => (
                      <button key={tab.id} onClick={() => handleSearchTabChange(tab.id)}
@@ -345,7 +329,6 @@ function App() {
                    ))}
                  </div>
 
-                 {/* Results */}
                  {searchLoading && searchResults.length === 0 ? (
                    <div className="flex items-center justify-center py-20 gap-3 text-gray-600">
                      <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
@@ -357,37 +340,32 @@ function App() {
                      <div className="text-xs font-bold uppercase tracking-widest">No results found</div>
                    </div>
                  ) : (
-                   <>
-                     <DiscoveryGrid staticItems={searchResults} onMovieClick={handleMovieClick} />
-                     {/* Infinite scroll sentinel */}
-                     <div ref={sentinelRef} className="h-10 flex items-center justify-center">
-                       {searchLoading && (
-                         <div className="flex items-center gap-2 text-gray-600">
-                           <Loader2 className="w-4 h-4 animate-spin text-blue-500/60" />
-                           <span className="text-[9px] font-black uppercase tracking-widest">Loading more…</span>
-                         </div>
-                       )}
-                       {!searchLoading && searchPage >= searchTotal && searchResults.length > 0 && (
-                         <span className="text-[8px] font-black uppercase tracking-widest text-gray-700">End of results</span>
-                       )}
-                     </div>
-                   </>
+                 <DiscoveryGrid 
+                   category="search" 
+                   mediaType="all" 
+                   onItemClick={(item) => handleMovieClick(item.slug, item.media_type)} 
+                 />
                  )}
-               </div>
-            ) : (
-               <div className="space-y-8">
-                   {category === 'new' && (
-                       <div className="flex items-center gap-6 border-b border-white/5 pb-6">
-                           <button onClick={() => setMediaType('movie')} className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all ${mediaType === 'movie' ? 'text-blue-500 border-b-2 border-blue-500 pb-2' : 'text-gray-600 hover:text-gray-400'}`}>Movies</button>
-                           <button onClick={() => setMediaType('tv')} className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all ${mediaType === 'tv' ? 'text-blue-500 border-b-2 border-blue-500 pb-2' : 'text-gray-600 hover:text-gray-400'}`}>TV Shows</button>
-                       </div>
-                   )}
-                   <DiscoveryGrid category={category} mediaType={mediaType as any} onMovieClick={handleMovieClick} />
-               </div>
-            )}
+                 </div>
+                 ) : (
+                 <div className="space-y-8">
+                 {category === 'new' && (
+                     <div className="flex items-center gap-6 border-b border-white/5 pb-6">
+                         <button onClick={() => setMediaType('movie')} className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all ${mediaType === 'movie' ? 'text-blue-500 border-b-2 border-blue-500 pb-2' : 'text-gray-600 hover:text-gray-400'}`}>Movies</button>
+                         <button onClick={() => setMediaType('tv')} className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all ${mediaType === 'tv' ? 'text-blue-500 border-b-2 border-blue-500 pb-2' : 'text-gray-600 hover:text-gray-400'}`}>TV Shows</button>
+                     </div>
+                 )}
+                 <DiscoveryGrid 
+                   category={category} 
+                   mediaType={mediaType as any} 
+                   onItemClick={(item) => handleMovieClick(item.slug, item.media_type)} 
+                 />
+                 </div>
+                 )}
+
             </div>
          ) : slug ? (
-            <MovieDetail 
+            <MediaDetail 
               slug={slug} 
               mediaType={mediaType}
               category={category}

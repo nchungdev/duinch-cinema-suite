@@ -1,14 +1,28 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import type { BaseMedia } from '../../domain/models/Media';
+import type { StreamableSources, StreamingServer } from '../../api/config';
 
-interface MovieDetailContextType {
+interface SeasonBoundary {
+  name: string;
+  season_number: number;
+  start: number;
+  end: number;
+}
+
+interface UserSettings {
+  preferred_source?: string;
+  [key: string]: any;
+}
+
+interface MediaDetailContextType {
   // Data
   media: BaseMedia | null;
   loading: boolean;
   localExists: boolean;
   
   // Streaming State
-  streamableSources: Record<string, Record<string, any[]>>;
+  streamableSources: StreamableSources;
   activeType: string;
   activeProvider: string;
   activeServerIdx: number;
@@ -18,6 +32,8 @@ interface MovieDetailContextType {
   
   // Handlers
   setMedia: (m: BaseMedia | null) => void;
+  setLoading: (l: boolean) => void;
+  setLocalExists: (e: boolean) => void;
   setActiveType: (t: string) => void;
   setActiveProvider: (p: string) => void;
   setActiveServerIdx: (idx: number) => void;
@@ -30,14 +46,14 @@ interface MovieDetailContextType {
   playerError: string | null;
   setIsPlayerReady: (ready: boolean) => void;
   setPlayerError: (error: string | null) => void;
-  userSettings: any;
-  setUserSettings: (s: any) => void;
+  userSettings: UserSettings | null;
+  setUserSettings: (s: UserSettings | null) => void;
   
   // Helpers
-  streamingLinks: any[];
-  seasonBoundaries: any[];
-  setStreamingLinks: (links: any[]) => void;
-  setStreamableSources: React.Dispatch<React.SetStateAction<Record<string, Record<string, any[]>>>>;
+  streamingLinks: StreamingServer[];
+  seasonBoundaries: SeasonBoundary[];
+  setStreamingLinks: (links: StreamingServer[]) => void;
+  setStreamableSources: React.Dispatch<React.SetStateAction<StreamableSources>>;
   
   // Actions
   onBack: () => void;
@@ -50,31 +66,31 @@ interface MovieDetailContextType {
   initialEpisode?: number;
 }
 
-const MovieDetailContext = createContext<MovieDetailContextType | undefined>(undefined);
+const MediaDetailContext = createContext<MediaDetailContextType | undefined>(undefined);
 
-export const MovieDetailProvider = ({ children, initialValues }: { children: ReactNode, initialValues: any }) => {
+export const MediaDetailProvider = ({ children, initialValues }: { children: ReactNode, initialValues: any }) => {
   const [media, setMedia] = useState<BaseMedia | null>(null);
   const [loading, setLoading] = useState(true);
   const [localExists, setLocalExists] = useState(false);
   
-  const [streamableSources, setStreamableSources] = useState<Record<string, Record<string, any[]>>>({});
+  const [streamableSources, setStreamableSources] = useState<StreamableSources>({});
   const [activeType, setActiveType] = useState<string>('');
   const [activeProvider, setActiveProvider] = useState<string>('');
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
   const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
-  const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
+  const [streamingLinks, setStreamingLinks] = useState<StreamingServer[]>([]);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
-  const [userSettings, setUserSettings] = useState<any>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
   // Derived: Season boundaries for UI navigation
-  const seasonBoundaries = React.useMemo(() => {
+  const seasonBoundaries = useMemo(() => {
     if (!media || media.type !== 'tv') return [];
-    const tv = media as any; // Cast to access tv-specific seasons
+    const tv = media as any; 
     let current = 0;
-    return (tv.seasons || []).map((s: any) => {
+    return (tv.seasons || []).map((s: any): SeasonBoundary => {
         const boundary = { 
             name: s.name, 
             season_number: s.season_number, 
@@ -88,18 +104,21 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
 
   // Reset state on slug change
   useEffect(() => {
-    setMedia(null);
-    setLoading(true);
-    setStreamableSources({});
-    setActiveType('');
-    setActiveProvider('');
-    setActiveServerIdx(0);
-    setActiveEpisodeIdx(0);
-    setActiveSeasonIdx(0);
-    setActiveEmbed(null);
-    setStreamingLinks([]);
-    setIsPlayerReady(false);
-    setPlayerError(null);
+    const reset = () => {
+        setMedia(null);
+        setLoading(true);
+        setStreamableSources({});
+        setActiveType('');
+        setActiveProvider('');
+        setActiveServerIdx(0);
+        setActiveEpisodeIdx(0);
+        setActiveSeasonIdx(0);
+        setActiveEmbed(null);
+        setStreamingLinks([]);
+        setIsPlayerReady(false);
+        setPlayerError(null);
+    };
+    reset();
   }, [initialValues.slug]);
 
   const value = {
@@ -127,16 +146,16 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   };
 
   return (
-    <MovieDetailContext.Provider value={value}>
+    <MediaDetailContext.Provider value={value}>
       {children}
-    </MovieDetailContext.Provider>
+    </MediaDetailContext.Provider>
   );
 };
 
-export const useMovieDetail = () => {
-  const context = useContext(MovieDetailContext);
+export const useMediaDetail = () => {
+  const context = useContext(MediaDetailContext);
   if (context === undefined) {
-    throw new Error('useMovieDetail must be used within a MovieDetailProvider');
+    throw new Error('useMediaDetail must be used within a MediaDetailProvider');
   }
   return context;
 };

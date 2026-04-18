@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { Loader2, Activity, Zap, Magnet, Globe, Box, Tv } from 'lucide-react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { Loader2, Activity, Zap, Magnet, Globe, Box, Tv, RefreshCw } from 'lucide-react';
 import { MediaRepository } from '../../infrastructure/repositories/MediaRepository';
 import { RankingService } from '../../domain/services/RankingService';
-import type { MediaLink } from '../../api/config';
+import type { MediaLink, StreamingEpisode } from '../../api/config';
 import { useCloudViewModel } from '../view-models/CloudViewModel';
 import { DeepRow } from './discovery/DeepRow';
 import { TorrentRow } from './discovery/TorrentRow';
@@ -20,7 +20,6 @@ interface DiscoveryPipelineProps {
   onStreamingReady?: (links: any[], source: string) => void;
 }
 
-// ── Discovery source registry ─────────────────────────────────────────────────
 const DISCOVERY_SOURCES = [
   { source_type: 'm3u8',        source: 'kkphim'       },
   { source_type: 'm3u8',        source: 'ophim'        },
@@ -35,7 +34,6 @@ const DISCOVERY_SOURCES = [
 type SourceType = typeof DISCOVERY_SOURCES[number]['source_type'];
 type LoadingKey = `${SourceType}:${string}`;
 
-// ── Source type display meta ──────────────────────────────────────────────────
 const SOURCE_TYPE_META: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   m3u8:        { label: 'Stream',      color: 'text-orange-400',  icon: <Zap      className="w-3 h-3" /> },
   fshare:      { label: 'FShare',      color: 'text-red-400',     icon: <Box      className="w-3 h-3" /> },
@@ -68,112 +66,128 @@ export const DiscoveryPipeline = ({
   const [loadingKeys, setLoadingKeys] = useState<Set<LoadingKey>>(new Set());
   const [doneKeys,    setDoneKeys]    = useState<Set<LoadingKey>>(new Set());
   const [activeTab,   setActiveTab]   = useState<string>('');
+  const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   const streamingNotifiedRef = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
+  const fetchSources = async (force = false) => {
     const ctrl = new AbortController();
-
+    
+    // 1. Reset states
     setStreamableByType({});
     setDownloadableByType({});
     setLoadingKeys(new Set(ALL_KEYS));
     setDoneKeys(new Set());
     setActiveTab('');
     streamingNotifiedRef.current = new Set();
+    if (force) setIsForceRefreshing(true);
 
     const markDone = (key: LoadingKey) => {
       setLoadingKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
       setDoneKeys(prev    => { const n = new Set(prev); n.add(key);    return n; });
     };
 
-    DISCOVERY_SOURCES.forEach(async (sourceConfig) => {
-      const { source_type, source } = sourceConfig;
-      const key = toKey(source_type, source);
-      try {
-        const isTV = mediaType === 'tv';
-        const targetSeason = isTV ? (season ?? initialSeason) : undefined;
-        const targetEpisode = isTV ? initialEpisode : undefined;
+    const isTV = mediaType === 'tv';
+    const targetSeason = isTV ? (season ?? initialSeason) : undefined;
+    const targetEpisode = isTV ? initialEpisode : undefined;
 
-        const items = await MediaRepository.discoverSources({
-          tmdb_id: tmdbId,
-          media_type: mediaType,
-          title,
-          source_type,
-          source,
-          ...(localizeTitle ? { localize_title: localizeTitle } : {}),
-          ...(year ? { year } : {}),
-          ...(targetSeason ? { season: targetSeason } : {}),
-          ...(targetEpisode ? { episode: targetEpisode } : {}),
-        });
+    // 2. Call the new Streaming API
+    MediaRepository.discoverSourcesStream(
+      {
+        tmdb_id: tmdbId,
+        media_type: mediaType,
+        title,
+        force,
+        ...(localizeTitle ? { localize_title: localizeTitle } : {}),
+        ...(year ? { year } : {}),
+        ...(targetSeason ? { season: targetSeason } : {}),
+        ...(targetEpisode ? { episode: targetEpisode } : {}),
+      },
+      {
+        onInit: (_total, _sources) => {
+          // Optional: dynamically set loading keys based on 'sources' array from backend
+          // For now, ALL_KEYS is fine since both sides use DISCOVERY_SOURCES
+        },
+        onResult: (source_type, source, items, error) => {
+          const key = toKey(source_type, source);
 
-        if (items.length === 0) { markDone(key); return; }
-
-        if (source_type === 'm3u8') {
-          setStreamableByType(prev => {
-            const next = { ...prev };
-            const existing: Record<string, any[]> = { ...(next['m3u8'] ?? {}) };
-            for (const group of items) {
-              const srv = group.server || source;
-              if (!existing[srv]) existing[srv] = [];
-              existing[srv].push(...(group.episodes ?? []).map((ep: any) => ({ ...ep, source })));
-            }
-            next['m3u8'] = existing;
-            return next;
-          });
-
-          if (!streamingNotifiedRef.current.has(source)) {
-            streamingNotifiedRef.current.add(source);
-            const flat = items.flatMap((g: any) =>
-              (g.episodes ?? []).map((ep: any) => ({ 
-                ...ep, 
-                server: g.server, 
-                source_type, 
-                source 
-              }))
-            );
-            onStreamingReady?.(flat, source);
+          if (error || !items || items.length === 0) {
+            if (error) console.error(`[Discovery] Streaming failure for ${key}:`, error);
+            markDone(key);
+            return;
           }
-        } else {
-          setDownloadableByType(prev => {
-            const existing = prev[source_type] ?? [];
-            const existingUrls = new Set(existing.map((l: any) => l.url));
-            const fresh = items.filter((l: any) => l.url && !existingUrls.has(l.url));
-            if (fresh.length === 0) return prev;
-            
-            const combined = [...existing, ...fresh];
-            return { ...prev, [source_type]: RankingService.sortMediaLinks(combined) };
-          });
-        }
 
-        markDone(key);
-      } catch (err: any) {
-        markDone(key);
-      }
-    });
+          if (source_type === 'm3u8') {
+            setStreamableByType(prev => {
+              const next = { ...prev };
+              const existing: Record<string, any[]> = { ...(next['m3u8'] ?? {}) };
+              for (const group of items) {
+                const srv = group.server || source;
+                if (!existing[srv]) existing[srv] = [];
+                existing[srv].push(...(group.episodes ?? []).map((ep: any) => ({ ...ep, source })));
+              }
+              next['m3u8'] = existing;
+              return next;
+            });
+
+            if (!streamingNotifiedRef.current.has(source)) {
+              streamingNotifiedRef.current.add(source);
+              const flat = items.flatMap((g: any) =>
+                (g.episodes ?? []).map((ep: StreamingEpisode) => ({ 
+                  ...ep, 
+                  server: g.server, 
+                  source_type, 
+                  source 
+                }))
+              );
+              if (onStreamingReady) onStreamingReady(flat, source);
+            }
+          } else {
+            setDownloadableByType(prev => {
+              const existing = prev[source_type] ?? [];
+              const existingUrls = new Set(existing.map((l: MediaLink) => l.url));
+              const fresh = items.filter((l: MediaLink) => l.url && !existingUrls.has(l.url));
+              if (fresh.length === 0) return prev;
+              const combined = [...existing, ...fresh];
+              return { ...prev, [source_type]: RankingService.sortMediaLinks(combined) };
+            });
+          }
+          markDone(key);
+        },
+        onDone: () => {
+          setIsForceRefreshing(false);
+          setLoadingKeys(new Set()); // Ensure we don't spin forever if a source silently fails
+        },
+        onError: (_err) => {
+          setIsForceRefreshing(false);
+          setLoadingKeys(new Set());
+        }
+      },
+      ctrl.signal
+    );
 
     return () => ctrl.abort();
-  }, [tmdbId, title, localizeTitle, year, mediaType, season]);
+  };
+
+  useEffect(() => {
+    fetchSources(false);
+  }, [tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode]);
 
   const tabs = ['m3u8', 'fshare', 'torrent', 'gdrive', 'dailymotion'].flatMap(st => {
     const isStreamable = st === 'm3u8';
     const hasResults   = isStreamable ? !!streamableByType[st] : !!downloadableByType[st];
-    const loading      = DISCOVERY_SOURCES.filter(d => d.source_type === st).some(d => loadingKeys.has(toKey(d.source_type, d.source)));
-    
-    if (!hasResults && !loading) return [];
-
+    const isLoadingType = DISCOVERY_SOURCES.filter(d => d.source_type === st).some(d => loadingKeys.has(toKey(d.source_type, d.source)));
+    if (!hasResults && !isLoadingType) return [];
     const meta  = SOURCE_TYPE_META[st] || { label: st, color: 'text-sky-400', icon: <Box className="w-3 h-3" /> };
-    const count = isStreamable
-      ? Object.keys(streamableByType[st] ?? {}).length
-      : (downloadableByType[st] ?? []).length;
+    const count = isStreamable ? Object.keys(streamableByType[st] ?? {}).length : (downloadableByType[st] ?? []).length;
     const badge = isStreamable ? (count > 0 ? `${count} sv` : '…') : String(count);
-
-    return [{ id: st, label: meta.label, icon: meta.icon, color: meta.color, badge, isLoading: loading }];
+    return [{ id: st, label: meta.label, icon: meta.icon, color: meta.color, badge, isLoading: isLoadingType }];
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (tabs.length > 0 && (!activeTab || !tabs.find(t => t.id === activeTab))) {
       setActiveTab(tabs[0].id);
     }
-  }, [tabs.map(t => t.id).join(',')]);
+  }, [tabs, activeTab]);
 
   const m3u8Groups: { src: string; entries: [string, any[]][] }[] = [];
   for (const [serverName, eps] of Object.entries(streamableByType['m3u8'] ?? {})) {
@@ -189,6 +203,16 @@ export const DiscoveryPipeline = ({
         <div className="flex items-center gap-3">
           <Activity className={`w-4 h-4 ${loadingKeys.size > 0 ? 'text-blue-500 animate-pulse' : 'text-blue-500/60'}`} />
           <h3 className="text-xs font-black uppercase italic tracking-wider font-outfit text-gray-300">Discovery Engine</h3>
+          
+          {/* Force Refresh Button */}
+          <button 
+            onClick={() => fetchSources(true)}
+            disabled={loadingKeys.size > 0}
+            className={`ml-2 p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 transition-all group ${loadingKeys.size > 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+            title="Force re-scan all sources (bypass cache)"
+          >
+            <RefreshCw className={`w-3 h-3 text-gray-500 group-hover:text-blue-400 transition-colors ${isForceRefreshing ? 'animate-spin text-blue-500' : ''}`} />
+          </button>
         </div>
         <div className="flex items-center gap-1 flex-wrap justify-end max-w-[120px]">
           {ALL_KEYS.map(key => (

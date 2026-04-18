@@ -27,19 +27,18 @@ class KKPhimProvider(PhimAPIBase):
         season: int = None,
         episode: int = None,
         year: int = None,
+        anchor_slug: str = None,
+        force: bool = False
     ) -> List[Dict[str, Any]]:
         """KKPhim-specific lookup with TMDB ID endpoint support."""
-        anchor_slug = None
+        anchor_slug_found = anchor_slug
 
-        # 1. TMDB ID via phimapi TMDB endpoint. We only use this as a hint:
-        # TV shows may be split into one entity per season, and /tmdb/tv/{id}
-        # does not consistently point to the requested season.
-        if tmdb_id:
+        # 1. TMDB ID via phimapi TMDB endpoint.
+        if tmdb_id and not anchor_slug_found:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
-                anchor_slug = res.get("movie", {}).get("slug")
+                anchor_slug_found = res.get("movie", {}).get("slug")
 
-        # 2-5. Fallback to base lookup (slug from titles, search)
         return await super().lookup(
             client,
             tmdb_id,
@@ -49,7 +48,8 @@ class KKPhimProvider(PhimAPIBase):
             season,
             episode,
             year,
-            anchor_slug=anchor_slug,
+            anchor_slug=anchor_slug_found,
+            force=force
         )
 
 _kkphim = KKPhimProvider()
@@ -63,38 +63,11 @@ async def lookup_kkphim(
     season: int = None,
     episode: int = None,
     year: int = None,
+    force: bool = False
 ) -> List[Dict[str, Any]]:
-    return await _kkphim.lookup(client, tmdb_id, title, localize_title, media_type, season, episode, year)
+    return await _kkphim.lookup(client, tmdb_id, title, localize_title, media_type, season, episode, year, force=force)
 
-# For backward compatibility if needed in main or other scripts
-def kkphim_get_details(slug: str):
-    # This is now synchronous-ish or needs a client. 
-    # Since it was used in __main__, we'll keep a legacy-ish wrapper if needed or just update main.
-    pass
-
-if __name__ == "__main__":
-    import sys
-    async def main():
-        if len(sys.argv) < 2:
-            print(json.dumps({"error": "Usage: python kkphim_lookup.py <keyword_or_slug> [tmdb_id] [media_type]"}))
-            sys.exit(1)
-        
-        input_str = sys.argv[1]
-        tmdb_id = sys.argv[2] if len(sys.argv) > 2 else None
-        media_type = sys.argv[3] if len(sys.argv) > 3 else "movie"
-
-        async with httpx.AsyncClient() as client:
-            provider = KKPhimProvider()
-            
-            # Simplified main for debugging
-            if tmdb_id and tmdb_id.isdigit():
-                results = await provider.lookup(client, tmdb_id=tmdb_id, media_type=media_type)
-            elif "-" in input_str:
-                details = await provider.get_formatted_details(client, input_str)
-                results = provider.extract_streaming_links(details, media_type)
-            else:
-                results = await provider.lookup(client, title=input_str, media_type=media_type)
-            
-            print(json.dumps(results, ensure_ascii=False))
-
-    asyncio.run(main())
+async def kkphim_get_details(slug: str):
+    """Wrapper for external detail fetching."""
+    async with httpx.AsyncClient() as client:
+        return await _kkphim.get_formatted_details(client, slug)

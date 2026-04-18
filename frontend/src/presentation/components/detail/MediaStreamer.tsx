@@ -1,6 +1,6 @@
 import React, { forwardRef, useRef, useEffect } from 'react';
 import { Loader2, Zap, Activity } from 'lucide-react';
-import { useMovieDetail } from '../../context/MovieDetailContext';
+import { useMediaDetail } from '../../context/MediaDetailContext';
 import { usePlaybackController } from '../../view-models/PlaybackController';
 
 export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
@@ -11,7 +11,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const { 
         activeEmbed, activeType, activeProvider,
         isPlayerReady, playerError, slug, mediaType, activeEpisodeIdx
-    } = useMovieDetail();
+    } = useMediaDetail();
     
     usePlaybackController(videoRef);
 
@@ -30,7 +30,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
             const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
             
             // First try provider-specific progress, then fallback to common episode progress
-            let saved = progressStore[progressKey] || progressStore[commonKey];
+            const saved = progressStore[progressKey] || progressStore[commonKey];
             
             const url = new URL(activeEmbed);
             

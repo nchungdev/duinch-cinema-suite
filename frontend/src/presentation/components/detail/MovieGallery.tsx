@@ -1,14 +1,13 @@
-import React from 'react';
-import { Play, Loader2 } from 'lucide-react';
+
+import { Play } from 'lucide-react';
 import { MarqueeText } from '../MarqueeText';
-import { useMovieDetail } from '../../context/MovieDetailContext';
-import { useStreamResolvers } from '../../view-models/useStreamResolvers';
+import { useMediaDetail } from '../../context/MediaDetailContext';
 
 export const MovieGallery = () => {
     const { 
         streamingLinks, activeServerIdx, activeEpisodeIdx, setActiveEpisodeIdx,
         setActiveServerIdx
-    } = useMovieDetail();
+    } = useMediaDetail();
 
     return (
         <div className="flex h-full bg-[#0a0a0c] overflow-hidden rounded-3xl border border-white/5 shadow-2xl">

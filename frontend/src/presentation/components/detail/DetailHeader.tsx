@@ -1,13 +1,12 @@
-import React from 'react';
+
 import { ChevronLeft } from 'lucide-react';
-import { useMovieDetail } from '../../context/MovieDetailContext';
-import { getProxiedImageUrl } from '../../api/config';
+import { useMediaDetail } from '../../context/MediaDetailContext';
+import { getProxiedImageUrl } from '../../../api/config';
 
 export const DetailHeader = () => {
-    const { media, onBack } = useMovieDetail();
+    const { media, onBack } = useMediaDetail();
     if (!media) return null;
 
-    const posterUrl = getProxiedImageUrl(media.poster);
     const bgUrl = getProxiedImageUrl(media.backdrop || media.poster);
 
     return (
@@ -34,7 +33,7 @@ export const DetailHeader = () => {
             <div className="absolute inset-0 flex items-end px-12 pb-12">
                 <div className="w-full max-w-7xl mx-auto animate-slide-up-delayed">
                     <h1 className="text-5xl font-black tracking-tight text-white leading-tight drop-shadow-2xl">
-                        {metadata.title}
+                        {media.title}
                     </h1>
                 </div>
             </div>

@@ -1,12 +1,12 @@
 import { motion } from 'framer-motion';
 import type { MediaItem } from '../../api/config';
 
-interface MovieCardProps {
+interface MediaCardProps {
   item: MediaItem;
   onClick: (slug: string, mediaType: string) => void;
 }
 
-export const MovieCard = ({ item, onClick }: MovieCardProps) => {
+export const MediaCard = ({ item, onClick }: MediaCardProps) => {
   return (
     <motion.div
       layout

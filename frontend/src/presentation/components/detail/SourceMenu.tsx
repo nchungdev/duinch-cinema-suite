@@ -1,14 +1,14 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Layout, Zap, Activity, Cloud, Settings, ChevronRight } from 'lucide-react';
-import { useMovieDetail } from '../../context/MovieDetailContext';
-import { api } from '../../api/config';
+import { useMediaDetail } from '../../context/MediaDetailContext';
+import { api } from '../../../api/config';
 
 export const SourceMenu = () => {
     const { 
         streamableSources, activeType, activeProvider,
         userSettings, setUserSettings, setActiveType, setActiveProvider
-    } = useMovieDetail();
+    } = useMediaDetail();
     
     const [showMenu, setShowMenu] = useState(false);
     const [expandedGroup, setExpandedGroup] = useState<string | null>(null);

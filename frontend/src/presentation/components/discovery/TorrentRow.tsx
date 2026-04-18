@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { Loader2, ChevronDown, Magnet, Users, File } from 'lucide-react';
-import { api } from '../../api/config';
-import { formatSize } from '../../utils/formatters';
-import { RankingService } from '../../domain/services/RankingService';
+import { Loader2, ChevronDown, Users, File } from 'lucide-react';
+import { api } from '../../../api/config';
+import { formatSize } from '../../../utils/formatters';
+import { RankingService } from '../../../domain/services/RankingService';
+import { DeepRow } from './DeepRow';
+import { useCloudViewModel } from '../../view-models/CloudViewModel';
+import { CloudButtons } from './CloudActions';
+import type { CloudTarget } from '../../../services/cloudTargets';
 
 interface TorrentLink {
   url: string; 
@@ -59,23 +63,42 @@ const QualityBadge: React.FC<{ quality: string }> = ({ quality }) => {
 };
 
 export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | null }> = ({ link, sourceBadge }) => {
+  const cloudTargets = useCloudViewModel();
   const [expanded, setExpanded] = useState(false);
-  const [files, setFiles] = useState<{ name: string; size: number }[] | null>(null);
+  const [files, setFiles] = useState<any[] | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
 
-  const canExpand = (link.num_files ?? 0) > 1 && !!link.info_hash;
+  const canExpand = (link.num_files ?? 0) > 1 || !!link.info_hash;
 
   const toggleFiles = async () => {
     if (!canExpand) return;
     if (expanded) { setExpanded(false); return; }
     setExpanded(true);
     if (files !== null) return;
+    
     setLoadingFiles(true);
     try {
-      const res = await api.get(`/media/torrent-files?info_hash=${link.info_hash}`);
-      setFiles(res.data?.files ?? []);
-    } catch { setFiles([]); }
+      const res = await api.get(`/media/expand-folder?url=${encodeURIComponent(link.url || link.info_hash || '')}&provider=torrent`);
+      setFiles(res.data?.data?.results || []);
+    } catch { 
+      setFiles([]); 
+    }
     setLoadingFiles(false);
+  };
+
+  const handleCloudAction = async (target: CloudTarget) => {
+    try {
+        await api.post('/downloader/add', {
+            url: link.url,
+            name: link.name,
+            target: target.id,
+            provider: 'torrent'
+        });
+        alert(`Gửi Torrent tới ${target.label} thành công!`);
+    } catch (err) {
+        console.error('[TorrentRow] Cloud action failed:', err);
+        alert('Lỗi khi gửi Torrent!');
+    }
   };
 
   return (
@@ -116,32 +139,39 @@ export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | nu
           {canExpand && (
             <button onClick={toggleFiles}
               className="p-1.5 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-all">
-              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+              {loadingFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />}
             </button>
           )}
-          <button onClick={() => window.open(link.url, '_blank')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest text-green-400">
-            <Magnet className="w-2.5 h-2.5" />
-            Magnet
-          </button>
+          
+          <CloudButtons 
+            targets={cloudTargets}
+            onDeviceAction={() => window.open(link.url, '_blank')}
+            onCloudAction={handleCloudAction}
+          />
         </div>
       </div>
 
       {expanded && (
-        <div className="border-t border-white/5 px-3 py-2 space-y-1 animate-cinema-fade">
+        <div className="border-t border-white/5 px-1 py-1 bg-white/[0.02] animate-cinema-fade">
           {loadingFiles ? (
-            <div className="flex items-center gap-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600">
-              <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />Fetching files…
+            <div className="flex items-center gap-2 px-4 py-3 text-[8px] font-black uppercase tracking-widest text-gray-600">
+              <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />Exploring transmission grid…
             </div>
           ) : files && files.length > 0 ? (
-            files.map((f, i) => (
-              <div key={i} className="flex items-center justify-between gap-3 py-1 border-b border-white/5 last:border-0">
-                <span className="text-[8px] font-medium text-gray-400 truncate flex-1">{f.name}</span>
-                <span className="text-[7px] font-bold text-gray-600 shrink-0">{formatSize(f.size)}</span>
-              </div>
-            ))
+            <div className="max-h-80 overflow-y-auto custom-scrollbar">
+              {files.map((f, i) => (
+                <DeepRow 
+                  key={i} 
+                  link={f} 
+                  actionLabel="Watch" 
+                  color="text-green-400" 
+                  onAction={() => {}} 
+                  depth={1} 
+                />
+              ))}
+            </div>
           ) : (
-            <p className="text-[8px] text-gray-600 uppercase tracking-widest">No file data available</p>
+            <p className="text-[8px] text-gray-600 uppercase tracking-widest py-3 px-4 italic">No transmissions found in this node</p>
           )}
         </div>
       )}

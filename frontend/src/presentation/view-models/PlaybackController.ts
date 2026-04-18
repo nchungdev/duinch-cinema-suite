@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
-import { useMovieDetail } from '../context/MovieDetailContext';
+import { useMediaDetail } from '../context/MediaDetailContext';
 
 /**
  * Controller: PlaybackController
@@ -11,7 +11,7 @@ export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement
   const { 
     activeEmbed, activeType, setIsPlayerReady, setPlayerError, 
     slug, mediaType, activeEpisodeIdx, activeProvider 
-  } = useMovieDetail();
+  } = useMediaDetail();
   
   const hlsRef = useRef<Hls | null>(null);
 

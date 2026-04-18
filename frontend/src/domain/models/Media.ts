@@ -17,18 +17,40 @@ export interface Season {
 }
 
 export abstract class BaseMedia {
+  public readonly id: string;
+  public readonly title: string;
+  public readonly originTitle: string;
+  public readonly year: number;
+  public readonly poster: string;
+  public readonly backdrop: string;
+  public readonly overview: string;
+  public readonly genres: Genre[];
+  public readonly quality: string;
+  public readonly rating?: number;
+
   constructor(
-    public readonly id: string,
-    public readonly title: string,
-    public readonly originTitle: string,
-    public readonly year: number,
-    public readonly poster: string,
-    public readonly backdrop: string,
-    public readonly overview: string,
-    public readonly genres: Genre[],
-    public readonly quality: string = 'HD',
-    public readonly rating?: number
-  ) {}
+    id: string,
+    title: string,
+    originTitle: string,
+    year: number,
+    poster: string,
+    backdrop: string,
+    overview: string,
+    genres: Genre[],
+    quality: string = 'HD',
+    rating?: number
+  ) {
+    this.id = id;
+    this.title = title;
+    this.originTitle = originTitle;
+    this.year = year;
+    this.poster = poster;
+    this.backdrop = backdrop;
+    this.overview = overview;
+    this.genres = genres;
+    this.quality = quality;
+    this.rating = rating;
+  }
 
   abstract get type(): 'movie' | 'tv';
 
@@ -46,6 +68,9 @@ export class Movie extends BaseMedia {
 }
 
 export class TVShow extends BaseMedia {
+  public readonly seasons: Season[];
+  public readonly totalEpisodes: number;
+
   constructor(
     id: string,
     title: string,
@@ -55,11 +80,13 @@ export class TVShow extends BaseMedia {
     backdrop: string,
     overview: string,
     genres: Genre[],
-    public readonly seasons: Season[],
-    public readonly totalEpisodes: number,
+    seasons: Season[],
+    totalEpisodes: number,
     quality: string = 'HD'
   ) {
     super(id, title, originTitle, year, poster, backdrop, overview, genres, quality);
+    this.seasons = seasons;
+    this.totalEpisodes = totalEpisodes;
   }
 
   get type(): 'tv' { return 'tv'; }
@@ -70,10 +97,11 @@ export class TVShow extends BaseMedia {
   public getSeasonAt(globalEpisodeIdx: number): Season | null {
     let current = 0;
     for (const s of this.seasons) {
-      if (globalEpisodeIdx >= current && globalEpisodeIdx < current + s.episode_count) {
+      const episodeCount = Number(s.episode_count);
+      if (globalEpisodeIdx >= current && globalEpisodeIdx < current + episodeCount) {
         return s;
       }
-      current += s.episode_count;
+      current += episodeCount;
     }
     return null;
   }

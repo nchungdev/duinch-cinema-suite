@@ -1,10 +1,10 @@
-import React from 'react';
-import { Clock, Calendar, Globe, Star } from 'lucide-react';
-import { useMovieDetail } from '../../context/MovieDetailContext';
-import { getProxiedImageUrl } from '../../api/config';
+
+import { Calendar, Star } from 'lucide-react';
+import { useMediaDetail } from '../../context/MediaDetailContext';
+import { getProxiedImageUrl } from '../../../api/config';
 
 export const MediaInfo = () => {
-    const { media, localExists } = useMovieDetail();
+    const { media, localExists } = useMediaDetail();
     if (!media) return null;
 
     const posterUrl = getProxiedImageUrl(media.poster);
