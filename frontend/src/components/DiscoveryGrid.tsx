@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api, getProxiedImageUrl } from '../api/config';
 import { PlayCircle, Loader2 } from 'lucide-react';
+import { MediaRepository } from '../repositories/MediaRepository';
 
 interface DiscoveryItem {
   title: string;
@@ -44,19 +45,17 @@ export function DiscoveryGrid({ category, mediaType = 'all', staticItems, onMovi
     setLoading(true);
     
     try {
-      // All discovery goes through TMDB — no PhimAPI on home
-      const endpoint =
-        category === 'phim-le'
-          ? `/movies?category=popular&page=${page}`
-          : category === 'phim-bo'
-            ? `/tvs?category=popular&page=${page}`
-            : `/trending?media_type=${mediaType}&page=${page}`; // 'new' + fallback
-        
-      const res = await api.get<DiscoveryResponse>(endpoint, {
-        signal: abortControllerRef.current.signal
-      });
+      let newItems = [];
+      if (category === 'phim-le') {
+        const { data } = await api.get(`/movies?category=popular&page=${page}`, { signal: abortControllerRef.current.signal });
+        newItems = data.results || [];
+      } else if (category === 'phim-bo') {
+        const { data } = await api.get(`/tvs?category=popular&page=${page}`, { signal: abortControllerRef.current.signal });
+        newItems = data.results || [];
+      } else {
+        newItems = await MediaRepository.getTrending(mediaType, page);
+      }
       
-      const newItems = res.data?.results || [];
       setItems(prev => isInitial ? newItems : [...prev, ...newItems]);
       
       if (newItems.length < 5) setHasMore(false);
