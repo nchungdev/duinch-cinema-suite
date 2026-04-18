@@ -209,24 +209,34 @@ export const TVGallery = () => {
                             </button>
 
                             {!collapsedSeasons.has(sIdx) && eps.map((globalIdx) => {
+                                const localEpNum = globalIdx - s.start + 1;
                                 const ep = serverData.find(e => {
+                                    const m = e.name?.match(/\d+/);
+                                    // Try to match either local episode number or global index
+                                    return m ? parseInt(m[0]) === localEpNum : false;
+                                });
+                                
+                                // Secondary check: if local numbering failed, try matching global episode number
+                                const finalEp = ep || serverData.find(e => {
                                     const m = e.name?.match(/\d+/);
                                     return m ? parseInt(m[0]) === (globalIdx + 1) : false;
                                 });
+
+                                const isPlaying = activeEpisodeIdx === globalIdx;
                                 if (globalIdx === activeEpisodeIdx) {
                                     console.log('[TVGallery] active episode match', {
                                         activeServerIdx,
                                         seasonNumber: s.season_number,
                                         globalIdx,
-                                        expectedEpisodeInSeason: globalIdx - s.start + 1,
-                                        matchedEpisode: ep,
+                                        expectedLocalEp: localEpNum,
+                                        matchedEpisode: finalEp,
                                     });
                                 }
-                                const isPlaying = activeEpisodeIdx === globalIdx;
-                                const isFshare = ep?.source_type === 'fshare' || ep?.url?.includes('fshare.vn');
+                                
+                                const isFshare = finalEp?.source_type === 'fshare' || finalEp?.url?.includes('fshare.vn');
                                 if (isFshare && !userSettings?.fshare_session) return null;
 
-                                const hasLink = !!ep;
+                                const hasLink = !!finalEp;
                                 const isLoading = isPlaying && (isTorrentStreaming || isFshareResolving);
 
                                 return (
@@ -234,10 +244,11 @@ export const TVGallery = () => {
                                         <button 
                                             disabled={!hasLink || isLoading}
                                             onClick={() => {
-                                                if (ep.isTorrent) {
-                                                    handleTorrentStream(ep.magnet, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
+                                                if (!finalEp) return;
+                                                if (finalEp.isTorrent) {
+                                                    handleTorrentStream(finalEp.magnet, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
                                                 } else if (isFshare) {
-                                                    handleFshareStream(ep.url, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
+                                                    handleFshareStream(finalEp.url, streamingLinks[activeServerIdx]?.server_name, globalIdx, activeServerIdx);
                                                 } else {
                                                     setActiveEpisodeIdx(globalIdx);
                                                 }
@@ -249,7 +260,7 @@ export const TVGallery = () => {
                                             </div>
                                             <div className="flex flex-col items-start">
                                                 <span className={`text-[10px] font-black uppercase ${isPlaying ? 'text-white' : 'text-gray-400'}`}>Episode {String(globalIdx + 1).padStart(2, '0')}</span>
-                                                <span className="text-[7px] font-bold text-gray-600 uppercase tracking-widest">{ep?.stream_type || 'DIGITAL'}</span>
+                                                <span className="text-[7px] font-bold text-gray-600 uppercase tracking-widest">{finalEp?.stream_type || 'DIGITAL'}</span>
                                             </div>
                                         </button>
                                     </div>

@@ -39,12 +39,20 @@ async def discovery(
         parts = [base]
         if media_type == "movie" and year:
             parts.append(str(year))
-        if season and episode:
-            parts.append(f"S{season:02d}E{episode:02d}")
-        elif season:
-            parts.append(f"Season {season}")
-        elif media_type == "tv" and year:
-            parts.append(str(year))
+        
+        # P2P / DIRECT: Broader search for TV (Full season packs / series)
+        is_p2p_or_direct = source_type in ["torrent", "fshare", "gdrive"]
+        
+        if is_p2p_or_direct and media_type == "tv":
+            if year: parts.append(str(year))
+        else:
+            if season and episode:
+                parts.append(f"S{season:02d}E{episode:02d}")
+            elif season:
+                parts.append(f"Season {season}")
+            elif media_type == "tv" and year:
+                parts.append(str(year))
+                
         return " ".join(parts)
 
     primary   = _build_query(clean_title)
@@ -62,24 +70,28 @@ async def discovery(
 
         # ── Torrent ───────────────────────────────────────────────────────────
         elif source_type == "torrent":
-            results = await lookup_torrent(clean_title, tmdb_id, media_type, season, episode, year)
+            t_season = None if media_type == "tv" else season
+            t_episode = None if media_type == "tv" else episode
+            results = await lookup_torrent(clean_title, tmdb_id, media_type, t_season, t_episode, year)
 
         # ── FShare ────────────────────────────────────────────────────────────
         elif source_type == "fshare":
             if source == "timfshare":
-                results = await lookup_timfshare(primary, year=year, filter_title=clean_title)
+                results = await lookup_timfshare(primary, year=year, filter_title=clean_title, media_type=media_type)
                 if secondary:
-                    sec = await lookup_timfshare(secondary, year=year, filter_title=clean_localize)
+                    sec = await lookup_timfshare(secondary, year=year, filter_title=clean_localize, media_type=media_type)
                     results = results + sec
             elif source == "thuviencine":
-                results = await lookup_thuviencine(primary, filter_title=clean_title, year=year)
+                results = await lookup_thuviencine(primary, filter_title=clean_title, year=year, media_type=media_type)
                 if secondary:
-                    sec = await lookup_thuviencine(secondary, filter_title=clean_localize, year=year)
+                    sec = await lookup_thuviencine(secondary, filter_title=clean_localize, year=year, media_type=media_type)
                     results = results + sec
             elif source == "web":
-                results = await lookup_google_fshare(clean_title, year, season, episode)
+                g_season = None if media_type == "tv" else season
+                g_episode = None if media_type == "tv" else episode
+                results = await lookup_google_fshare(clean_title, year, g_season, g_episode, media_type)
                 if clean_localize:
-                    sec = await lookup_google_fshare(clean_localize, year, season, episode)
+                    sec = await lookup_google_fshare(clean_localize, year, g_season, g_episode, media_type)
                     results = results + sec
 
         # ── Google Drive ──────────────────────────────────────────────────────

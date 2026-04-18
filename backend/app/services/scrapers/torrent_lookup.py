@@ -30,6 +30,59 @@ async def get_english_title(client: httpx.AsyncClient, tmdb_id: int, media_type:
     except Exception:
         return None
 
+def _is_relevant(name: str, title: str, media_type: str = "movie") -> bool:
+    """
+    Check if a torrent name is actually relevant to the search title.
+    Focus on word-based exact matches for short titles (like 'The Boys').
+    """
+    def get_words(text: str) -> set:
+        # Lowercase, keep letters/numbers, split by non-alphanumeric
+        clean = re.sub(r'[^a-z0-9\s]', ' ', text.lower())
+        # Filter out common video tech terms and short filler
+        stops = {'1080p', '720p', '2160p', '4k', 'uhd', 'remux', 'web', 'dl', 'h264', 'x264', 'h265', 'x265', 'aac', 'ddp5', 'bluray', 'brrip', 'dvdrip'}
+        return {w for w in clean.split() if w not in stops and len(w) > 1}
+
+    title_words = get_words(title)
+    name_words = get_words(name)
+    
+    if not title_words: return True
+    
+    # Check if ALL title words are present in the name
+    if not title_words.issubset(name_words):
+        return False
+        
+    return True
+
+def _score_torrent(item: Dict[str, Any], title: str) -> float:
+    """Calculate a relevance/quality score for sorting."""
+    score = 0.0
+    
+    # 1. Title match boost
+    name = item.get("name", "").lower()
+    clean_title = title.lower()
+    if clean_title in name:
+        score += 100
+        # Check if it starts with the title (better)
+        if name.split("|")[-1].strip().startswith(clean_title):
+            score += 50
+
+    # 2. Quality boost
+    quality_map = {'4K': 40, 'Remux': 35, '1080p': 30, '720p': 20, 'HD': 10, 'CAM': -50}
+    score += quality_map.get(item.get("quality", "HD"), 0)
+    
+    # 3. Seeders boost (Logarithmic)
+    import math
+    seeds = item.get("seeders", 0)
+    if seeds > 0:
+        score += math.log2(seeds) * 5
+        
+    # 4. Penalty for fake files
+    size_gb = item.get("size", 0) / (1024**3)
+    if item.get("quality") in ["4K", "1080p"] and size_gb < 0.3:
+        score -= 200
+
+    return score
+
 async def lookup_torrent(
     title: str, 
     tmdb_id: Optional[int] = None, 
@@ -95,26 +148,43 @@ async def lookup_torrent(
         if isinstance(r, list):
             results.extend(r)
             
-    # Deduplicate by URL
+    # Deduplicate and Filter
     seen = set()
-    final = []
+    scored_results = []
     for r in results:
-        if r["url"] not in seen:
-            # Infer actual media type
-            name_low = r.get("name", "").lower()
-            actual_type = media_type
-            if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_low):
-                actual_type = "tv"
-            elif "[pack]" in name_low or "season" in name_low:
-                actual_type = "tv"
+        if r["url"] in seen:
+            continue
+        
+        name = r.get("name", "")
+        # Apply strict relevance filter
+        if not _is_relevant(name, search_title, media_type):
+            continue
+
+        # Infer actual media type
+        name_low = name.lower()
+        actual_type = media_type
+        if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_low):
+            actual_type = "tv"
+        elif "[pack]" in name_low or "season" in name_low:
+            actual_type = "tv"
+        
+        r["media_type"] = actual_type
+        
+        # Calculate score for sorting
+        r["_score"] = _score_torrent(r, search_title)
+        scored_results.append(r)
+        seen.add(r["url"])
             
-            r["media_type"] = actual_type
-            final.append(r)
-            seen.add(r["url"])
-            
-    if final:
-        cache_manager.set_to_cache(config.TORRENT_CACHE, cache_key, final)
-    return final
+    # Sort by score descending
+    scored_results.sort(key=lambda x: x["_score"], reverse=True)
+    
+    # Remove temporary score key
+    for r in scored_results:
+        r.pop("_score", None)
+
+    if scored_results:
+        cache_manager.set_to_cache(config.TORRENT_CACHE, cache_key, scored_results)
+    return scored_results
 
 def _parse_quality(name: str) -> str:
     n = name.upper()

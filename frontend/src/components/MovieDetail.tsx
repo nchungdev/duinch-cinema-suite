@@ -85,7 +85,7 @@ interface MovieDetailProps {
 
 const DetailContent = () => {
   const {
-    loading, metadata, mediaType, onBack,
+    loading, metadata, mediaType, onBack, initialSeason, initialEpisode
   } = useMovieDetail();
 
   useMovieDetailData();
@@ -158,6 +158,8 @@ const DetailContent = () => {
                 localizeTitle={metadata?.origin_name}
                 year={metadata?.year}
                 mediaType={mediaType}
+                initialSeason={mediaType === 'tv' ? initialSeason : undefined}
+                initialEpisode={mediaType === 'tv' ? initialEpisode : undefined}
                 onStreamingReady={handleStreamingReady}
               />
             </div>

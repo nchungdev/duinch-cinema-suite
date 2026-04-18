@@ -12,6 +12,8 @@ interface DiscoveryPipelineProps {
   year?: string | number;
   mediaType: string;
   season?: number;
+  initialSeason?: number;
+  initialEpisode?: number;
   onStreamingReady?: (links: any[], source: string) => void;
 }
 
@@ -67,7 +69,7 @@ const toKey = (st: string, src: string): LoadingKey => `${st}:${src}` as Loading
 const ALL_KEYS: LoadingKey[] = DISCOVERY_SOURCES.map(d => toKey(d.source_type, d.source));
 
 export const DiscoveryPipeline = ({
-  tmdbId, title, localizeTitle, year, mediaType, season, onStreamingReady,
+  tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady,
 }: DiscoveryPipelineProps) => {
   const cloudTargets = useCloudTargets();
 
@@ -100,13 +102,18 @@ export const DiscoveryPipeline = ({
     DISCOVERY_SOURCES.forEach(async ({ source_type, source }) => {
       const key = toKey(source_type, source);
       try {
+        const isTV = mediaType === 'tv';
+        const targetSeason = isTV ? (season ?? initialSeason) : undefined;
+        const targetEpisode = isTV ? initialEpisode : undefined;
+
         const params = new URLSearchParams({
           tmdb_id:     String(tmdbId),
           media_type:  mediaType,
           title,
           ...(localizeTitle ? { localize_title: localizeTitle } : {}),
           ...(year           ? { year: String(year) }           : {}),
-          ...(season         ? { season: String(season) }       : {}),
+          ...(targetSeason   ? { season: String(targetSeason) } : {}),
+          ...(targetEpisode  ? { episode: String(targetEpisode) } : {}),
           source_type,
           source,
         });

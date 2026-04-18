@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import type { MovieMetadata, StreamingServer } from '../../api/config';
 
 interface MovieDetailContextType {
@@ -74,7 +74,7 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<any>(null);
 
-  const seasonBoundaries = useMemo(() => {
+  const seasonBoundaries = React.useMemo(() => {
     if (!metadata?.tmdb_seasons) return [];
     let current = 0;
     return metadata.tmdb_seasons.map(s => {

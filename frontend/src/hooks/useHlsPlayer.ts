@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import { useMovieDetail } from '../components/detail/MovieDetailContext';
 
@@ -6,10 +6,10 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
   const { 
     activeEmbed, activeType, streamingLinks, activeEpisodeIdx,
     setActiveEpisodeIdx, setActiveEmbed, activeServerIdx,
-    setIsPlayerReady, setPlayerError
+    setIsPlayerReady, setPlayerError, seasonBoundaries
   } = useMovieDetail();
   
-  const hlsRef = useRef<Hls | null>(null);
+  const hlsRef = React.useRef<Hls | null>(null);
 
   const attemptAutoplay = (video: HTMLVideoElement) => {
     const maybePromise = video.play();
@@ -21,34 +21,43 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
   };
 
   // Sync Player with active stream
-  useEffect(() => {
+  React.useEffect(() => {
     if (activeType === 'P2P' || activeType === 'DIRECT') return;
 
     const server = streamingLinks?.[activeServerIdx];
     if (!server?.server_data) return;
 
-    // Use robust matching logic
+    // Use robust matching logic: Find by Relative Episode Number in current Season
     let ep = null;
-    const currentEpNum = activeEpisodeIdx + 1; // Global 1-based episode number
+    
+    // Find which season contains this global index
+    const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
+    const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : (activeEpisodeIdx + 1);
     
     const extractNum = (name: string) => { 
         const m = name?.match(/\d+/); 
         return m ? parseInt(m[0]) : null; 
     };
     
-    // Find the episode that matches currentEpNum
-    ep = server.server_data.find((item: any) => extractNum(item.name) === currentEpNum);
+    // Try to find the episode that matches the local number (e.g., "Tập 01" in Season 2)
+    ep = server.server_data.find((item: any) => extractNum(item.name) === localEpNum);
     
-    // Fallback only if no match found
+    // Fallback: search for global episode number if local fails
+    if (!ep) {
+        const globalEpNum = activeEpisodeIdx + 1;
+        ep = server.server_data.find((item: any) => extractNum(item.name) === globalEpNum);
+    }
+    
+    // Final fallback: index-based
     if (!ep) ep = server.server_data[activeEpisodeIdx];
 
     if (ep && (ep.m3u8 || ep.embed)) {
         setActiveEmbed(ep.m3u8 || ep.embed);
     }
-  }, [activeType, activeServerIdx, activeEpisodeIdx, streamingLinks, setActiveEmbed]);
+  }, [activeType, activeServerIdx, activeEpisodeIdx, streamingLinks, setActiveEmbed, seasonBoundaries]);
 
   // HLS Instance Management
-  useEffect(() => {
+  React.useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeEmbed) return;
 
