@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
-import { Loader2, HardDrive, Activity, Zap, Magnet, Globe, Download, ExternalLink, ChevronDown, Server, Box, Cloud, Search, Tv, Users, File } from 'lucide-react';
+import { Loader2, HardDrive, Activity, Zap, Magnet, Globe, Download, ExternalLink, ChevronDown, Server, Box, Cloud, Search, Tv, Users, File, Play } from 'lucide-react';
 import { api } from '../api/config';
 import type { MediaLink } from '../api/config';
 import { useCloudTargets } from '../hooks/useCloudTargets';
@@ -18,8 +18,6 @@ interface DiscoveryPipelineProps {
 }
 
 // ── Discovery source registry ─────────────────────────────────────────────────
-// Each entry is one independent API request: source_type + source.
-// Frontend fires all in parallel; results accumulate per source_type tab.
 const DISCOVERY_SOURCES = [
   { source_type: 'm3u8',        source: 'kkphim'       },
   { source_type: 'm3u8',        source: 'ophim'        },
@@ -43,7 +41,6 @@ const SOURCE_TYPE_META: Record<string, { label: string; color: string; icon: Rea
   dailymotion: { label: 'Dailymotion', color: 'text-red-400',     icon: <Tv       className="w-3 h-3" /> },
 };
 
-// Labels for the `source` field on each result item (for display badge)
 const SOURCE_BADGE: Record<string, string> = {
   kkphim:       'KKPhim',
   ophim:        'OPhim',
@@ -64,18 +61,37 @@ const SOURCE_BADGE: Record<string, string> = {
 const stMeta = (st: string) =>
   SOURCE_TYPE_META[st] ?? { label: st, color: 'text-sky-400', icon: <Box className="w-3 h-3" /> };
 
-// ── Loading key helpers ───────────────────────────────────────────────────────
 const toKey = (st: string, src: string): LoadingKey => `${st}:${src}` as LoadingKey;
 const ALL_KEYS: LoadingKey[] = DISCOVERY_SOURCES.map(d => toKey(d.source_type, d.source));
+
+// ── Sorting helper ────────────────────────────────────────────────────────────
+const QUALITY_RANK: Record<string, number> = {
+  '4K': 0, '2160P': 0, 'REMUX': 1, '1080P': 2, '720P': 3, 'HD': 4, 'MHD': 5, 'SD': 6, 'CAM': 7
+};
+
+function sortMediaLinks(links: any[]) {
+  return [...links].sort((a, b) => {
+    const aIsFolder = a.is_folder || a.url?.includes('/folder/') || a.url?.includes('/folders/');
+    const bIsFolder = b.is_folder || b.url?.includes('/folder/') || b.url?.includes('/folders/');
+    if (aIsFolder && !bIsFolder) return -1;
+    if (!aIsFolder && bIsFolder) return 1;
+
+    const aQ = (a.quality || 'HD').toUpperCase();
+    const bQ = (b.quality || 'HD').toUpperCase();
+    const aRank = QUALITY_RANK[aQ] ?? 10;
+    const bRank = QUALITY_RANK[bQ] ?? 10;
+    if (aRank !== bRank) return aRank - bRank;
+
+    return (a.name || '').localeCompare(b.name || '');
+  });
+}
 
 export const DiscoveryPipeline = ({
   tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady,
 }: DiscoveryPipelineProps) => {
   const cloudTargets = useCloudTargets();
 
-  // m3u8: source_type → { serverName → episodes[] }
   const [streamableByType, setStreamableByType] = useState<Record<string, Record<string, any[]>>>({});
-  // non-m3u8 downloadable: source_type → items[]
   const [downloadableByType, setDownloadableByType] = useState<Record<string, MediaLink[]>>({});
 
   const [loadingKeys, setLoadingKeys] = useState<Set<LoadingKey>>(new Set());
@@ -92,7 +108,6 @@ export const DiscoveryPipeline = ({
     setDoneKeys(new Set());
     setActiveTab('');
     streamingNotifiedRef.current = new Set();
-
 
     const markDone = (key: LoadingKey) => {
       setLoadingKeys(prev => { const n = new Set(prev); n.delete(key); return n; });
@@ -127,7 +142,6 @@ export const DiscoveryPipeline = ({
         if (items.length === 0) { markDone(key); return; }
 
         if (source_type === 'm3u8') {
-          // items = [{server, episodes:[]}] — already grouped by backend
           setStreamableByType(prev => {
             const next = { ...prev };
             const existing: Record<string, any[]> = { ...(next['m3u8'] ?? {}) };
@@ -140,53 +154,29 @@ export const DiscoveryPipeline = ({
             return next;
           });
 
-          // Notify MovieDetail for player — flatten grouped [{server,episodes}] back to flat list
+          // FIX: Pass FULL data for each episode back to player
           if (!streamingNotifiedRef.current.has(source)) {
             streamingNotifiedRef.current.add(source);
             const flat = items.flatMap((g: any) =>
-              (g.episodes ?? []).map((ep: any) => ({ ...ep, server: g.server, source_type }))
+              (g.episodes ?? []).map((ep: any) => ({ 
+                ...ep, 
+                server: g.server, 
+                source_type, 
+                source 
+              }))
             );
             onStreamingReady?.(flat, source);
           }
-// ── Sorting helper ────────────────────────────────────────────────────────────
-const QUALITY_RANK: Record<string, number> = {
-  '4K': 0, '2160P': 0, 'REMUX': 1, '1080P': 2, '720P': 3, 'HD': 4, 'MHD': 5, 'SD': 6, 'CAM': 7
-};
-
-function sortMediaLinks(links: any[]) {
-  return [...links].sort((a, b) => {
-    // 1. Folders first
-    const aIsFolder = a.is_folder || a.url?.includes('/folder/');
-    const bIsFolder = b.is_folder || b.url?.includes('/folder/');
-    if (aIsFolder && !bIsFolder) return -1;
-    if (!aIsFolder && bIsFolder) return 1;
-
-    // 2. Quality rank
-    const aQ = (a.quality || 'HD').toUpperCase();
-    const bQ = (b.quality || 'HD').toUpperCase();
-    const aRank = QUALITY_RANK[aQ] ?? 10;
-    const bRank = QUALITY_RANK[bQ] ?? 10;
-    if (aRank !== bRank) return aRank - bRank;
-
-    // 3. Name fallback
-    return (a.name || '').localeCompare(b.name || '');
-  });
-}
-
-export const DiscoveryPipeline = ({
-...
-          // Downloadable: append deduped items to source_type bucket
+        } else {
           setDownloadableByType(prev => {
             const existing = prev[source_type] ?? [];
             const existingUrls = new Set(existing.map((l: any) => l.url));
             const fresh = items.filter((l: any) => l.url && !existingUrls.has(l.url));
             if (fresh.length === 0) return prev;
-
+            
             const combined = [...existing, ...fresh];
             return { ...prev, [source_type]: sortMediaLinks(combined) };
           });
-
-
         }
 
         markDone(key);
@@ -199,11 +189,9 @@ export const DiscoveryPipeline = ({
     return () => ctrl.abort();
   }, [tmdbId, title, localizeTitle, year, mediaType, season]);
 
-  // ── Derived loading state per source_type ─────────────────────────────────
   const typeLoading = (st: string) =>
     DISCOVERY_SOURCES.filter(d => d.source_type === st).some(d => loadingKeys.has(toKey(d.source_type, d.source)));
 
-  // ── Build tabs ────────────────────────────────────────────────────────────
   const SOURCE_TYPE_ORDER: SourceType[] = ['m3u8', 'fshare', 'torrent', 'gdrive', 'dailymotion'];
 
   const tabs = SOURCE_TYPE_ORDER.flatMap(st => {
@@ -224,19 +212,16 @@ export const DiscoveryPipeline = ({
   const isLoading = loadingKeys.size > 0;
   const allDone   = loadingKeys.size === 0;
 
-  // Always focus the first tab in order that has results
   useEffect(() => {
     if (tabs.length > 0 && (!activeTab || !tabs.find(t => t.id === activeTab))) {
       setActiveTab(tabs[0].id);
     }
   }, [tabs.map(t => t.id).join(',')]);
 
-  // Pending sub-sources for a source_type (for in-tab loading hint)
   const pendingSources = (st: string) =>
     DISCOVERY_SOURCES.filter(d => d.source_type === st && loadingKeys.has(toKey(d.source_type, d.source)))
       .map(d => SOURCE_BADGE[d.source] ?? d.source);
 
-  // Group m3u8 server rows by source (kkphim / ophim / …)
   const m3u8Groups: { src: string; entries: [string, any[]][] }[] = [];
   for (const [serverName, eps] of Object.entries(streamableByType['m3u8'] ?? {})) {
     const src = (eps[0] as any)?.source ?? '_';
@@ -247,14 +232,11 @@ export const DiscoveryPipeline = ({
 
   return (
     <div className="glass-dark p-6 rounded-[2.5rem] border border-blue-500/10 space-y-4 relative overflow-hidden shadow-xl">
-
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
         <div className="flex items-center gap-3">
           <Activity className={`w-4 h-4 ${isLoading ? 'text-blue-500 animate-pulse' : 'text-blue-500/60'}`} />
           <h3 className="text-xs font-black uppercase italic tracking-wider font-outfit text-gray-300">Discovery Engine</h3>
         </div>
-        {/* One dot per source */}
         <div className="flex items-center gap-1 flex-wrap justify-end max-w-[120px]">
           {ALL_KEYS.map(key => (
             <div key={key} title={key} className={`w-1 h-1 rounded-full transition-all duration-500 ${
@@ -265,7 +247,6 @@ export const DiscoveryPipeline = ({
         </div>
       </div>
 
-      {/* Tab bar */}
       <div className="flex items-center gap-2 flex-wrap min-h-[36px]">
         {tabs.length === 0 && isLoading && (
           <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-gray-600">
@@ -297,19 +278,9 @@ export const DiscoveryPipeline = ({
             </button>
           );
         })}
-
-        {isLoading && (
-          <div className="flex items-center gap-1.5 px-3 py-2 text-[8px] font-black uppercase tracking-widest text-gray-600">
-            <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />
-            {loadingKeys.size}…
-          </div>
-        )}
       </div>
 
-      {/* Tab content */}
       <div className="min-h-[56px] animate-cinema-fade" key={activeTab}>
-
-        {/* ── M3U8 streaming servers — grouped by source ── */}
         {activeTab === 'm3u8' && m3u8Groups.length > 0 && (
           <div className="space-y-3">
             {m3u8Groups.map(({ src, entries }) => {
@@ -334,19 +305,12 @@ export const DiscoveryPipeline = ({
                 </div>
               );
             })}
-            {typeLoading('m3u8') && (
-              <div className="flex items-center gap-2 px-3 py-2 text-[8px] font-black uppercase tracking-widest text-gray-600">
-                <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />
-                {pendingSources('m3u8').join(', ')}…
-              </div>
-            )}
           </div>
         )}
         {activeTab === 'm3u8' && m3u8Groups.length === 0 && typeLoading('m3u8') && (
           <LoadingHint sources={pendingSources('m3u8')} />
         )}
 
-        {/* ── Downloadable content ── */}
         {activeTab !== 'm3u8' && downloadableByType[activeTab] && (
           <div className="space-y-1">
             {downloadableByType[activeTab].map((l, i) => (
@@ -369,18 +333,11 @@ export const DiscoveryPipeline = ({
         {activeTab !== 'm3u8' && !downloadableByType[activeTab] && typeLoading(activeTab) && (
           <LoadingHint sources={pendingSources(activeTab)} />
         )}
-
-        {!activeTab && !isLoading && tabs.length === 0 && (
-          <div className="py-4 text-center text-[9px] font-black uppercase tracking-widest text-gray-700">
-            No sources available
-          </div>
-        )}
       </div>
     </div>
   );
 };
 
-// ── Loading hint row ──────────────────────────────────────────────────────────
 function LoadingHint({ sources }: { sources: string[] }) {
   return (
     <div className="flex items-center gap-2 px-3 py-3 text-[8px] font-black uppercase tracking-widest text-gray-600">
@@ -390,7 +347,6 @@ function LoadingHint({ sources }: { sources: string[] }) {
   );
 }
 
-// ── Cloud target icon resolver ─────────────────────────────────────────────────
 function CloudIcon({ icon, cls }: { icon: CloudTarget['icon']; cls?: string }) {
   const c = cls ?? 'w-2.5 h-2.5';
   if (icon === 'server')     return <Server    className={c} />;
@@ -400,7 +356,6 @@ function CloudIcon({ icon, cls }: { icon: CloudTarget['icon']; cls?: string }) {
   return <Cloud className={c} />;
 }
 
-// ── Cloud action buttons ──────────────────────────────────────────────────────
 function CloudButtons({ targets, count, compact = false }: {
   targets: CloudTarget[]; count?: number; compact?: boolean;
 }) {
@@ -430,7 +385,6 @@ function CloudButtons({ targets, count, compact = false }: {
   );
 }
 
-// ── Quick Server Row (m3u8 streaming) ────────────────────────────────────────
 function QuickServerRow({ serverName, episodes, color = 'text-orange-400', cloudTargets }: {
   serverName: string; episodes: any[]; color?: string; cloudTargets: CloudTarget[];
 }) {
@@ -549,7 +503,6 @@ function QuickServerRow({ serverName, episodes, color = 'text-orange-400', cloud
   const allSelected = selected.size === episodes.length && episodes.length > 0;
   const selectMode  = selected.size > 0;
 
-  // Show which m3u8 source this server belongs to
   const srcLabel = SOURCE_BADGE[episodes[0]?.source] ?? null;
 
   return (
@@ -689,7 +642,6 @@ function QuickServerRow({ serverName, episodes, color = 'text-orange-400', cloud
   );
 }
 
-// ── Deep Row (downloadable / external link) ───────────────────────────────────
 function DeepRow({ link, actionLabel, color, onAction, depth = 0 }: { 
   link: MediaLink; 
   actionLabel: string; 
@@ -777,7 +729,6 @@ function DeepRow({ link, actionLabel, color, onAction, depth = 0 }: {
         </div>
       </div>
 
-      {/* Expanded folder contents - RECURSIVE RENDER */}
       {expanded && (
         <div className="border-t border-white/5 px-1 py-1 bg-white/[0.02] animate-cinema-fade">
           {loadingFiles ? (
@@ -806,21 +757,19 @@ function DeepRow({ link, actionLabel, color, onAction, depth = 0 }: {
   );
 }
 
-// ── Torrent Row ───────────────────────────────────────────────────────────────
 interface TorrentLink {
   url: string; name: string; size?: number; seeders?: number; leechers?: number;
   quality?: string; num_files?: number; info_hash?: string; source?: string;
 }
 
 function estimateSpeed(seeders: number): string {
-  const kbps = seeders * 120; // ~120 KB/s per seeder (conservative estimate)
+  const kbps = seeders * 120;
   if (kbps >= 1024 * 10) return `~${(kbps / 1024).toFixed(0)} MB/s`;
   if (kbps >= 1024) return `~${(kbps / 1024).toFixed(1)} MB/s`;
   return `~${kbps} KB/s`;
 }
 
 function SpeedBar({ seeders }: { seeders: number }) {
-  // Map seeders to 1-5 bars: 0=0, 1-9=1, 10-29=2, 30-59=3, 60-99=4, 100+=5
   const bars = seeders === 0 ? 0 : seeders < 10 ? 1 : seeders < 30 ? 2 : seeders < 60 ? 3 : seeders < 100 ? 4 : 5;
   const color = bars >= 4 ? 'bg-green-400' : bars >= 3 ? 'bg-blue-400' : bars >= 2 ? 'bg-yellow-400' : 'bg-red-400';
   const textColor = bars >= 4 ? 'text-green-400' : bars >= 3 ? 'text-blue-400' : bars >= 2 ? 'text-yellow-400' : 'text-red-400';
@@ -885,7 +834,6 @@ function TorrentRow({ link }: { link: TorrentLink }) {
   return (
     <div className="rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-all overflow-hidden">
       <div className="flex items-center gap-3 px-3 py-2.5 group">
-        {/* Info */}
         <div className="flex-1 min-w-0 space-y-1.5">
           <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
             {link.name}
@@ -917,7 +865,6 @@ function TorrentRow({ link }: { link: TorrentLink }) {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {canExpand && (
             <button onClick={toggleFiles}
@@ -933,7 +880,6 @@ function TorrentRow({ link }: { link: TorrentLink }) {
         </div>
       </div>
 
-      {/* File list */}
       {expanded && (
         <div className="border-t border-white/5 px-3 py-2 space-y-1 animate-cinema-fade">
           {loadingFiles ? (

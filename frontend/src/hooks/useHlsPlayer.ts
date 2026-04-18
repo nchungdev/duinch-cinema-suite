@@ -2,11 +2,12 @@ import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import { useMovieDetail } from '../components/detail/MovieDetailContext';
 
-export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
+export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement | null>) => {
   const { 
     activeEmbed, activeType, streamingLinks, activeEpisodeIdx,
     setActiveEpisodeIdx, setActiveEmbed, activeServerIdx,
-    setIsPlayerReady, setPlayerError, seasonBoundaries, slug
+    setIsPlayerReady, setPlayerError, seasonBoundaries, slug,
+    mediaType
   } = useMovieDetail();
   
   const hlsRef = React.useRef<Hls | null>(null);
@@ -47,36 +48,49 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
     
     if (!ep) ep = server.server_data[activeEpisodeIdx];
 
-    if (ep && (ep.m3u8 || ep.embed)) {
-        setActiveEmbed(ep.m3u8 || ep.embed);
+    if (ep) {
+        // Broad link detection
+        const hlsLink = ep.m3u8 || ep.link_m3u8 || ep.link_hls || (ep.url?.includes('.m3u8') ? ep.url : null);
+        const embedLink = ep.embed || ep.link_embed || ep.link || (ep.url?.includes('embed') ? ep.url : null);
+        const fallback = ep.url || ep.link || hlsLink || embedLink;
+
+        const targetUrl = activeType === 'HLS' ? hlsLink : embedLink;
+        const finalUrl = targetUrl || fallback;
+        
+        if (finalUrl && finalUrl !== activeEmbed) {
+            setActiveEmbed(finalUrl);
+        }
     }
-  }, [activeServerIdx, activeEpisodeIdx, streamingLinks, setActiveEmbed, seasonBoundaries]);
+  }, [activeServerIdx, activeEpisodeIdx, activeType, streamingLinks, setActiveEmbed, seasonBoundaries]);
 
   // HLS Instance Management
   React.useEffect(() => {
     const video = videoRef.current;
-    if (!video || !activeEmbed) return;
-
-    // Strict Embed detection
-    const isEmbedUrl = activeEmbed.includes('iframe') || 
-                       activeEmbed.includes('player.') || 
-                       activeEmbed.includes('/embed/') ||
-                       activeType === 'EMBED';
-
-    if (isEmbedUrl) return;
+    
+    // Strict Cleanup: If not in HLS mode, kill everything and return
+    if (!video || !activeEmbed || activeType !== 'HLS') {
+        if (hlsRef.current) {
+            hlsRef.current.destroy();
+            hlsRef.current = null;
+        }
+        return;
+    }
 
     setIsPlayerReady(false);
     setPlayerError(null);
 
     const onCanPlay = () => {
         setIsPlayerReady(true);
-        // Sync Time: Restore progress from local store
+        // Sync Time: Restore progress from local store using episode-specific key
+        const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
+        const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
         const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
-        const saved = progressStore[slug];
+        
+        // First try provider-specific, then fallback to common
+        const saved = progressStore[progressKey] || progressStore[commonKey];
         if (saved && saved.time > 0) {
-            // Seek if we have saved time and haven't seeked yet for this URL
-            if (Math.abs(video.currentTime - saved.time) > 1) {
-                console.log(`[Player] Resuming at ${saved.time}s`);
+            if (Math.abs(video.currentTime - saved.time) > 2) {
+                console.log(`[Player] Resuming ${progressKey} at ${saved.time}s`);
                 video.currentTime = saved.time;
             }
         }

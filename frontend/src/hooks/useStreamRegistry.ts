@@ -53,12 +53,20 @@ export const useStreamRegistry = () => {
                 const currentUrl = type === 'HLS' ? (item.m3u8 || item.link_m3u8 || url) : 
                                    type === 'EMBED' ? (item.embed || item.link_embed || url) : url;
 
-                if (!targetServer.server_data.some((ep: any) => ep.url === currentUrl)) {
+                // Unified Episode Matching: if same name, merge links
+                const epName = item.name || 'Tập mới';
+                let existingEp = targetServer.server_data.find((e: any) => e.name === epName);
+
+                if (existingEp) {
+                    if (type === 'HLS') existingEp.m3u8 = currentUrl;
+                    if (type === 'EMBED') existingEp.embed = currentUrl;
+                    if (type === 'P2P') existingEp.magnet = currentUrl;
+                } else {
                     targetServer.server_data.push({
-                        name: item.name,
-                        m3u8: type === 'HLS' ? currentUrl : '',
-                        embed: type === 'EMBED' ? currentUrl : '',
-                        magnet: type === 'P2P' ? currentUrl : '',
+                        name: epName,
+                        m3u8: type === 'HLS' ? currentUrl : (item.m3u8 || item.link_m3u8 || ''),
+                        embed: type === 'EMBED' ? currentUrl : (item.embed || item.link_embed || ''),
+                        magnet: type === 'P2P' ? currentUrl : (item.magnet || ''),
                         isTorrent: type === 'P2P',
                         stream_type: type,
                         provider: platform,

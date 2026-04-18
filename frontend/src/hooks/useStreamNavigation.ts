@@ -54,9 +54,15 @@ export const useStreamNavigation = () => {
     if (targetType && targetType !== activeType) setActiveType(targetType);
     if (targetProvider && targetProvider !== activeProvider) setActiveProvider(targetProvider);
     
+    // Final link synchronization
     const links = streamableSources[targetType]?.[targetProvider] || [];
     setStreamingLinks(links);
-  }, [streamableSources, userSettings, activeType, activeProvider]);
+
+    // Safety: ensure server index is valid for the new link set
+    if (links.length > 0 && activeServerIdx >= links.length) {
+        setActiveServerIdx(0);
+    }
+  }, [streamableSources, userSettings, activeType, activeProvider, activeServerIdx, setActiveType, setActiveProvider, setStreamingLinks, setActiveServerIdx]);
 
   return { streamingLinks };
 };

@@ -51,9 +51,9 @@ function App() {
       // Update local with merged data from server
       if (data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(data.progress));
       if (data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(data.history));
-      
-      console.log('[Sync] Background synchronization complete');
-    } catch (err) {
+
+      } catch (err) {
+
       console.error('[Sync] Background sync failed:', err);
     }
   }, []);

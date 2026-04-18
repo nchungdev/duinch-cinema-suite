@@ -85,7 +85,7 @@ interface MovieDetailProps {
 
 const DetailContent = () => {
   const {
-    loading, metadata, mediaType, onBack, initialSeason, initialEpisode
+    loading, metadata, mediaType, onBack, initialSeason, initialEpisode, slug
   } = useMovieDetail();
 
   useMovieDetailData();

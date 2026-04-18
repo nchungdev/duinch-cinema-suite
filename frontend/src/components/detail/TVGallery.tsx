@@ -80,14 +80,6 @@ export const TVGallery = () => {
         const localEpisode = Math.max(1, initialEpisode ?? 1);
         const targetGlobalEpisode = Math.min(targetSeason.end - 1, targetSeason.start + localEpisode - 1);
 
-        console.log('[TVGallery] apply initial season/episode', {
-            initialSeason,
-            initialEpisode,
-            targetSeasonIdx,
-            targetSeason,
-            targetGlobalEpisode,
-        });
-
         setActiveSeason(targetSeasonIdx);
         setActiveEpisodeIdx(targetGlobalEpisode);
     }, [seasonBoundaries, initialSeason, initialEpisode, setActiveEpisodeIdx]);

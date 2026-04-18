@@ -1,41 +1,71 @@
-import React, { forwardRef, useRef } from 'react';
+import React, { forwardRef, useRef, useEffect } from 'react';
 import { Loader2, Zap, Activity } from 'lucide-react';
 import { useMovieDetail } from './MovieDetailContext';
 import { useHlsPlayer } from '../../hooks/useHlsPlayer';
 
 export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    
     const { 
         activeEmbed, activeType, activeProvider,
-        isPlayerReady, playerError
+        isPlayerReady, playerError, slug, mediaType, activeEpisodeIdx
     } = useMovieDetail();
     
-    const videoRef = useRef<HTMLVideoElement>(null);
     useHlsPlayer(videoRef);
 
-    // Consistent detection logic
-    const isEmbedMode = !!activeEmbed && (
-        activeEmbed.includes('iframe') || 
-        activeEmbed.includes('player.') || 
-        activeEmbed.includes('/embed/') ||
-        activeType === 'EMBED'
-    );
+    // Definite Switch based on stream type
+    const isEmbedMode = activeType !== 'HLS';
+
+    // Unique key for this video content
+    const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}_${activeProvider}`;
+    // Common key for episode (shared across providers for cross-source sync)
+    const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
+
+    // Attempt to inject time into iframe URL
+    const getFinalEmbedUrl = () => {
+        if (!activeEmbed || !isEmbedMode) return activeEmbed;
+        try {
+            const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+            
+            // First try provider-specific progress, then fallback to common episode progress
+            let saved = progressStore[progressKey] || progressStore[commonKey];
+            
+            // Only attempt to modify if it's a valid absolute URL and has progress
+            if (activeEmbed.startsWith('http') && saved && saved.time > 0) {
+                const url = new URL(activeEmbed);
+                url.searchParams.set('t', Math.floor(saved.time).toString());
+                url.searchParams.set('start', Math.floor(saved.time).toString());
+                return url.toString();
+            }
+        } catch (e) {
+            console.warn('[Player] Failed to inject time to iframe URL:', e);
+        }
+        return activeEmbed;
+    };
 
     const showLoadingOverlay = (!!activeEmbed && !isEmbedMode && !isPlayerReady) && !playerError;
 
+    // Log the active streaming link whenever it changes
+    useEffect(() => {
+        if (activeEmbed) {
+            console.clear();
+            console.log("%c[CinemaPro] 🚀 STREAMING INITIALIZED", "color: #3b82f6; font-weight: bold; font-size: 12px;");
+            console.log("%cSource Type:", "color: #9ca3af;", activeType);
+            console.log("%cProvider:   ", "color: #9ca3af;", activeProvider);
+            console.log("%cTarget URL: ", "color: #9ca3af;", activeEmbed);
+        }
+    }, [activeEmbed, activeType, activeProvider]);
+
     const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
         const video = e.currentTarget;
-        if (video.currentTime > 0 && !isInternalLoading) {
-            // Save time to local progress store
+        if (video.currentTime > 5) {
             const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
-            const current = progressStore[slug] || {};
+            const current = progressStore[progressKey] || {};
             
-            // Only update if time significantly changed (debounce local writes)
             if (Math.abs((current.time || 0) - video.currentTime) > 5) {
-                progressStore[slug] = {
-                    ...current,
-                    time: video.currentTime,
-                    updated_at: Date.now()
-                };
+                const progress = { time: video.currentTime, updated_at: Date.now() };
+                progressStore[progressKey] = progress;
+                progressStore[commonKey] = progress;
                 localStorage.setItem('omv_watch_progress', JSON.stringify(progressStore));
             }
         }
@@ -47,7 +77,8 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                 <>
                     {isEmbedMode ? (
                         <iframe
-                            src={activeEmbed}
+                            key={getFinalEmbedUrl()}
+                            src={getFinalEmbedUrl() || ''}
                             className="w-full h-full border-0"
                             allowFullScreen
                             allow="autoplay; encrypted-media"
@@ -61,6 +92,19 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                             onTimeUpdate={handleTimeUpdate}
                         />
                     )}
+
+                    {/* Transmission Info Bar */}
+                    <div className="absolute bottom-4 right-4 z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+                        <div className="flex items-center gap-3 px-3 py-1.5 bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl">
+                             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_#3b82f6]" />
+                             <div className="flex flex-col items-start">
+                                <span className="text-[7px] font-black text-gray-500 uppercase tracking-[0.2em]">Transmission Active</span>
+                                <span className="text-[9px] font-black text-white uppercase tracking-widest">
+                                    {activeType} • {activeProvider}
+                                </span>
+                             </div>
+                        </div>
+                    </div>
 
                     {/* Loading Overlay */}
                     {showLoadingOverlay && (

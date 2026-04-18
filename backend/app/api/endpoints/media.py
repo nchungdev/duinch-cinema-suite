@@ -63,10 +63,12 @@ async def discovery(
     try:
         # ── M3U8 streaming ────────────────────────────────────────────────────
         if source_type == "m3u8":
+            # For TV, we want ALL episodes of the season, so we pass episode=None
+            target_ep = None if media_type == "tv" else episode
             if source == "kkphim":
-                results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
+                results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year)
             elif source == "ophim":
-                results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, episode, year)
+                results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year)
 
         # ── Torrent ───────────────────────────────────────────────────────────
         elif source_type == "torrent":
