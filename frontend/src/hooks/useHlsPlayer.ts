@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import { useMovieDetail } from '../components/detail/MovieDetailContext';
+import { StreamLink } from '../domain/models/StreamLink';
 
 export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement | null>) => {
   const { 
@@ -49,13 +50,9 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement | null>)
     if (!ep) ep = server.server_data[activeEpisodeIdx];
 
     if (ep) {
-        // Broad link detection
-        const hlsLink = ep.m3u8 || ep.link_m3u8 || ep.link_hls || (ep.url?.includes('.m3u8') ? ep.url : null);
-        const embedLink = ep.embed || ep.link_embed || ep.link || (ep.url?.includes('embed') ? ep.url : null);
-        const fallback = ep.url || ep.link || hlsLink || embedLink;
-
-        const targetUrl = activeType === 'HLS' ? hlsLink : embedLink;
-        const finalUrl = targetUrl || fallback;
+        const link = new StreamLink(ep);
+        const targetUrl = activeType === 'HLS' ? link.hlsUrl : link.embedUrl;
+        const finalUrl = targetUrl || link.bestUrl;
         
         if (finalUrl && finalUrl !== activeEmbed) {
             setActiveEmbed(finalUrl);
