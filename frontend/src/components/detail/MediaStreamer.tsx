@@ -5,6 +5,8 @@ import { useHlsPlayer } from '../../hooks/useHlsPlayer';
 
 export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const dailymotionPollRef = useRef<NodeJS.Timeout | null>(null);
     
     const { 
         activeEmbed, activeType, activeProvider,
@@ -21,7 +23,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     // Common key for episode (shared across providers for cross-source sync)
     const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
 
-    // Attempt to inject time into iframe URL
+    // Attempt to inject time into iframe URL and enable Dailymotion API
     const getFinalEmbedUrl = () => {
         if (!activeEmbed || !isEmbedMode) return activeEmbed;
         try {
@@ -30,13 +32,20 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
             // First try provider-specific progress, then fallback to common episode progress
             let saved = progressStore[progressKey] || progressStore[commonKey];
             
-            // Only attempt to modify if it's a valid absolute URL and has progress
-            if (activeEmbed.startsWith('http') && saved && saved.time > 0) {
-                const url = new URL(activeEmbed);
+            const url = new URL(activeEmbed);
+            
+            // Inject start time if available
+            if (saved && saved.time > 0) {
                 url.searchParams.set('t', Math.floor(saved.time).toString());
                 url.searchParams.set('start', Math.floor(saved.time).toString());
-                return url.toString();
             }
+            
+            // Ensure Dailymotion iframe has postMessage API enabled for time sync
+            if (url.hostname.includes('dailymotion.com')) {
+                url.searchParams.set('api', 'postMessage');
+            }
+            
+            return url.toString();
         } catch (e) {
             console.warn('[Player] Failed to inject time to iframe URL:', e);
         }
@@ -55,6 +64,67 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
             console.log("%cTarget URL: ", "color: #9ca3af;", activeEmbed);
         }
     }, [activeEmbed, activeType, activeProvider]);
+
+    // Dailymotion embed time synchronization via postMessage API
+    useEffect(() => {
+        if (!activeEmbed || !isEmbedMode) return;
+        const isDailymotion = activeEmbed.includes('dailymotion.com');
+        if (!isDailymotion) return;
+
+        const iframe = iframeRef.current;
+        if (!iframe) return;
+
+        const sendGetCurrentTime = () => {
+            try {
+                iframe.contentWindow?.postMessage(
+                    JSON.stringify({
+                        event: 'command',
+                        method: 'getCurrentTime',
+                        id: 'player'
+                    }),
+                    '*'
+                );
+            } catch (e) {
+                console.warn('[EmbedSync] Failed to send getCurrentTime:', e);
+            }
+        };
+
+        const handleMessage = (event: MessageEvent) => {
+            let data: any;
+            try {
+                data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+            } catch {
+                return;
+            }
+            if (!data || data.event !== 'info' || data.type !== 'time' || data.id !== 'player') return;
+            const time = data.value;
+            if (typeof time !== 'number') return;
+
+            // Save progress (both provider-specific and common)
+            try {
+                const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+                const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}_${activeProvider}`;
+                const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
+                const progress = { time, updated_at: Date.now() };
+                progressStore[progressKey] = progress;
+                progressStore[commonKey] = progress;
+                localStorage.setItem('omv_watch_progress', JSON.stringify(progressStore));
+            } catch (e) {
+                console.warn('[EmbedSync] Failed to save progress:', e);
+            }
+        };
+
+        window.addEventListener('message', handleMessage);
+        // Poll for time every 10 seconds, start after 2 seconds to let player initialize
+        dailymotionPollRef.current = setInterval(sendGetCurrentTime, 10000) as any;
+        const initialTimer = setTimeout(sendGetCurrentTime, 2000);
+
+        return () => {
+            window.removeEventListener('message', handleMessage);
+            if (dailymotionPollRef.current) clearInterval(dailymotionPollRef.current);
+            clearTimeout(initialTimer);
+        };
+    }, [activeEmbed, isEmbedMode, slug, mediaType, activeEpisodeIdx, activeProvider]);
 
     const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
         const video = e.currentTarget;
@@ -79,6 +149,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                         <iframe
                             key={getFinalEmbedUrl()}
                             src={getFinalEmbedUrl() || ''}
+                            ref={iframeRef}
                             className="w-full h-full border-0"
                             allowFullScreen
                             allow="autoplay; encrypted-media"
