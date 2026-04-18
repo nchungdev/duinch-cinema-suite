@@ -165,7 +165,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                     )}
 
                     {/* Transmission Info Bar */}
-                    <div className="absolute bottom-4 right-4 z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+                    <div className="absolute top-4 right-4 z-40 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
                         <div className="flex items-center gap-3 px-3 py-1.5 bg-[#0a0a0c]/80 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl">
                              <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse shadow-[0_0_10px_#3b82f6]" />
                              <div className="flex flex-col items-start">

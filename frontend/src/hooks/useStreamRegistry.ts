@@ -14,39 +14,49 @@ export const useStreamRegistry = () => {
             const url = link.bestUrl;
             if (!url) continue;
 
-            const type = link.type;
-            const platform = link.provider;
-            const serverKey = link.server;
-
-            if (!next[type]) next[type] = {};
-            if (!next[type][platform]) next[type][platform] = [];
-            
-            let targetServer = next[type][platform].find((s: any) => s.server_name === serverKey);
-            if (!targetServer) {
-                targetServer = { server_name: serverKey, server_data: [] };
-                next[type][platform].push(targetServer);
+            // Important: A single link might support multiple types (e.g. HLS and EMBED)
+            const supportedTypes: StreamType[] = [];
+            if (link.isP2P) supportedTypes.push('P2P');
+            else if (link.isDirect) supportedTypes.push('DIRECT');
+            else {
+                if (link.hlsUrl) supportedTypes.push('HLS');
+                if (link.embedUrl) supportedTypes.push('EMBED');
             }
 
-            // Unified Episode Matching: if same name, merge links
-            const epName = link.name;
-            let existingEp = targetServer.server_data.find((e: any) => e.name === epName);
+            for (const type of supportedTypes) {
+                const platform = link.provider;
+                const serverKey = link.server;
 
-            if (existingEp) {
-                if (link.hlsUrl)   existingEp.m3u8 = link.hlsUrl;
-                if (link.embedUrl) existingEp.embed = link.embedUrl;
-                if (link.isP2P)    existingEp.magnet = url;
-            } else {
-                targetServer.server_data.push({
-                    name: epName,
-                    m3u8: link.hlsUrl || '',
-                    embed: link.embedUrl || '',
-                    magnet: link.isP2P ? url : '',
-                    isTorrent: link.isP2P,
-                    stream_type: type,
-                    provider: platform,
-                    scraper: (rawData.provider || sourceId).toUpperCase(),
-                    url: url
-                });
+                if (!next[type]) next[type] = {};
+                if (!next[type][platform]) next[type][platform] = [];
+                
+                let targetServer = next[type][platform].find((s: any) => s.server_name === serverKey);
+                if (!targetServer) {
+                    targetServer = { server_name: serverKey, server_data: [] };
+                    next[type][platform].push(targetServer);
+                }
+
+                // Unified Episode Matching: if same name, merge links
+                const epName = link.name;
+                let existingEp = targetServer.server_data.find((e: any) => e.name === epName);
+
+                if (existingEp) {
+                    if (link.hlsUrl)   existingEp.m3u8 = link.hlsUrl;
+                    if (link.embedUrl) existingEp.embed = link.embedUrl;
+                    if (link.isP2P)    existingEp.magnet = url;
+                } else {
+                    targetServer.server_data.push({
+                        name: epName,
+                        m3u8: link.hlsUrl || '',
+                        embed: link.embedUrl || '',
+                        magnet: link.isP2P ? url : '',
+                        isTorrent: link.isP2P,
+                        stream_type: type,
+                        provider: platform,
+                        scraper: (rawData.provider || sourceId).toUpperCase(),
+                        url: url
+                    });
+                }
             }
         }
         return next;
