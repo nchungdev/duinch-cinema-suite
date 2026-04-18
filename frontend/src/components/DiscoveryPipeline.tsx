@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { Loader2, HardDrive, Activity, Zap, Magnet, Globe, Download, ExternalLink, ChevronDown, Server, Box, Cloud, Search, Tv, Users, File, Play } from 'lucide-react';
-import { api } from '../api/config';
+import { MediaRepository } from '../repositories/MediaRepository';
+import { RankingService } from '../domain/services/RankingService';
 import type { MediaLink } from '../api/config';
 import { useCloudTargets } from '../hooks/useCloudTargets';
 import type { CloudTarget } from '../services/cloudTargets';
@@ -65,28 +66,6 @@ const stMeta = (st: string) =>
 const toKey = (st: string, src: string): LoadingKey => `${st}:${src}` as LoadingKey;
 const ALL_KEYS: LoadingKey[] = DISCOVERY_SOURCES.map(d => toKey(d.source_type, d.source));
 
-// ── Sorting helper ────────────────────────────────────────────────────────────
-const QUALITY_RANK: Record<string, number> = {
-  '4K': 0, '2160P': 0, 'REMUX': 1, '1080P': 2, '720P': 3, 'HD': 4, 'MHD': 5, 'SD': 6, 'CAM': 7
-};
-
-function sortMediaLinks(links: any[]) {
-  return [...links].sort((a, b) => {
-    const aIsFolder = a.is_folder || a.url?.includes('/folder/') || a.url?.includes('/folders/');
-    const bIsFolder = b.is_folder || b.url?.includes('/folder/') || b.url?.includes('/folders/');
-    if (aIsFolder && !bIsFolder) return -1;
-    if (!aIsFolder && bIsFolder) return 1;
-
-    const aQ = (a.quality || 'HD').toUpperCase();
-    const bQ = (b.quality || 'HD').toUpperCase();
-    const aRank = QUALITY_RANK[aQ] ?? 10;
-    const bRank = QUALITY_RANK[bQ] ?? 10;
-    if (aRank !== bRank) return aRank - bRank;
-
-    return (a.name || '').localeCompare(b.name || '');
-  });
-}
-
 export const DiscoveryPipeline = ({
   tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady,
 }: DiscoveryPipelineProps) => {
@@ -125,24 +104,17 @@ export const DiscoveryPipeline = ({
         const targetSeason = isTV ? (season ?? initialSeason) : undefined;
         const targetEpisode = isTV ? initialEpisode : undefined;
 
-        const params = new URLSearchParams({
-          tmdb_id:     String(tmdbId),
-          media_type:  mediaType,
+        const items = await MediaRepository.discoverSources({
+          tmdb_id: tmdbId,
+          media_type: mediaType,
           title,
-          ...(localizeTitle ? { localize_title: localizeTitle } : {}),
-          ...(year           ? { year: String(year) }           : {}),
-          ...(targetSeason   ? { season: String(targetSeason) } : {}),
-          ...(targetEpisode  ? { episode: String(targetEpisode) } : {}),
           source_type,
           source,
+          ...(localizeTitle ? { localize_title: localizeTitle } : {}),
+          ...(year ? { year } : {}),
+          ...(targetSeason ? { season: targetSeason } : {}),
+          ...(targetEpisode ? { episode: targetEpisode } : {}),
         });
-
-        const res = await api.get<{ results: any[]; source_type: string; source: string }>(
-          `/media/discovery?${params}`,
-          { signal: ctrl.signal }
-        );
-
-        const items = res.data?.results ?? [];
         if (items.length === 0) {
           markDone(key);
           return;
@@ -180,7 +152,7 @@ export const DiscoveryPipeline = ({
             const fresh = items.filter((l: any) => l.url && !existingUrls.has(l.url));
             if (fresh.length === 0) return prev;
             const combined = [...existing, ...fresh];
-            return { ...prev, [source_type]: sortMediaLinks(combined) };
+            return { ...prev, [source_type]: RankingService.sortMediaLinks(combined) };
           });
         }
 
@@ -784,15 +756,8 @@ interface TorrentLink {
   quality?: string; num_files?: number; info_hash?: string; source?: string;
 }
 
-function estimateSpeed(seeders: number): string {
-  const kbps = seeders * 120;
-  if (kbps >= 1024 * 10) return `~${(kbps / 1024).toFixed(0)} MB/s`;
-  if (kbps >= 1024) return `~${(kbps / 1024).toFixed(1)} MB/s`;
-  return `~${kbps} KB/s`;
-}
-
 function SpeedBar({ seeders }: { seeders: number }) {
-  const bars = seeders === 0 ? 0 : seeders < 10 ? 1 : seeders < 30 ? 2 : seeders < 60 ? 3 : seeders < 100 ? 4 : 5;
+  const bars = RankingService.getSeederBars(seeders);
   const color = bars >= 4 ? 'bg-green-400' : bars >= 3 ? 'bg-blue-400' : bars >= 2 ? 'bg-yellow-400' : 'bg-red-400';
   const textColor = bars >= 4 ? 'text-green-400' : bars >= 3 ? 'text-blue-400' : bars >= 2 ? 'text-yellow-400' : 'text-red-400';
   return (
@@ -803,7 +768,7 @@ function SpeedBar({ seeders }: { seeders: number }) {
             style={{ height: `${4 + b * 2}px` }} />
         ))}
       </span>
-      {estimateSpeed(seeders)}
+      {RankingService.estimateTorrentSpeed(seeders)}
     </span>
   );
 }
