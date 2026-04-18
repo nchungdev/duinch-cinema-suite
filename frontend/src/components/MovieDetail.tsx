@@ -153,6 +153,7 @@ const DetailContent = () => {
               <MediaStreamer ref={playerRef} />
               <MediaInfo />
               <DiscoveryPipeline
+                key={slug}
                 tmdbId={metadata?.tmdb_id || 0}
                 title={metadata?.title || ''}
                 localizeTitle={metadata?.origin_name}

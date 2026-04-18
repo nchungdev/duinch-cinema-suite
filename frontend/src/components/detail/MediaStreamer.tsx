@@ -22,6 +22,25 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
 
     const showLoadingOverlay = (!!activeEmbed && !isEmbedMode && !isPlayerReady) && !playerError;
 
+    const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+        const video = e.currentTarget;
+        if (video.currentTime > 0 && !isInternalLoading) {
+            // Save time to local progress store
+            const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+            const current = progressStore[slug] || {};
+            
+            // Only update if time significantly changed (debounce local writes)
+            if (Math.abs((current.time || 0) - video.currentTime) > 5) {
+                progressStore[slug] = {
+                    ...current,
+                    time: video.currentTime,
+                    updated_at: Date.now()
+                };
+                localStorage.setItem('omv_watch_progress', JSON.stringify(progressStore));
+            }
+        }
+    };
+
     return (
         <div ref={containerRef} className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group">
             {activeEmbed ? (
@@ -39,6 +58,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                             className="w-full h-full object-contain"
                             controls
                             autoPlay
+                            onTimeUpdate={handleTimeUpdate}
                         />
                     )}
 

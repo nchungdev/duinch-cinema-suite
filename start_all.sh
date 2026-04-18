@@ -18,6 +18,16 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}=== CinemaPro Dashboard Orchestrator ===${NC}"
 
+# --- 0. CLEAN MODE ---
+if [[ "$1" == "--clean" ]] || [[ "$1" == "-c" ]]; then
+    echo -e "${RED}--- 0. Cleaning All Caches ---${NC}"
+    if [ -f "./clear_cache.sh" ]; then
+        ./clear_cache.sh
+    else
+        echo -e "${RED}   [Error] clear_cache.sh not found!${NC}"
+    fi
+fi
+
 # --- 1. PREPARE DIRECTORIES ---
 echo -e "${YELLOW}--- 1. Preparing Directories ---${NC}"
 mkdir -p "$LOG_DIR"

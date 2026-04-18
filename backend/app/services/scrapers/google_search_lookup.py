@@ -490,11 +490,14 @@ async def lookup_google_fshare(
         name_low = r.get("name", "").lower()
         url_low = r.get("url", "").lower()
         actual_type = media_type
+        is_folder = False
         if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name_low):
             actual_type = "tv"
         elif "folder" in url_low:
             actual_type = "tv"
+            is_folder = True
         r["media_type"] = actual_type
+        r["is_folder"] = is_folder
 
     results.sort(key=lambda x: quality_map.get(x.get('quality', 'HD'), 10))
 

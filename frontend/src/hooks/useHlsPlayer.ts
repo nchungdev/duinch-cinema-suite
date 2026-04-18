@@ -6,7 +6,7 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
   const { 
     activeEmbed, activeType, streamingLinks, activeEpisodeIdx,
     setActiveEpisodeIdx, setActiveEmbed, activeServerIdx,
-    setIsPlayerReady, setPlayerError, seasonBoundaries
+    setIsPlayerReady, setPlayerError, seasonBoundaries, slug
   } = useMovieDetail();
   
   const hlsRef = React.useRef<Hls | null>(null);
@@ -68,7 +68,19 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
     setIsPlayerReady(false);
     setPlayerError(null);
 
-    const onCanPlay = () => setIsPlayerReady(true);
+    const onCanPlay = () => {
+        setIsPlayerReady(true);
+        // Sync Time: Restore progress from local store
+        const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
+        const saved = progressStore[slug];
+        if (saved && saved.time > 0) {
+            // Seek if we have saved time and haven't seeked yet for this URL
+            if (Math.abs(video.currentTime - saved.time) > 1) {
+                console.log(`[Player] Resuming at ${saved.time}s`);
+                video.currentTime = saved.time;
+            }
+        }
+    };
     const onError = (e: any) => {
         console.error('[Player] Error:', e);
         setPlayerError('Failed to play video. Source might be dead.');

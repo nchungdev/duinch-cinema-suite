@@ -148,16 +148,44 @@ export const DiscoveryPipeline = ({
             );
             onStreamingReady?.(flat, source);
           }
+// ── Sorting helper ────────────────────────────────────────────────────────────
+const QUALITY_RANK: Record<string, number> = {
+  '4K': 0, '2160P': 0, 'REMUX': 1, '1080P': 2, '720P': 3, 'HD': 4, 'MHD': 5, 'SD': 6, 'CAM': 7
+};
 
-        } else {
+function sortMediaLinks(links: any[]) {
+  return [...links].sort((a, b) => {
+    // 1. Folders first
+    const aIsFolder = a.is_folder || a.url?.includes('/folder/');
+    const bIsFolder = b.is_folder || b.url?.includes('/folder/');
+    if (aIsFolder && !bIsFolder) return -1;
+    if (!aIsFolder && bIsFolder) return 1;
+
+    // 2. Quality rank
+    const aQ = (a.quality || 'HD').toUpperCase();
+    const bQ = (b.quality || 'HD').toUpperCase();
+    const aRank = QUALITY_RANK[aQ] ?? 10;
+    const bRank = QUALITY_RANK[bQ] ?? 10;
+    if (aRank !== bRank) return aRank - bRank;
+
+    // 3. Name fallback
+    return (a.name || '').localeCompare(b.name || '');
+  });
+}
+
+export const DiscoveryPipeline = ({
+...
           // Downloadable: append deduped items to source_type bucket
           setDownloadableByType(prev => {
             const existing = prev[source_type] ?? [];
             const existingUrls = new Set(existing.map((l: any) => l.url));
             const fresh = items.filter((l: any) => l.url && !existingUrls.has(l.url));
             if (fresh.length === 0) return prev;
-            return { ...prev, [source_type]: [...existing, ...fresh] };
+
+            const combined = [...existing, ...fresh];
+            return { ...prev, [source_type]: sortMediaLinks(combined) };
           });
+
 
         }
 
@@ -662,14 +690,20 @@ function QuickServerRow({ serverName, episodes, color = 'text-orange-400', cloud
 }
 
 // ── Deep Row (downloadable / external link) ───────────────────────────────────
-function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; actionLabel: string; color: string; onAction?: (url: string, name: string) => void }) {
+function DeepRow({ link, actionLabel, color, onAction, depth = 0 }: { 
+  link: MediaLink; 
+  actionLabel: string; 
+  color: string; 
+  onAction?: (url: string, name: string) => void;
+  depth?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const [files, setFiles] = useState<{ name: string; url: string; size?: number }[] | null>(null);
+  const [files, setFiles] = useState<any[] | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
 
   const src      = (link as any).source as string | undefined;
   const srcLabel = src ? (SOURCE_BADGE[src] ?? src) : null;
-  const isFolder = link.url?.includes('/folder/') || link.url?.includes('/folders/') || (link as any).is_folder;
+  const isFolder = link.is_folder || link.url?.includes('/folder/') || link.url?.includes('/folders/');
 
   const toggleFolder = async () => {
     if (!isFolder) return;
@@ -688,23 +722,35 @@ function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; acti
     setLoadingFiles(false);
   };
 
+  const formatDate = (ts: any) => {
+    if (!ts) return null;
+    try {
+      const date = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+      return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    } catch { return null; }
+  };
+
   return (
-    <div className="rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-all overflow-hidden">
+    <div className={`rounded-xl transition-all overflow-hidden ${depth === 0 ? 'bg-black/30 border border-white/5 hover:border-white/10' : 'border-l border-white/5 ml-4 my-1'}`}>
       <div className="flex items-center gap-3 px-3 py-2 group">
         <div className="flex-1 min-w-0 space-y-0.5">
-          <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
-            {link.name || 'Unknown'}
-          </p>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            {!isFolder ? <File className="w-2.5 h-2.5 text-gray-600" /> : <Box className="w-2.5 h-2.5 text-blue-500" />}
+            <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
+              {link.name || 'Unknown'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 pl-4">
             {isFolder && (
-              <span className="flex items-center gap-1 text-[7px] font-black text-blue-500 uppercase tracking-widest">
-                <Box className="w-2.5 h-2.5" /> Folder
-              </span>
+              <span className="text-[7px] font-black text-blue-500/60 uppercase tracking-widest">Folder</span>
             )}
-            {(link as any).size && (
+            {(link as any).size != null && (link as any).size > 0 && (
               <span className="text-[7px] font-bold text-gray-600 uppercase tracking-wider">{formatSize((link as any).size)}</span>
             )}
-            {srcLabel && (
+            {(link as any).updated_at && (
+              <span className="text-[7px] font-bold text-gray-700 uppercase tracking-wider">{formatDate((link as any).updated_at)}</span>
+            )}
+            {srcLabel && depth === 0 && (
               <span className="text-[6px] font-black uppercase tracking-widest px-1 py-0.5 rounded bg-white/5 text-gray-600">
                 {srcLabel}
               </span>
@@ -715,7 +761,7 @@ function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; acti
           {isFolder && (
             <button onClick={toggleFolder}
               className="p-1.5 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-all">
-              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+              {loadingFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />}
             </button>
           )}
           <button onClick={() => {
@@ -726,38 +772,33 @@ function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; acti
             }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest ${color}`}>
             <Download className="w-2.5 h-2.5" />
-            {actionLabel}
+            {isFolder ? 'Open' : actionLabel}
           </button>
         </div>
       </div>
 
-      {/* Expanded folder contents */}
+      {/* Expanded folder contents - RECURSIVE RENDER */}
       {expanded && (
-        <div className="border-t border-white/5 px-3 py-2 space-y-1 bg-black/20 animate-cinema-fade">
+        <div className="border-t border-white/5 px-1 py-1 bg-white/[0.02] animate-cinema-fade">
           {loadingFiles ? (
-            <div className="flex items-center gap-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600">
-              <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />Exploring folder…
+            <div className="flex items-center gap-2 px-4 py-3 text-[8px] font-black uppercase tracking-widest text-gray-600">
+              <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />Exploring transmission grid…
             </div>
           ) : files && files.length > 0 ? (
-            <div className="max-h-60 overflow-y-auto custom-scrollbar pr-1">
+            <div className="max-h-80 overflow-y-auto custom-scrollbar">
               {files.map((f, i) => (
-                <div key={i} className="flex items-center justify-between gap-3 py-1.5 border-b border-white/5 last:border-0 group/f">
-                  <div className="flex-1 min-w-0 flex items-center gap-2">
-                    <File className="w-2.5 h-2.5 text-gray-600 group-hover/f:text-gray-400" />
-                    <span className="text-[8px] font-medium text-gray-400 truncate group-hover/f:text-gray-200 transition-colors">{f.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {f.size && <span className="text-[7px] font-bold text-gray-600 shrink-0">{formatSize(f.size)}</span>}
-                    <button onClick={() => window.open(f.url, '_blank')}
-                      className="p-1 rounded bg-white/5 text-gray-500 hover:text-blue-400 transition-colors">
-                      <ExternalLink className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                </div>
+                <DeepRow 
+                  key={i} 
+                  link={f} 
+                  actionLabel={actionLabel} 
+                  color={color} 
+                  onAction={onAction} 
+                  depth={depth + 1} 
+                />
               ))}
             </div>
           ) : (
-            <p className="text-[8px] text-gray-600 uppercase tracking-widest py-1">Folder is empty or private</p>
+            <p className="text-[8px] text-gray-600 uppercase tracking-widest py-3 px-4 italic">No transmissions found in this node</p>
           )}
         </div>
       )}

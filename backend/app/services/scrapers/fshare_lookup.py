@@ -32,16 +32,11 @@ def parse_fshare_url(url: str) -> Tuple[str, str]:
 async def fetch_folder_files(
     linkcode: str,
     client: httpx.AsyncClient,
-    depth: int = 0,
-    max_depth: int = 2
 ) -> List[Dict]:
     """
-    Fetch all files from FShare folder recursively.
-    Returns list of file items.
+    Fetch immediate items from an FShare folder.
+    Returns list of file/folder items.
     """
-    if depth > max_depth:
-        return []
-
     items = []
     page = 0
     per_page = 50
@@ -76,18 +71,24 @@ async def fetch_folder_files(
                 name = item.get("name", "")
                 size = item.get("size", 0)
                 item_linkcode = item.get("linkcode", "")
+                updated_at = item.get("modified") # FShare uses 'modified' for timestamp
 
                 if item_type == 0:  # File
                     items.append({
                         "url": f"https://www.fshare.vn/file/{item_linkcode}",
                         "name": name,
-                        "size": size
+                        "size": size,
+                        "is_folder": False,
+                        "updated_at": updated_at
                     })
-                elif item_type == 1 and depth < max_depth:  # Folder, recurse
-                    sub_items = await fetch_folder_files(
-                        item_linkcode, client, depth + 1, max_depth
-                    )
-                    items.extend(sub_items)
+                elif item_type == 1:  # Folder
+                    items.append({
+                        "url": f"https://www.fshare.vn/folder/{item_linkcode}",
+                        "name": name,
+                        "size": size,
+                        "is_folder": True,
+                        "updated_at": updated_at
+                    })
 
             # Check if more pages
             total = data.get("total", 0)
@@ -96,30 +97,29 @@ async def fetch_folder_files(
             page += 1
 
         except Exception as e:
-            # Log error but continue with what we have
             print(f"FShare API error for {linkcode}: {e}")
             break
 
+    # Sort: Folders first, then by name
+    items.sort(key=lambda x: (not x["is_folder"], x["name"].lower()))
     return items
 
 async def resolve_fshare_url(url: str, client: httpx.AsyncClient) -> List[Dict]:
     """
-    Resolve FShare URL to list of downloadable files.
-    Handles both single files and folders.
+    Resolve FShare URL to list of immediate files/folders.
     """
     try:
         url_type, linkcode = parse_fshare_url(url)
 
         if url_type == "file":
-            # Single file - return as-is
             return [{
                 "url": url,
-                "name": None,  # Unknown without API call
-                "size": None   # Unknown without API call
+                "name": None,
+                "size": None,
+                "is_folder": False
             }]
         elif url_type == "folder":
-            # Folder - fetch all files recursively with caching
-            cache_key = f"folder_{linkcode}"
+            cache_key = f"folder_v2_{linkcode}"
             cached = get_from_cache(config.FSHARE_FOLDER_CACHE, cache_key, config.FSHARE_FOLDER_TTL)
             if cached:
                 return cached

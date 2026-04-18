@@ -161,10 +161,12 @@ async def lookup_thuviencine(title: str, filter_title: Optional[str] = None, yea
                         
                         # Infer actual media type
                         actual_type = media_type
+                        is_folder = False
                         if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name.lower()):
                             actual_type = "tv"
                         elif "folder" in url.lower():
                             actual_type = "tv"
+                            is_folder = True
 
                         links.append({
                             "url": url,
@@ -174,6 +176,7 @@ async def lookup_thuviencine(title: str, filter_title: Optional[str] = None, yea
                             "type": "downloadable",
                             "media_type": actual_type,
                             "quality": quality,
+                            "is_folder": is_folder,
                         })
                         seen_urls.add(url)
 

@@ -131,10 +131,12 @@ def _make_result(item: dict, source: str, media_type: str = "movie") -> Optional
     
     # Try to refine media_type based on name
     actual_type = media_type
+    is_folder = False
     if re.search(r's\d{1,2}e\d{1,3}|tập\s*\d+|ep\s*\d+', name.lower()):
         actual_type = "tv"
     elif "folder" in url.lower():
         actual_type = "tv"
+        is_folder = True
 
     return {
         "url": url,
@@ -145,6 +147,7 @@ def _make_result(item: dict, source: str, media_type: str = "movie") -> Optional
         "media_type": actual_type,
         "quality": quality,
         "size": _format_size(item.get("size", 0)),
+        "is_folder": is_folder,
     }
 
 

@@ -54,6 +54,7 @@ export interface MediaLink {
   name: string;
   url: string;
   source: string;
+  is_folder?: boolean;
 }
 
 export interface StreamingEpisode {
