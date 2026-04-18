@@ -4,6 +4,7 @@ import { api } from '../api/config';
 import type { MediaLink } from '../api/config';
 import { useCloudTargets } from '../hooks/useCloudTargets';
 import type { CloudTarget } from '../services/cloudTargets';
+import { useMovieDetail } from './detail/MovieDetailContext';
 
 interface DiscoveryPipelineProps {
   tmdbId: number;
@@ -90,6 +91,8 @@ export const DiscoveryPipeline = ({
   tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady,
 }: DiscoveryPipelineProps) => {
   const cloudTargets = useCloudTargets();
+  const { userSettings } = useMovieDetail();
+  const preferredSource = (userSettings as any)?.preferred_source || 'auto';
 
   const [streamableByType, setStreamableByType] = useState<Record<string, Record<string, any[]>>>({});
   const [downloadableByType, setDownloadableByType] = useState<Record<string, MediaLink[]>>({});
@@ -114,7 +117,8 @@ export const DiscoveryPipeline = ({
       setDoneKeys(prev    => { const n = new Set(prev); n.add(key);    return n; });
     };
 
-    DISCOVERY_SOURCES.forEach(async ({ source_type, source }) => {
+    const fetchSource = async (sourceConfig: { source_type: string, source: string }) => {
+      const { source_type, source } = sourceConfig;
       const key = toKey(source_type, source);
       try {
         const isTV = mediaType === 'tv';
@@ -139,7 +143,10 @@ export const DiscoveryPipeline = ({
         );
 
         const items = res.data?.results ?? [];
-        if (items.length === 0) { markDone(key); return; }
+        if (items.length === 0) {
+          markDone(key);
+          return;
+        }
 
         if (source_type === 'm3u8') {
           setStreamableByType(prev => {
@@ -154,15 +161,14 @@ export const DiscoveryPipeline = ({
             return next;
           });
 
-          // FIX: Pass FULL data for each episode back to player
           if (!streamingNotifiedRef.current.has(source)) {
             streamingNotifiedRef.current.add(source);
             const flat = items.flatMap((g: any) =>
-              (g.episodes ?? []).map((ep: any) => ({ 
-                ...ep, 
-                server: g.server, 
-                source_type, 
-                source 
+              (g.episodes ?? []).map((ep: any) => ({
+                ...ep,
+                server: g.server,
+                source_type,
+                source
               }))
             );
             onStreamingReady?.(flat, source);
@@ -173,7 +179,6 @@ export const DiscoveryPipeline = ({
             const existingUrls = new Set(existing.map((l: any) => l.url));
             const fresh = items.filter((l: any) => l.url && !existingUrls.has(l.url));
             if (fresh.length === 0) return prev;
-            
             const combined = [...existing, ...fresh];
             return { ...prev, [source_type]: sortMediaLinks(combined) };
           });
@@ -184,10 +189,27 @@ export const DiscoveryPipeline = ({
         if (err.name === 'CanceledError' || err.name === 'AbortError') return;
         markDone(key);
       }
-    });
+    };
+
+    if (preferredSource === 'auto') {
+      DISCOVERY_SOURCES.forEach(sourceConfig => {
+        fetchSource(sourceConfig);
+      });
+    } else {
+      const preferredEntry = DISCOVERY_SOURCES.find(d => d.source === preferredSource);
+      const otherEntries = DISCOVERY_SOURCES.filter(d => d.source !== preferredSource);
+      const queue = preferredEntry ? [preferredEntry, ...otherEntries] : [...DISCOVERY_SOURCES];
+
+      (async () => {
+        for (const sc of queue) {
+          if (ctrl.signal.aborted) break;
+          await fetchSource(sc);
+        }
+      })();
+    }
 
     return () => ctrl.abort();
-  }, [tmdbId, title, localizeTitle, year, mediaType, season]);
+  }, [tmdbId, title, localizeTitle, year, mediaType, season, preferredSource, onStreamingReady]);
 
   const typeLoading = (st: string) =>
     DISCOVERY_SOURCES.filter(d => d.source_type === st).some(d => loadingKeys.has(toKey(d.source_type, d.source)));
