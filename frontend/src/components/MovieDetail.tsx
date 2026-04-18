@@ -97,16 +97,23 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const handleTorrentStream = async (magnet: string, serverName: string, epIdx: number, srvIdx: number) => {
     setIsTorrentStreaming(true);
     try {
-        const res = await api.get<{ data: { stream_url: string } }>(`/stream/torrent?magnet=${encodeURIComponent(magnet)}`);
-        const { stream_url } = res.data.data;
+        const res = await api.get<any>(`/stream/torrent?magnet=${encodeURIComponent(magnet)}`);
         
-        setActiveServerIdx(srvIdx);
-        setActiveEpisodeIdx(epIdx);
-        setActiveEmbed(stream_url); 
-        localStorage.setItem('omv_active_server_name', serverName);
-    } catch (err) {
+        // Note: api client interceptor already unwraps response.data.data to res.data
+        if (res.data?.stream_url) {
+            const stream_url = res.data.stream_url;
+            setActiveServerIdx(srvIdx);
+            setActiveEpisodeIdx(epIdx);
+            setActiveEmbed(stream_url); 
+            localStorage.setItem('omv_active_server_name', serverName);
+        } else {
+            const errorMsg = res.data?.detail || res.data?.error_msg || 'Backend failed to initialize stream';
+            throw new Error(errorMsg);
+        }
+    } catch (err: any) {
         console.error('Torrent stream failed:', err);
-        alert('Failed to start torrent stream. Peers might be missing.');
+        const detail = err.response?.data?.detail || err.message;
+        alert(`Failed to start torrent stream: ${detail}\n\nPlease ensure 'webtorrent-cli' is installed and services are restarted.`);
     } finally {
         setIsTorrentStreaming(false);
     }
@@ -115,13 +122,17 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
   const handleFshareStream = async (url: string, serverName: string, epIdx: number, srvIdx: number) => {
     setIsFshareResolving(true);
     try {
-        const res = await api.get<{ data: { stream_url: string } }>(`/stream/fshare/resolve?url=${encodeURIComponent(url)}`);
-        const { stream_url } = res.data.data;
+        const res = await api.get<any>(`/stream/fshare/resolve?url=${encodeURIComponent(url)}`);
         
-        setActiveServerIdx(srvIdx);
-        setActiveEpisodeIdx(epIdx);
-        setActiveEmbed(stream_url); 
-        localStorage.setItem('omv_active_server_name', serverName);
+        if (res.data?.stream_url) {
+            const stream_url = res.data.stream_url;
+            setActiveServerIdx(srvIdx);
+            setActiveEpisodeIdx(epIdx);
+            setActiveEmbed(stream_url); 
+            localStorage.setItem('omv_active_server_name', serverName);
+        } else {
+            throw new Error('Backend failed to resolve Fshare link');
+        }
     } catch (err: any) {
         console.error('Fshare resolve failed:', err);
         if (err.response?.status === 403) {
@@ -504,7 +515,12 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
     }
 
     const embedUrl = ep?.embed || null;
-    const m3u8Url  = ep?.m3u8 || ep?.url || null;
+    let m3u8Url  = ep?.m3u8 || ep?.url || null;
+    
+    if (ep?.stream_type === 'P2P' || ep?.stream_type === 'DIRECT' || ep?.isTorrent) {
+        m3u8Url = null; // Prevent raw magnet/direct links from being auto-played by the basic HLS handler
+    }
+
     const url      = embedUrl || m3u8Url;
     const isEmbed  = !!embedUrl;
 
@@ -824,6 +840,10 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                                 const ep = findEp(epNum);
                                                 const isPlaying = activeEpisodeIdx === globalIdx;
                                                 const isFshare = ep?.source_type === 'fshare' || ep?.url?.includes('fshare.vn');
+                                                
+                                                // Ẩn link fshare nếu chưa login fshare
+                                                if (isFshare && !userSettings?.fshare_session) return null;
+
                                                 const hasLink = !!(ep?.m3u8 || ep?.url || ep?.link_m3u8 || ep?.isTorrent || isFshare);
                                                 const isLoading = isPlaying && (isTorrentStreaming || isFshareResolving);
                                                 const epLabel = `Tập ${String(globalIdx + 1).padStart(2, '0')}`;
@@ -1060,6 +1080,8 @@ export function MovieDetail({ slug, mediaType, category, initialSeason, initialE
                                       const meta = srcMeta[provId] ?? { label: provId, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
 
                                       if (!isAvailable) return null;
+                                      // Ràng buộc: fshare.vn phải login mới show
+                                      if (provId === 'FSHARE' && !userSettings?.fshare_session) return null;
 
                                       return (
                                         <button key={provId}

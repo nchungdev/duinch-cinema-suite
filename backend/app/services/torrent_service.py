@@ -36,23 +36,42 @@ def start_torrent_stream(magnet: str) -> Optional[str]:
     
     # Run webtorrent: --out (download path), --port, --quiet
     # We use sequential download by default
+    import shutil
+    webtorrent_bin = shutil.which("webtorrent")
+    if not webtorrent_bin:
+        # Fallback for common MacOS paths
+        for fallback in ["/opt/homebrew/bin/webtorrent", "/usr/local/bin/webtorrent"]:
+            if os.path.exists(fallback):
+                webtorrent_bin = fallback
+                break
+    
+    if not webtorrent_bin:
+        print("[Torrent] Error: 'webtorrent' command not found in PATH or common locations.")
+        return None
+
     cmd = [
-        "webtorrent", magnet,
+        webtorrent_bin, magnet,
         "--port", str(port),
         "--quiet"
     ]
     
     try:
+        # Ensure log directory exists
+        os.makedirs("logs", exist_ok=True)
+        log_file = open("logs/webtorrent.log", "a")
+        log_file.write(f"\n\n--- Starting Stream: {info_hash} ---\n")
+        log_file.flush()
+
         # Start detached process
         process = subprocess.Popen(
             cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=log_file,
             preexec_fn=os.setsid
         )
         
-        # Give it a second to bind the port
-        time.sleep(2)
+        # Give it more time to bind the port and discover peers
+        time.sleep(5)
         
         _active_streams[info_hash] = {
             "port": port,

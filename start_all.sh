@@ -2,6 +2,7 @@
 
 # --- CONFIGURATION ---
 PROJECT_ROOT=$(pwd)
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 LOG_DIR="$PROJECT_ROOT/logs"
 DATA_DIR="$PROJECT_ROOT/data"
 BACKEND_DIR="$PROJECT_ROOT/backend"
@@ -100,8 +101,26 @@ else
     echo -e "${GREEN}   [OK] Redis $REDIS_VER is active${NC}"
 fi
 
-# --- 6. START SERVICES ---
-echo -e "${YELLOW}--- 6. Starting Services ---${NC}"
+# --- 6. CHECK WEBTORRENT CLI ---
+echo -e "${YELLOW}--- 6. Webtorrent Dependencies ---${NC}"
+if ! command -v webtorrent &> /dev/null; then
+    echo -e "${YELLOW}   [NPM] webtorrent is not installed globally. Attempting to install...${NC}"
+    if command -v npm &> /dev/null; then
+        npm install -g webtorrent-cli > /dev/null 2>&1
+        if command -v webtorrent &> /dev/null; then
+            echo -e "${GREEN}   [OK] webtorrent-cli installed successfully${NC}"
+        else
+            echo -e "${RED}   [WARN] Failed to install webtorrent-cli globally. Peer discovery may fail. Please run 'npm install -g webtorrent-cli' manually.${NC}"
+        fi
+    else
+        echo -e "${RED}   [ERR] NPM not found. Cannot install webtorrent-cli. Please install it manually.${NC}"
+    fi
+else
+    echo -e "${GREEN}   [OK] webtorrent-cli is active${NC}"
+fi
+
+# --- 7. START SERVICES ---
+echo -e "${YELLOW}--- 7. Starting Services ---${NC}"
 
 # Cleanup existing
 echo -e "${BLUE}   [System] Cleaning up ports 8086 and 5173...${NC}"
