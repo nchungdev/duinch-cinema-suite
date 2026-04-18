@@ -60,29 +60,46 @@ def start_torrent_stream(magnet: str) -> Optional[str]:
     ]
     
     try:
-        # Ensure log directory exists
-        os.makedirs("logs", exist_ok=True)
-        log_file = open("logs/webtorrent.log", "a")
-        log_file.write(f"\n\n--- Starting Stream: {info_hash} ---\n")
+        # Ensure log directory exists in the correct location
+        # If running from backend/, logs is backend/logs
+        # If running from root, logs is root/logs
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "webtorrent_debug.log")
+        
+        log_file = open(log_path, "a")
+        log_file.write(f"\n\n--- Starting Stream: {info_hash} | Port: {port} ---\n")
+        log_file.write(f"Command: {' '.join(cmd)}\n")
         log_file.flush()
 
-        # Start detached process
+        # Start detached process with its own process group
         process = subprocess.Popen(
             cmd,
             stdout=log_file,
             stderr=log_file,
-            preexec_fn=os.setsid
+            preexec_fn=os.setsid,
+            bufsize=1,
+            universal_newlines=True
         )
         
-        # Give it more time to bind the port and discover peers
-        time.sleep(5)
+        # Give it significantly more time to:
+        # 1. Start the HTTP server
+        # 2. Find peers
+        # 3. Download metadata and start downloading the first pieces
+        time.sleep(10)
         
+        # Check if process is still alive after 10s
+        if process.poll() is not None:
+            print(f"[Torrent] Error: webtorrent process died immediately. Check {log_path}")
+            return None
+
         _active_streams[info_hash] = {
             "port": port,
             "process": process,
             "started_at": time.time()
         }
         
+        print(f"[Torrent] Stream initialized at http://localhost:{port}/0")
         return f"http://localhost:{port}/0"
     except Exception as e:
         print(f"[Torrent] Failed to start stream: {e}")

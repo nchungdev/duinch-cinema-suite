@@ -6,13 +6,15 @@ import { useHlsPlayer } from '../../hooks/useHlsPlayer';
 export const MediaStreamer = () => {
     const { 
         activeEmbed, isTorrentStreaming, isFshareResolving,
-        activeType, activeProvider, streamableSources 
+        activeType, activeProvider, streamableSources,
+        isPlayerReady, playerError
     } = useMovieDetail();
     
     const videoRef = useRef<HTMLVideoElement>(null);
     useHlsPlayer(videoRef);
 
     const isInternalLoading = isTorrentStreaming || isFshareResolving;
+    const showLoadingOverlay = (isInternalLoading || (!!activeEmbed && !activeEmbed.includes('iframe') && !isPlayerReady)) && !playerError;
 
     return (
         <div className="relative w-full aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/5 group">
@@ -35,7 +37,7 @@ export const MediaStreamer = () => {
                     )}
 
                     {/* Loading Overlay */}
-                    {isInternalLoading && (
+                    {showLoadingOverlay && (
                         <div className="absolute inset-0 bg-[#0a0a0c]/90 backdrop-blur-xl flex flex-col items-center justify-center z-30 animate-in fade-in duration-500">
                             <div className="relative">
                                 <div className="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full" />
@@ -43,12 +45,33 @@ export const MediaStreamer = () => {
                             </div>
                             <div className="mt-8 text-center space-y-2">
                                 <h3 className="text-xl font-black text-white uppercase tracking-[0.2em]">
-                                    {isTorrentStreaming ? 'Igniting P2P Engine' : 'Resolving Cloud Link'}
+                                    {isTorrentStreaming ? 'Igniting P2P Engine' : 
+                                     isFshareResolving ? 'Resolving Cloud Link' : 'Synchronizing Stream'}
                                 </h3>
                                 <p className="text-xs text-gray-500 font-bold uppercase tracking-widest animate-pulse">
-                                    {isTorrentStreaming ? 'Establishing peer connections...' : 'Bypassing Fshare restrictions...'}
+                                    {isTorrentStreaming ? 'Establishing peer connections...' : 
+                                     isFshareResolving ? 'Bypassing Fshare restrictions...' : 'Buffering media segments...'}
                                 </p>
                             </div>
+                        </div>
+                    )}
+
+                    {/* Error Overlay */}
+                    {playerError && (
+                        <div className="absolute inset-0 bg-[#0a0a0c]/90 backdrop-blur-xl flex flex-col items-center justify-center z-30 animate-in fade-in duration-500">
+                            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
+                                <Activity className="w-8 h-8 text-red-500" />
+                            </div>
+                            <div className="text-center space-y-2">
+                                <h3 className="text-lg font-black text-white uppercase tracking-widest">Transmission Failure</h3>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] max-w-xs">{playerError}</p>
+                            </div>
+                            <button 
+                                onClick={() => window.location.reload()}
+                                className="mt-8 px-6 py-2 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white transition-all"
+                            >
+                                Reset System
+                            </button>
                         </div>
                     )}
 

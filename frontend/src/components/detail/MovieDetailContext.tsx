@@ -27,8 +27,17 @@ interface MovieDetailContextType {
   // Discovery & Resolvers
   isTorrentStreaming: boolean;
   isFshareResolving: boolean;
+  isPlayerReady: boolean;
+  playerError: string | null;
+  setIsPlayerReady: (ready: boolean) => void;
+  setPlayerError: (error: string | null) => void;
   userSettings: any;
   setUserSettings: (s: any) => void;
+  
+  // Handlers
+  handleTorrentStream: (magnet: string, serverName: string, epIdx: number, srvIdx: number) => Promise<void>;
+  handleFshareStream: (url: string, serverName: string, epIdx: number, srvIdx: number) => Promise<void>;
+  handleFshareLogin: (e: React.FormEvent) => Promise<void>;
   
   // Helpers
   streamingLinks: any[];
@@ -58,6 +67,8 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
   const [streamingLinks, setStreamingLinks] = useState<any[]>([]);
   const [isTorrentStreaming, setIsTorrentStreaming] = useState(false);
   const [isFshareResolving, setIsFshareResolving] = useState(false);
+  const [isPlayerReady, setIsPlayerReady] = useState(false);
+  const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<any>(null);
 
   // Reset state on slug change
@@ -72,6 +83,8 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
     setActiveSeasonIdx(0);
     setActiveEmbed(null);
     setStreamingLinks([]);
+    setIsPlayerReady(false);
+    setPlayerError(null);
   }, [initialValues.slug]);
 
   const value = {
@@ -88,11 +101,16 @@ export const MovieDetailProvider = ({ children, initialValues }: { children: Rea
     streamingLinks, setStreamingLinks,
     isTorrentStreaming, setIsTorrentStreaming,
     isFshareResolving, setIsFshareResolving,
+    isPlayerReady, setIsPlayerReady,
+    playerError, setPlayerError,
     userSettings, setUserSettings,
+    handleTorrentStream: initialValues.handleTorrentStream,
+    handleFshareStream: initialValues.handleFshareStream,
+    handleFshareLogin: initialValues.handleFshareLogin,
     onBack: initialValues.onBack,
     slug: initialValues.slug,
     mediaType: initialValues.mediaType,
-  } as any;
+  };
 
   return (
     <MovieDetailContext.Provider value={value}>

@@ -5,7 +5,8 @@ import { useMovieDetail } from '../components/detail/MovieDetailContext';
 export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
   const { 
     activeEmbed, activeType, streamingLinks, activeEpisodeIdx,
-    setActiveEpisodeIdx, setActiveEmbed, activeServerIdx
+    setActiveEpisodeIdx, setActiveEmbed, activeServerIdx,
+    setIsPlayerReady, setPlayerError
   } = useMovieDetail();
   
   const hlsRef = useRef<Hls | null>(null);
@@ -25,12 +26,22 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !activeEmbed || activeEmbed.includes('iframe')) return;
+
+    setIsPlayerReady(false);
+    setPlayerError(null);
+
+    const onCanPlay = () => setIsPlayerReady(true);
+    const onError = (e: any) => {
+        console.error('[Player] Error:', e);
+        setPlayerError('Failed to play video. Source might be dead.');
+    };
+
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('error', onError);
+
     if (activeType === 'P2P' || activeType === 'DIRECT') {
       video.src = activeEmbed;
-      return;
-    }
-
-    if (Hls.isSupported()) {
+    } else if (Hls.isSupported()) {
       if (hlsRef.current) hlsRef.current.destroy();
       const hls = new Hls();
       hls.loadSource(activeEmbed);
@@ -41,9 +52,11 @@ export const useHlsPlayer = (videoRef: React.RefObject<HTMLVideoElement>) => {
     }
 
     return () => {
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('error', onError);
       if (hlsRef.current) hlsRef.current.destroy();
     };
-  }, [activeEmbed, activeType, videoRef]);
+  }, [activeEmbed, activeType, videoRef, setIsPlayerReady, setPlayerError]);
 
   return { hlsRef };
 };
