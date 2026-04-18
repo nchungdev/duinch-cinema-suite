@@ -663,44 +663,104 @@ function QuickServerRow({ serverName, episodes, color = 'text-orange-400', cloud
 
 // ── Deep Row (downloadable / external link) ───────────────────────────────────
 function DeepRow({ link, actionLabel, color, onAction }: { link: MediaLink; actionLabel: string; color: string; onAction?: (url: string, name: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [files, setFiles] = useState<{ name: string; url: string; size?: number }[] | null>(null);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
   const src      = (link as any).source as string | undefined;
   const srcLabel = src ? (SOURCE_BADGE[src] ?? src) : null;
+  const isFolder = link.url?.includes('/folder/') || link.url?.includes('/folders/') || (link as any).is_folder;
+
+  const toggleFolder = async () => {
+    if (!isFolder) return;
+    if (expanded) { setExpanded(false); return; }
+    setExpanded(true);
+    if (files !== null) return;
+    
+    setLoadingFiles(true);
+    try {
+      const provider = link.url?.includes('fshare.vn') ? 'fshare' : 'gdrive';
+      const res = await api.get(`/media/expand-folder?url=${encodeURIComponent(link.url || '')}&provider=${provider}`);
+      setFiles(res.data?.results || []);
+    } catch {
+      setFiles([]);
+    }
+    setLoadingFiles(false);
+  };
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-black/30 border border-white/5 hover:border-white/10 hover:bg-black/50 transition-all group">
-      <div className="flex-1 min-w-0 space-y-0.5">
-        <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
-          {link.name || 'Unknown'}
-        </p>
-        <div className="flex items-center gap-1.5">
-          {(link as any).size && (
-            <span className="text-[7px] font-bold text-gray-600 uppercase tracking-wider">{formatSize((link as any).size)}</span>
+    <div className="rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-all overflow-hidden">
+      <div className="flex items-center gap-3 px-3 py-2 group">
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
+            {link.name || 'Unknown'}
+          </p>
+          <div className="flex items-center gap-1.5">
+            {isFolder && (
+              <span className="flex items-center gap-1 text-[7px] font-black text-blue-500 uppercase tracking-widest">
+                <Box className="w-2.5 h-2.5" /> Folder
+              </span>
+            )}
+            {(link as any).size && (
+              <span className="text-[7px] font-bold text-gray-600 uppercase tracking-wider">{formatSize((link as any).size)}</span>
+            )}
+            {srcLabel && (
+              <span className="text-[6px] font-black uppercase tracking-widest px-1 py-0.5 rounded bg-white/5 text-gray-600">
+                {srcLabel}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isFolder && (
+            <button onClick={toggleFolder}
+              className="p-1.5 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-all">
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`} />
+            </button>
           )}
-          {srcLabel && (
-            <span className="text-[6px] font-black uppercase tracking-widest px-1 py-0.5 rounded bg-white/5 text-gray-600">
-              {srcLabel}
-            </span>
-          )}
+          <button onClick={() => {
+              if (link.url) {
+                  if (onAction) onAction(link.url, link.name || '');
+                  else window.open(link.url, '_blank');
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest ${color}`}>
+            <Download className="w-2.5 h-2.5" />
+            {actionLabel}
+          </button>
         </div>
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {(link as any).source_page && (
-          <a href={(link as any).source_page} target="_blank" rel="noopener noreferrer"
-            className="p-1.5 rounded-lg hover:bg-white/10 text-gray-600 hover:text-gray-300 transition-all">
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        )}
-        <button onClick={() => {
-            if (link.url) {
-                if (onAction) onAction(link.url, link.name || '');
-                else window.open(link.url, '_blank');
-            }
-          }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/15 transition-all text-[8px] font-black uppercase tracking-widest ${color}`}>
-          <Download className="w-2.5 h-2.5" />
-          {actionLabel}
-        </button>
-      </div>
+
+      {/* Expanded folder contents */}
+      {expanded && (
+        <div className="border-t border-white/5 px-3 py-2 space-y-1 bg-black/20 animate-cinema-fade">
+          {loadingFiles ? (
+            <div className="flex items-center gap-2 py-1 text-[8px] font-black uppercase tracking-widest text-gray-600">
+              <Loader2 className="w-3 h-3 animate-spin text-blue-500/50" />Exploring folder…
+            </div>
+          ) : files && files.length > 0 ? (
+            <div className="max-h-60 overflow-y-auto custom-scrollbar pr-1">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 py-1.5 border-b border-white/5 last:border-0 group/f">
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <File className="w-2.5 h-2.5 text-gray-600 group-hover/f:text-gray-400" />
+                    <span className="text-[8px] font-medium text-gray-400 truncate group-hover/f:text-gray-200 transition-colors">{f.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {f.size && <span className="text-[7px] font-bold text-gray-600 shrink-0">{formatSize(f.size)}</span>}
+                    <button onClick={() => window.open(f.url, '_blank')}
+                      className="p-1 rounded bg-white/5 text-gray-500 hover:text-blue-400 transition-colors">
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[8px] text-gray-600 uppercase tracking-widest py-1">Folder is empty or private</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
