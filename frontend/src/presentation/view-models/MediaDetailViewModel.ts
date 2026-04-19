@@ -35,26 +35,32 @@ export const useMediaDetailViewModel = () => {
 
   // 1. Logic: Tải dữ liệu Metadata
   useEffect(() => {
+    let isMounted = true;
     const fetchData = async () => {
       if (!slug) return;
+      
+      // Tránh fetch lại nếu slug không đổi (trừ khi đang loading)
       setLoading(true);
       try {
         const useCase = new GetMediaDetail();
         const mediaInstance = await useCase.execute(mediaType, slug);
-        setMedia(mediaInstance);
         
-        // Fetch local status
-        const endpoint = mediaType === 'tv' ? `/tv/${slug}` : `/movie/${slug}`;
-        const res = await api.get(endpoint);
-        setLocalExists(res.data.data.local?.exists || false);
+        if (isMounted) {
+          setMedia(mediaInstance);
+          // Metadata API đã trả về thông tin local trong data.local.exists
+          // Không cần gọi thêm một request /tv/{id} riêng biệt nữa
+          const rawData = (mediaInstance as any)._rawResponse; 
+          setLocalExists(rawData?.data?.local?.exists || false);
+        }
       } catch (err) {
         console.error(`[ViewModel] Failed to fetch ${mediaType} details:`, err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
     fetchData();
-  }, [slug, mediaType, setMedia, setLoading, setLocalExists]);
+    return () => { isMounted = false; };
+  }, [slug, mediaType]); // CHỈ phụ thuộc vào slug và mediaType
 
   // 2. Logic: Tải Cài đặt người dùng
   useEffect(() => {
