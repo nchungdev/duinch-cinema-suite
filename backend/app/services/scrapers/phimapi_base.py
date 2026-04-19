@@ -111,14 +111,22 @@ class PhimAPIBase:
             else:
                 # TV Rule: Match current season year OR series start year
                 is_year_ok = False
-                if target_season_year > 0 and abs(s_year - target_season_year) <= 1: 
-                    is_year_ok = True
-                    score += 700
-                elif series_start > 0 and abs(s_year - series_start) <= 1:
-                    is_year_ok = True
-                    score += 400
+                if target_season_year > 0:
+                    if abs(s_year - target_season_year) <= 1:
+                        is_year_ok = True
+                        score += 700
+                    # If we HAVE a target year but the source is different, it's a mismatch
+                    else: is_year_ok = False 
+                elif series_start > 0:
+                    if abs(s_year - series_start) <= 1:
+                        is_year_ok = True
+                        score += 400
+                    elif s_year > series_start:
+                        # Allow newer years if we don't have specific season metadata
+                        is_year_ok = True
+                        score += 200
                 
-                # IMPORTANT: If we have no TMDB metadata to compare against, we ALLOW it
+                # If series_start is 0, we have no metadata, so we must allow it
                 if series_start == 0: is_year_ok = True 
                 
                 if not is_year_ok: return -3000
