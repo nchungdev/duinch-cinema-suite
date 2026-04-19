@@ -8,6 +8,7 @@ from typing import List, Dict, Optional, Any
 from app.core import config
 
 def title_to_slug(title: str) -> str:
+    """Convert a movie title to a phimapi-style URL slug."""
     t = title.replace('đ', 'd').replace('Đ', 'D')
     nfkd = unicodedata.normalize('NFKD', t)
     ascii_str = nfkd.encode('ascii', 'ignore').decode('ascii')
@@ -15,11 +16,13 @@ def title_to_slug(title: str) -> str:
     return slug
 
 def is_supported_lang(text: str) -> bool:
+    """Check if the text is primarily English or Vietnamese."""
     if not text: return False
     vi_pattern = r'^[a-zA-Z0-9\s.,!?:;\-\(\)àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]+$'
     return bool(re.match(vi_pattern, text))
 
 async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
+    """Fetch metadata from TMDB with robust fallback and multi-language support."""
     token = config.TMDB_READ_ACCESS_TOKEN or os.getenv("TMDB_READ_ACCESS_TOKEN")
     if not token or not tmdb_id: return {}
     tmdb_type = "movie" if media_type == "movie" else "tv"
@@ -128,7 +131,7 @@ class PhimAPIBase:
         req_season = season if season is not None else 1
         tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"series_year": int(year) if year else 0}
         tmdb_seasons = tmdb_info.get("tmdb_seasons") or []
-        all_results, seen_urls, seen_slugs = [], set(), set()
+        all_results, seen_keys, seen_slugs = [], set(), set()
 
         async def _process_slug(slug: str, assigned_season: Optional[int] = None):
             if not slug or slug in seen_slugs: return
@@ -136,6 +139,8 @@ class PhimAPIBase:
             details = await self.get_details(client, slug)
             if not details: return
             movie = details.get("movie") or {}
+            movie_name = movie.get("name") or movie.get("origin_name") or "Unknown"
+            
             s_year = int(movie.get("year") or 0)
             current_s = self._detect_season(movie.get("name", ""), movie.get("origin_name", ""), s_year, tmdb_info)
             if not current_s: current_s = assigned_season
@@ -146,11 +151,9 @@ class PhimAPIBase:
                     for ep in (server.get("server_data") or []):
                         m3u8_link = ep.get("link_m3u8")
                         embed_link = ep.get("link_embed")
-                        
-                        # Use a composite key for deduplication to ensure we don't skip valid links
-                        # but still avoid exact duplicates.
                         u_key = m3u8_link or embed_link
-                        if u_key and u_key not in seen_urls:
+                        
+                        if u_key and u_key not in seen_keys: # FIXED: was seen_urls
                             rs = current_s or 1
                             ename = str(ep.get("name") or "")
                             epm = re.search(r'\d+', ename)
@@ -162,9 +165,10 @@ class PhimAPIBase:
                             
                             all_results.append({
                                 "type": "streamable", "provider": self.provider_name.upper(), "server": sname, 
-                                "name": ename, "m3u8": m3u8_link, "embed": embed_link, "season": rs
+                                "name": ename, "m3u8": m3u8_link, "embed": embed_link, "season": rs,
+                                "movie_name": movie_name, "slug": slug # Add metadata for unique grouping
                             })
-                            seen_urls.add(u_key)
+                            seen_keys.add(u_key)
 
         keywords = list(dict.fromkeys([q for q in [localize_title, title] if q and is_supported_lang(q)]))
         for kw in keywords:

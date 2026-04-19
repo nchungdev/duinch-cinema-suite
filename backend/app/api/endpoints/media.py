@@ -65,19 +65,16 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
         if results is None: results = []
         
         if source_type == "m3u8":
-            # For streaming, we need to group by THE SOURCE SLUG to avoid mixing different uploads
-            # However, PhimAPIBase doesn't return the slug in the flattened list yet.
-            # We will use (Server Name + M3U8 Domain) as a heuristic for unique server groupings.
             server_groups = {}
             for r in results:
+                m_name = r.get("movie_name") or "Movie"
                 srv = r.get("server") or "Server"
-                # Extract domain from m3u8 as a unique marker for the CDN/Source
                 m3u8 = r.get("m3u8") or ""
                 domain_match = re.search(r'https?://([^/]+)', m3u8)
                 domain = domain_match.group(1) if domain_match else "unknown"
                 
-                # Full unique identity for this server pipe
-                group_key = f"[{source.upper()}] {srv} ({domain})"
+                # FULL IDENTITY: [Provider] Movie Name - Server (CDN)
+                group_key = f"[{source.upper()}] {m_name} - {srv} ({domain})"
                 
                 if group_key not in server_groups: server_groups[group_key] = []
                 server_groups[group_key].append({
