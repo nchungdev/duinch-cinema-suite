@@ -18,7 +18,7 @@ DISCOVERY_SOURCES = [
     {"source_type": "gdrive",      "source": "googlesearch"}
 ]
 
-@router.post("/test-timfshare", response_model=List[DownloadableLink], tags=["Test"])
+@router.post("/test-timfshare", response_model=List[DownloadableLink], response_model_exclude_none=True, tags=["Test"])
 async def test_timfshare_endpoint(
     request: Request,
     query: str = Query(..., description="Search keyword for TimFShare"),
@@ -34,7 +34,6 @@ async def test_timfshare_endpoint(
     results = await lookup_timfshare(query, year=year, filter_title=filter_title or query, media_type=media_type)
     
     if media_type == "tv":
-        # Group and Sort by Season
         season_groups = {}
         for r in results:
             s_label = r.source_page if r.source_page else "Season 01"
@@ -82,6 +81,7 @@ async def discovery_stream(
         yield f"data: {json.dumps({'type': 'init', 'total_sources': len(tasks), 'sources': DISCOVERY_SOURCES})}\n\n"
         for completed_task in asyncio.as_completed(tasks):
             result = await completed_task
+            # DiscoveryTaskResult model can be serialized using .dict(exclude_none=True)
             yield f"data: {json.dumps({'type': 'result', 'data': result.dict(exclude_none=True)})}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
 
