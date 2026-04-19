@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request
 from app.core import config
 from app.infrastructure.cache.redis_cache import cache_manager
-from app.domain.models.tmdb import TMDBSearchResult
 import httpx
 
 router = APIRouter()
@@ -27,21 +26,20 @@ async def get_trending(request: Request, media_type: str = "movie"):
         results = []
         for item in raw_results:
             normalized_type = "tv" if media_type == "tv" else "movie"
-            tmdb_id = item.get("id")
+            tid = item.get("id")
             
-            # Use strict model to enforce 'id' field
-            res_obj = TMDBSearchResult(
-                id=tmdb_id,
-                tmdb_id=tmdb_id,
-                title=item.get("title") or item.get("name") or "Unknown",
-                origin_name=item.get("original_title") or item.get("original_name"),
-                year=(item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
-                media_type=normalized_type,
-                poster=f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
-                overview=item.get("overview"),
-                source="tmdb"
-            )
-            results.append(res_obj.dict())
+            # Trả về Dictionary phẳng để Frontend nhận diện đúng trường 'id'
+            results.append({
+                "id": tid,
+                "tmdb_id": tid,
+                "title": item.get("title") or item.get("name") or "Unknown",
+                "origin_name": item.get("original_title") or item.get("original_name"),
+                "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
+                "media_type": normalized_type,
+                "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
+                "overview": item.get("overview"),
+                "source": "tmdb"
+            })
         
         payload = {"results": results}
         if results:

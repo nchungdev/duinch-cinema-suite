@@ -3,7 +3,6 @@ import urllib.parse
 from typing import List, Dict, Optional, Any
 from app.core import config
 from app.infrastructure.cache.redis_cache import cache_manager
-from app.domain.models.tmdb import TMDBSearchResult
 
 async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: str = "all", page: int = 1) -> Dict[str, Any]:
     if not config.TMDB_READ_ACCESS_TOKEN:
@@ -32,19 +31,19 @@ async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: s
             if item_type not in ["movie", "tv", "collection"]: continue
             normalized_type = "tv" if item_type == "tv" else "movie"
             
-            tmdb_id = item.get("id")
-            res_obj = TMDBSearchResult(
-                id=tmdb_id,
-                tmdb_id=tmdb_id,
-                title=item.get("title") or item.get("name") or "Unknown",
-                origin_name=item.get("original_title") or item.get("original_name"),
-                year=(item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
-                media_type=normalized_type,
-                poster=f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
-                overview=item.get("overview"),
-                slug=str(tmdb_id)
-            )
-            results.append(res_obj.dict())
+            tid = item.get("id")
+            # Trả về Dictionary thuần để tránh mọi vấn đề về Serialization
+            results.append({
+                "id": tid,           # BẮT BUỘC cho Frontend
+                "tmdb_id": tid,
+                "title": item.get("title") or item.get("name") or "Unknown",
+                "origin_name": item.get("original_title") or item.get("original_name"),
+                "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
+                "media_type": normalized_type,
+                "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
+                "overview": item.get("overview"),
+                "source": "tmdb"
+            })
 
         payload = {"results": results, "total_pages": total_pages, "page": page}
         if results:
@@ -94,15 +93,3 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
     except Exception as e:
         print(f"TMDB detail fetch error: {e}")
         return None
-
-async def get_tmdb_alternative_titles(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> List[str]:
-    """Fetch all alternative titles for a movie or TV show from TMDB."""
-    if not config.TMDB_READ_ACCESS_TOKEN: return []
-    url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/alternative_titles"
-    headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
-    try:
-        resp = await client.get(url, headers=headers)
-        data = resp.json()
-        raw_titles = data.get("results" if media_type == "tv" else "titles", [])
-        return list(set([t.get("title") for t in raw_titles if t.get("title")]))
-    except Exception: return []
