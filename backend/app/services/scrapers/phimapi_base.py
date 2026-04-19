@@ -16,12 +16,14 @@ def title_to_slug(title: str) -> str:
     return slug
 
 def is_supported_lang(text: str) -> bool:
-    """Check if the text is primarily English or Vietnamese."""
+    """Check if the text is primarily English or Vietnamese (Latin-based)."""
     if not text: return False
+    # Allow Latin letters, numbers, spaces, and Vietnamese accented characters
     vi_pattern = r'^[a-zA-Z0-9\s.,!?:;\-\(\)àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]+$'
     return bool(re.match(vi_pattern, text))
 
 async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
+    """Fetch TMDB metadata including per-season release years."""
     if not config.TMDB_READ_ACCESS_TOKEN or not tmdb_id: return {}
     tmdb_type = "movie" if media_type == "movie" else "tv"
     url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}"
@@ -79,46 +81,53 @@ class PhimAPIBase:
         return None
 
     def _score_search_item(self, item: Dict, query: str, tmdb_id: Optional[str], year: Optional[int], media_type: str, requested_season: int, tmdb_info: Dict) -> int:
+        """Absolute rules-based scoring for search results."""
         score = 0
         n_name = item.get("name", "").lower().strip()
         n_origin = item.get("origin_name", "").lower().strip()
         
-        # 1. TYPE MATCH
+        # 1. TYPE MATCH (Strict)
         s_type = item.get("type", "").lower()
         is_tv_req = media_type == "tv"
         s_is_tv = s_type in ["series", "tvshows", "hoathinh", "tv"]
-        if is_tv_req != s_is_tv: return -2000
+        if is_tv_req != s_is_tv: return -3000
 
-        # 2. TMDB ID MATCH
+        # 2. TMDB ID MATCH (Strong Priority)
         src_tmdb = item.get("tmdb", {})
         item_tmdb_id = str(src_tmdb.get("id")) if src_tmdb.get("id") else None
         if tmdb_id and item_tmdb_id:
-            if item_tmdb_id == str(tmdb_id): score += 2000 # Boost heavily
-            else: return -2000
+            if item_tmdb_id == str(tmdb_id): score += 2000
+            else: return -5000 # Absolute mismatch
 
-        # 3. YEAR LOGIC
+        # 3. YEAR MATCH (Strict for TV & Movie)
         s_year = int(item.get("year") or 0)
         series_start = int(tmdb_info.get("series_year") or year or 0)
         target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
         
-        if s_year > 0 and series_start > 0:
+        if s_year > 0:
             if media_type == "movie":
-                if abs(s_year - series_start) <= 1: score += 600
-                else: return -1000
+                if series_start > 0 and abs(s_year - series_start) > 1: return -3000
+                if series_start > 0 and abs(s_year - series_start) <= 1: score += 600
             else:
-                if target_season_year > 0 and abs(s_year - target_season_year) <= 1: score += 700
-                elif series_start > 0 and abs(s_year - series_start) <= 1: score += 400
-                elif s_year >= series_start: score += 200
-                else: score -= 500
+                # TV Rule: Must match current season year OR series start year
+                is_year_ok = False
+                if target_season_year > 0 and abs(s_year - target_season_year) <= 1: 
+                    is_year_ok = True
+                    score += 700
+                elif series_start > 0 and abs(s_year - series_start) <= 1:
+                    is_year_ok = True
+                    score += 400
+                
+                if not is_year_ok: return -3000
 
-        # 4. SEASON IN NAME MATCH
+        # 4. SEASON NUMBER MATCH (Strict if present in title)
         s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', n_name + " " + n_origin, re.IGNORECASE)
         if s_match:
             found_s = int(s_match.group(2))
             if found_s == requested_season: score += 500
-            else: score -= 400
+            else: return -3000 # Absolute mismatch of season number
 
-        # 5. TITLE MATCH
+        # 5. TITLE MATCH (Base points)
         n_query = query.lower().strip()
         if n_query and (n_query == n_name or n_query == n_origin): score += 300
         elif n_query and (n_query in n_name or n_query in n_origin): score += 100
@@ -139,7 +148,7 @@ class PhimAPIBase:
     ) -> List[Dict[str, Any]]:
         
         req_season = season if season is not None else 1
-        tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"series_year": int(year) if year else 0}
+        tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"series_year": int(year) if year else 0, "season_years": {}}
         tmdb_seasons = tmdb_info.get("tmdb_seasons", [])
         
         all_results = []
@@ -153,8 +162,8 @@ class PhimAPIBase:
             if not details: return
             
             movie = details.get("movie", {})
-            # RELAXED VALIDATION for direct slug processing
-            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s, tmdb_info) >= -100:
+            # Use strict score check for details processing
+            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s, tmdb_info) > 0:
                 for server in details.get("episodes", []):
                     sname = server.get("server_name", "Server")
                     for ep in server.get("server_data", []):
@@ -175,12 +184,13 @@ class PhimAPIBase:
                             })
                             seen_urls.add(u)
 
-        # PHASE 1: TMDB ID Search (Highest Priority)
+        # PHASE 1: TMDB ID Search
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True:
                 await _process_slug(res.get("movie", {}).get("slug"), req_season)
-                if all_results: return all_results
+                # If we found links by ID, we still continue to check for other parts/seasons 
+                # to satisfy the "find all seasons" requirement.
 
         # PHASE 2: Lang-aware Slug & Search
         def clean_for_slug(t: str) -> str:
@@ -194,23 +204,21 @@ class PhimAPIBase:
             clean_t = clean_for_slug(t)
             base_slug = title_to_slug(clean_t)
             
-            # Direct Slugs
+            # 1. Try Direct Slugs
             await _process_slug(base_slug, req_season)
             if media_type == "tv":
                 total_s = tmdb_info.get("total_seasons", 1)
                 for p in range(1, total_s + 1): await _process_slug(f"{base_slug}-phan-{p}", p)
             
-            # Search API
-            if not all_results:
-                search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": t, "limit": 10})
-                items = search_data.get("data", {}).get("items", [])
-                for item in items:
-                    if self._score_search_item(item, t, str(tmdb_id) if tmdb_id else None, year, media_type, req_season, tmdb_info) > 0:
-                        await _process_slug(item["slug"], req_season)
-                        if media_type == "tv":
-                            total_s = tmdb_info.get("total_seasons", 1)
-                            for p in range(1, total_s + 1): await _process_slug(f"{item['slug']}-phan-{p}", p)
-
-            if all_results: return all_results
+            # 2. Try Search API
+            search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": t, "limit": 10})
+            items = search_data.get("data", {}).get("items", [])
+            for item in items:
+                # Strict scoring here will filter out wrong seasons/years
+                if self._score_search_item(item, t, str(tmdb_id) if tmdb_id else None, year, media_type, req_season, tmdb_info) > 0:
+                    await _process_slug(item["slug"], req_season)
+                    if media_type == "tv":
+                        total_s = tmdb_info.get("total_seasons", 1)
+                        for p in range(1, total_s + 1): await _process_slug(f"{item['slug']}-phan-{p}", p)
 
         return all_results
