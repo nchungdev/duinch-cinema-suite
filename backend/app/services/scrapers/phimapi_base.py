@@ -64,6 +64,7 @@ class PhimAPIBase:
 
     def _score_search_item(self, item: Dict, query: str, tmdb_id: Optional[str], year: Optional[int], media_type: str, requested_season: int, tmdb_info: Dict) -> int:
         score = 0
+        n_query = query.lower().strip()
         n_name = item.get("name", "").lower().strip()
         n_origin = item.get("origin_name", "").lower().strip()
         
@@ -80,10 +81,9 @@ class PhimAPIBase:
             if item_tmdb_id == str(tmdb_id): score += 1000
             else: return -2000
 
-        # 3. SMART YEAR MATCH (Season-Aware)
+        # 3. YEAR LOGIC (Season-Aware)
         s_year = int(item.get("year") or 0)
         series_start = int(tmdb_info.get("series_year") or year or 0)
-        # Bắt buộc lấy đúng năm của Season này từ TMDB
         target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
         
         if s_year > 0:
@@ -91,17 +91,10 @@ class PhimAPIBase:
                 if series_start > 0 and abs(s_year - series_start) <= 1: score += 600
                 else: return -1000
             else:
-                # Ưu tiên 1: Khớp chính xác năm phát hành của Season này
-                if target_season_year > 0 and abs(s_year - target_season_year) <= 1:
-                    score += 700
-                # Ưu tiên 2: Khớp năm bắt đầu series (nhiều nguồn dùng năm gốc cho mọi phần)
-                elif series_start > 0 and abs(s_year - series_start) <= 1:
-                    score += 400
-                # Ưu tiên 3: Nếu là phim bộ và năm nằm trong khoảng từ start đến nay
-                elif series_start > 0 and s_year >= series_start:
-                    score += 200
-                else:
-                    score -= 500
+                if target_season_year > 0 and abs(s_year - target_season_year) <= 1: score += 700
+                elif series_start > 0 and abs(s_year - series_start) <= 1: score += 400
+                elif series_start > 0 and s_year >= series_start: score += 200
+                else: score -= 500
 
         # 4. SEASON IN NAME MATCH
         s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', n_name + " " + n_origin, re.IGNORECASE)
@@ -111,7 +104,6 @@ class PhimAPIBase:
             else: score -= 400
 
         # 5. TITLE MATCH
-        n_query = query.lower().strip()
         if n_query and (n_query == n_name or n_query == n_origin): score += 300
         elif n_query and (n_query in n_name or n_query in n_origin): score += 100
 
@@ -143,8 +135,7 @@ class PhimAPIBase:
             if not details: return
             
             movie = details.get("movie", {})
-            # Validate using the specific season number for this slug
-            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s, tmdb_info) > 0:
+            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s, tmdb_info) >= 0:
                 for server in details.get("episodes", []):
                     sname = server.get("server_name", "Server")
                     for ep in server.get("server_data", []):
@@ -161,7 +152,7 @@ class PhimAPIBase:
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
-                if self._score_search_item(res.get("movie"), title or "", str(tmdb_id), year, media_type, req_season, tmdb_info) > 0:
+                if self._score_search_item(res.get("movie"), title or "", str(tmdb_id), year, media_type, req_season, tmdb_info) >= 0:
                     await _process_slug(res.get("movie", {}).get("slug"), req_season)
                     if all_results: return all_results
 
@@ -172,17 +163,14 @@ class PhimAPIBase:
             search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 10})
             items = search_data.get("data", {}).get("items", [])
             for item in items:
-                # Score initial candidates against the requested season
                 score = self._score_search_item(item, kw, str(tmdb_id) if tmdb_id else None, year, media_type, req_season, tmdb_info)
-                if score > 50:
+                if score > 0:
                     candidates.append({"slug": item["slug"], "score": score})
         
         candidates.sort(key=lambda x: x["score"], reverse=True)
-        for cand in candidates[:3]:
-            # Try the main slug
+        for cand in candidates[:10]: # Increase breadth
             await _process_slug(cand["slug"], req_season)
             if media_type == "tv":
-                # Try parts - each part x is compared against Season x year
                 for p in range(1, 11):
                     await _process_slug(f"{cand['slug']}-phan-{p}", p)
 
