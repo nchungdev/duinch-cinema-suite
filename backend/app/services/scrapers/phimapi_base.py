@@ -16,7 +16,6 @@ def title_to_slug(title: str) -> str:
     return slug
 
 async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
-    """Get detailed info from TMDB including season-specific years."""
     if not config.TMDB_READ_ACCESS_TOKEN or not tmdb_id: return {}
     tmdb_type = "movie" if media_type == "movie" else "tv"
     url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}"
@@ -25,9 +24,7 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
     try:
         resp = await client.get(url, params=params)
         data = resp.json()
-        
         series_year = (data.get("release_date") or data.get("first_air_date") or "0")[:4]
-        
         season_years = {}
         if tmdb_type == "tv":
             for s in data.get("seasons", []):
@@ -35,7 +32,6 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
                 s_date = s.get("air_date")
                 if s_num is not None and s_date:
                     season_years[int(s_num)] = int(s_date[:4])
-
         return {
             "series_year": int(series_year) if series_year.isdigit() else 0,
             "season_years": season_years,
@@ -62,42 +58,32 @@ class PhimAPIBase:
         if not data or not data.get("status"): return None
         return data
 
+    async def get_by_tmdb(self, client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
+        """Try to fetch directly by TMDB ID."""
+        api_type = "movie" if media_type == "movie" else "tv"
+        return await self.api_call(client, f"/tmdb/{api_type}/{tmdb_id}")
+
     def _is_match(self, source_movie: Dict, tmdb_info: Dict, media_type: str, requested_season: int = 1) -> bool:
-        """Strict validation of result against TMDB metadata with Season-aware logic."""
         if not source_movie: return False
-        
-        # 1. Type Check
         s_type = source_movie.get("type", "").lower()
         is_tv_req = media_type == "tv"
         s_is_tv = s_type in ["series", "tvshows", "hoathinh"]
         if is_tv_req != s_is_tv: return False
-
-        # 2. Year Check (Flexible for TV, Strict for Movie)
         try:
             s_year = int(source_movie.get("year") or 0)
-            if s_year == 0: return True # If source has no year, we assume it's a match by title
-
+            if s_year == 0: return True
             if media_type == "movie":
                 t_year = tmdb_info.get("series_year", 0)
                 if t_year > 0 and abs(s_year - t_year) > 1: return False
             else:
-                # For TV: Match series start year OR specific season year
                 series_start = tmdb_info.get("series_year", 0)
                 target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
-                
-                # Check if it matches any of the important years
                 is_year_match = False
                 if series_start > 0 and abs(s_year - series_start) <= 1: is_year_match = True
                 if target_season_year > 0 and abs(s_year - target_season_year) <= 1: is_year_match = True
-                
-                # Fallback: If it's a TV show and the year is between start and now, it's likely a match
-                if not is_year_match and series_start > 0:
-                    if s_year >= series_start: is_year_match = True
-                
+                if not is_year_match and series_start > 0 and s_year >= series_start: is_year_match = True
                 if not is_year_match and series_start > 0: return False
-
         except Exception: pass
-
         return True
 
     async def lookup(
@@ -115,7 +101,6 @@ class PhimAPIBase:
         
         req_season = season if season is not None else 1
         tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"series_year": int(year) if year else 0}
-        
         all_results = []
         seen_urls = set()
 
@@ -132,23 +117,30 @@ class PhimAPIBase:
                         })
                         seen_urls.add(u)
 
-        # STEP 1: Generate Slug Candidates
+        # PHASE 1: TMDB ID Search (Priority)
+        if tmdb_id:
+            res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
+            if res and res.get("status") is True and res.get("movie"):
+                if self._is_match(res.get("movie"), tmdb_info, media_type, req_season):
+                    _add_links(res)
+                    if all_results: return all_results # Stop if found by ID
+
+        # PHASE 2: Slug-based lookup (Fallback)
         slug_bases = []
         if title: slug_bases.append(title_to_slug(title))
         if localize_title: slug_bases.append(title_to_slug(localize_title))
         slug_bases = list(dict.fromkeys(slug_bases))
 
         for base in slug_bases:
-            # 1. Try direct root slug
+            # root slug
             details = await self.get_details(client, base)
             if details and self._is_match(details.get("movie"), tmdb_info, media_type, req_season):
                 _add_links(details)
-
-            # 2. Try Part-based variants for TV
+            
+            # parts variants
             if media_type == "tv":
                 for p in range(1, 11):
-                    p_slug = f"{base}-phan-{p}"
-                    p_details = await self.get_details(client, p_slug)
+                    p_details = await self.get_details(client, f"{base}-phan-{p}")
                     if p_details and self._is_match(p_details.get("movie"), tmdb_info, media_type, p):
                         _add_links(p_details)
 
