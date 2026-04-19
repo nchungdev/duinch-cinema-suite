@@ -24,15 +24,25 @@ def extract_season_from_name(name: str) -> int:
         if match: return int(match.group(1))
     return 1
 
-def is_series_file(name: str) -> bool:
-    series_patterns = [r'[Ee]\d+', r'[Tt]ập\s*\d+', r'[Ee]p\s*\d+', r'S\d{2}E\d{2}', r'\b\d{2,3}\b']
-    return any(re.search(p, name, re.IGNORECASE) for p in series_patterns)
+def is_episode_format(name: str) -> bool:
+    """Detect if a filename strictly follows an episode/series pattern."""
+    # 1. Standard patterns: E01, EP01, S01E01, Tập 01, Tap 01, Part 01
+    patterns = [
+        r'[Ee]\d{1,4}',            # E01, E1000
+        r'[Ee]p\s*\d{1,4}',        # Ep 01, Ep01
+        r'[Ss]\d{1,2}[Ee]\d{1,4}', # S01E01
+        r'[Tt]ập\s*\d{1,4}',       # Tập 01
+        r'[Tt]ap\s*\d{1,4}',       # Tap 01
+        r'[Pp]art\s*\d{1,2}',      # Part 01
+        r'[Cc]ương\s*\d{1,4}',     # Chương 01 (Anime/Manga style)
+        r'\b\d{1,3}\.(?:mkv|mp4|avi|ts)$' # Standalone numbers at the end like "01.mp4"
+    ]
+    return any(re.search(p, name, re.IGNORECASE) for p in patterns)
 
 async def lookup_timfshare(query: str, year: int = None, filter_title: str = None, localize_title: str = None, media_type: str = "movie", tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-    """Discovery via timfshare.com with ultimate series identity guard."""
+    """Discovery via timfshare.com with strict Movie vs Episode separation."""
     base_url = "https://timfshare.com/api/v1/string-query-search"
     
-    # 1. Identity Guard Setup
     tmdb_title = tmdb_info.title if tmdb_info and tmdb_info.title else (filter_title or query)
     norm_tmdb_title = normalize_for_match(tmdb_title)
     
@@ -61,7 +71,7 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                     link = item.get("url", "")
                     if not name or not link or link in seen_urls: continue
                     
-                    # --- A. PRE-FILTER ---
+                    # --- A. FILE VALIDATION ---
                     is_folder = "/folder/" in link or item.get("file_type") == 2
                     ext = os.path.splitext(name.lower())[1]
                     size_bytes = item.get("size", 0)
@@ -69,15 +79,17 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                         if ext not in VIDEO_EXTENSIONS: continue
                         if size_bytes < 50 * 1024 * 1024: continue
 
-                    # --- B. STRICT IDENTITY GUARD ---
-                    norm_name = normalize_for_match(name)
+                    # --- B. STRICT MEDIA TYPE GUARD ---
+                    is_ep = is_episode_format(name)
+                    if media_type == "movie":
+                        # CRITICAL: If searching for Movie, NO episode patterns allowed (except folders)
+                        if is_ep and not is_folder: continue
                     
-                    # 1. Broad exclusion for known sub-series
-                    # If target title DOES NOT have "shippuden" but file DOES -> Skip
+                    # --- C. IDENTITY & YEAR GUARD ---
+                    norm_name = normalize_for_match(name)
                     if re.search(r'shippu?den', norm_name) and "shippuden" not in norm_tmdb_title: continue
                     if "boruto" in norm_name and "boruto" not in norm_tmdb_title: continue
                     
-                    # 2. Year & Title Boundary Match
                     is_match = False
                     for st in search_terms:
                         norm_st = normalize_for_match(st)
@@ -85,19 +97,16 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                             is_match = True; break
                     if not is_match: continue
 
-                    # --- C. YEAR & EPISODE LOGIC ---
                     found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
                     if found_years:
                         if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
                             continue
                     elif not is_folder and series_start > 0:
-                        # Special Case: Naruto (1999) has only 220 episodes. 
-                        # If we see "Tập 221" or higher and it's Naruto 1999 -> Skip
+                        # Case Naruto 1999 cap
                         ep_match = re.search(r'(?:tập|ep|e)\s*(\d+)', norm_name, re.IGNORECASE)
-                        if ep_match and series_start == 1999 and int(ep_match.group(1)) > 220:
-                            continue
+                        if ep_match and series_start == 1999 and int(ep_match.group(1)) > 220: continue
 
-                    # --- D. TRASH FILTER ---
+                    # Trash filter
                     if any(x in norm_name for x in ['storm', 'ninja storm', 'connections', 'striker', 'repack', 'crack']): continue
 
                     season_num = extract_season_from_name(name)
