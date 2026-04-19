@@ -5,13 +5,16 @@ import { RankingService } from '../../domain/services/RankingService';
 import type { MediaLink, StreamingEpisode } from '../../api/config';
 import { useCloudViewModel } from '../view-models/CloudViewModel';
 
+// ── GLOBAL DISCOVERY LOCK ──────────────────────────────────────────────────
+const globalDiscoveryLock = new Map<string, number>();
+
 interface DiscoveryPipelineProps {
   tmdbId: number;
-  title: string;
-  localizeTitle?: string;
+  title: string;           // original/English title
+  localizeTitle?: string;  // localized (e.g. Vietnamese) title
   year?: string | number;
   mediaType: string;
-  season?: number;
+  season?: number;         // active season for discovery TV
   initialSeason?: number;
   initialEpisode?: number;
   onStreamingReady?: (links: any[], source: string) => void;
@@ -41,12 +44,15 @@ export const DiscoveryPipeline = ({
   const [activeTab,      setActiveTab]      = useState<string>('');
   
   const streamingNotifiedRef = useRef<Set<string>>(new Set());
-  const fetchLock = useRef<string | null>(null);
 
   const fetchSources = async (force = false) => {
     const currentTaskKey = `${tmdbId}-${season || 1}-${force}`;
-    if (fetchLock.current === currentTaskKey) return;
-    fetchLock.current = currentTaskKey;
+    const now = Date.now();
+    const lastFetch = globalDiscoveryLock.get(currentTaskKey) || 0;
+    
+    // Single-flight: block duplicate SSE calls within 1.5s
+    if (now - lastFetch < 1500) return;
+    globalDiscoveryLock.set(currentTaskKey, now);
 
     const ctrl = new AbortController();
     
@@ -109,13 +115,13 @@ export const DiscoveryPipeline = ({
             });
           }
         },
-        onDone: () => { setLoadingSources(new Set()); fetchLock.current = null; },
-        onError: () => { setLoadingSources(new Set()); fetchLock.current = null; }
+        onDone: () => { setLoadingSources(new Set()); },
+        onError: () => { setLoadingSources(new Set()); }
       },
       ctrl.signal
     );
 
-    return () => { ctrl.abort(); fetchLock.current = null; };
+    return () => { ctrl.abort(); };
   };
 
   useEffect(() => {
