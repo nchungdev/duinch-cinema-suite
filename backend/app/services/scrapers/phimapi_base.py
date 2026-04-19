@@ -25,25 +25,35 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
     """Fetch metadata from TMDB with robust fallback and multi-language support."""
     token = config.TMDB_READ_ACCESS_TOKEN or os.getenv("TMDB_READ_ACCESS_TOKEN")
     if not token or not tmdb_id: return {}
+    
     tmdb_type = "movie" if media_type == "movie" else "tv"
     url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}"
     headers = {"Authorization": f"Bearer {token}", "accept": "application/json"}
+    
     try:
         resp = await client.get(url, params={"language": "vi-VN"}, headers=headers)
         data = resp.json()
         if resp.status_code != 200 or not data.get("id"):
             resp = await client.get(url, params={"language": "en-US"}, headers=headers)
             data = resp.json()
+            
         if resp.status_code != 200: return {}
+
         raw_date = data.get("release_date") or data.get("first_air_date") or ""
         series_year = raw_date[:4]
+        
         seasons = []
         if tmdb_type == "tv":
             for s in (data.get("seasons") or []):
                 s_num = s.get("season_number", 0)
                 if s_num == 0: continue
                 s_date = s.get("air_date") or ""
-                seasons.append({"season_number": s_num, "episode_count": s.get("episode_count", 0), "year": int(s_date[:4]) if s_date[:4].isdigit() else 0})
+                seasons.append({
+                    "season_number": s_num, 
+                    "episode_count": s.get("episode_count", 0), 
+                    "year": int(s_date[:4]) if s_date[:4].isdigit() else 0
+                })
+        
         return {
             "series_year": int(series_year) if series_year.isdigit() else 0,
             "season_years": {s["season_number"]: s["year"] for s in seasons},
@@ -137,7 +147,6 @@ class PhimAPIBase:
             if n_query == n_name or n_query == n_origin: score += 800
             elif n_query in n_name or n_query in n_origin: score += 500
             else: 
-                # If no ID was present to confirm, and title is totally different, reject
                 if not item_tmdb_id or item_tmdb_id == "0": return -2000
 
         return score
@@ -170,17 +179,16 @@ class PhimAPIBase:
                             ename = str(ep.get("name") or "")
                             epm = re.search(r'\d+', ename)
                             if epm:
-                                ep_num = int(epm.group())
-                                if ep_num > 50 or not current_s:
-                                    ms = self._get_season_from_episode(ep_num, tmdb_seasons)
+                                num = int(epm.group())
+                                if num > 50 or not current_s:
+                                    ms = self._get_season_from_episode(num, tmdb_seasons)
                                     if ms: rs = ms
                             
-                            debug_ename = f"{ename} ({movie_name})"
                             key = (u, rs, ename)
                             if key not in seen_keys:
                                 all_results.append({
                                     "type": "streamable", "provider": self.provider_name.upper(), "server": sname, 
-                                    "name": debug_ename, "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed"), "season": rs,
+                                    "name": ename, "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed"), "season": rs,
                                     "movie_name": movie_name, "slug": slug
                                 })
                                 seen_keys.add(key)
@@ -190,7 +198,6 @@ class PhimAPIBase:
             search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 20})
             items = (search_data.get("data") or {}).get("items") or []
             for item in items:
-                # SEARCH PHASE: Strict ID/Title/Year check
                 if self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) >= 500:
                     itmdb = item.get("tmdb") or {}
                     s_year = int(item.get("year") or 0)
