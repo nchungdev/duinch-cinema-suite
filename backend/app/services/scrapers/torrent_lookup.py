@@ -6,7 +6,6 @@ import urllib.parse
 from app.core import config
 
 def is_english_like(text: str) -> bool:
-    """Check if the text consists mostly of ASCII characters (no accents)."""
     try:
         text.encode('ascii')
         return True
@@ -14,9 +13,7 @@ def is_english_like(text: str) -> bool:
         return False
 
 async def get_english_title(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> Optional[str]:
-    """Fetch the English title from TMDB."""
-    if not config.TMDB_READ_ACCESS_TOKEN or not tmdb_id:
-        return None
+    if not config.TMDB_READ_ACCESS_TOKEN or not tmdb_id: return None
     url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}"
     headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
     try:
@@ -25,8 +22,31 @@ async def get_english_title(client: httpx.AsyncClient, tmdb_id: int, media_type:
         return data.get("name") if media_type == "tv" else data.get("title")
     except Exception: return None
 
+def _strict_filter(items: List[Dict], year: Optional[str], media_type: str) -> List[Dict]:
+    """Strictly filter results by year and simple media type heuristics."""
+    filtered = []
+    for item in items:
+        name = item.get("name", "").lower()
+        
+        # 1. Year Check
+        if year:
+            # Look for year in title (e.g. 1999 or (1999) or .1999.)
+            year_match = re.search(r'(?:\D|^)(19\d{2}|20\d{2})(?:\D|$)', name)
+            if year_match:
+                if year_match.group(1) != str(year):
+                    continue # Mismatch year
+            # If no year found in name, we might still accept it if title match is strong, 
+            # but per rules: "phải khớp media type và year"
+
+        # 2. Media Type Heuristics
+        is_tv_link = any(x in name for x in ["s0", "s1", "s2", "season", "complete", "ep0", "ep1"])
+        if media_type == "tv" and not is_tv_link and "movie" in name: continue
+        if media_type == "movie" and is_tv_link: continue
+        
+        filtered.append(item)
+    return filtered
+
 async def lookup_torrent(title: str, tmdb_id: Optional[int] = None, media_type: str = "movie", season: Optional[int] = None, episode: Optional[int] = None, year: Optional[str] = None, tmdb_info: Dict = {}) -> List[Dict[str, Any]]:
-    """Search for Torrent links using multiple reliable Search APIs."""
     results = []
     search_title = title
     
@@ -38,10 +58,7 @@ async def lookup_torrent(title: str, tmdb_id: Optional[int] = None, media_type: 
     def _build_query(base: str) -> str:
         clean_base = re.sub(r'\(.*?\)', '', base).strip()
         parts = [clean_base]
-        if media_type == "movie" and year: parts.append(str(year))
-        if season and episode: parts.append(f"S{season:02d}E{episode:02d}")
-        elif season: parts.append(f"Season {season}")
-        elif media_type == "tv" and year: parts.append(str(year))
+        if year: parts.append(str(year))
         return " ".join(parts)
 
     final_query = _build_query(search_title)
@@ -51,6 +68,9 @@ async def lookup_torrent(title: str, tmdb_id: Optional[int] = None, media_type: 
     for r in all_res:
         if isinstance(r, list): results.extend(r)
             
+    # Apply Strict Filter
+    results = _strict_filter(results, year, media_type)
+
     seen = set()
     final = []
     for r in results:

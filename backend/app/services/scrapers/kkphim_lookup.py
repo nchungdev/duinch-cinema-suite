@@ -4,7 +4,7 @@ import os
 import re
 import asyncio
 from typing import List, Dict, Optional, Any
-from .phimapi_base import PhimAPIBase, title_to_slug
+from .phimapi_base import PhimAPIBase, title_to_slug, tmdb_get_info
 
 class KKPhimProvider(PhimAPIBase):
     def __init__(self):
@@ -12,8 +12,7 @@ class KKPhimProvider(PhimAPIBase):
 
     async def get_by_tmdb(self, client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
         """Specific KKPhim endpoint for TMDB ID."""
-        type_map = {"movie": "movie", "tv": "tv"}
-        api_type = type_map.get(media_type, "movie")
+        api_type = "movie" if media_type == "movie" else "tv"
         path = f"/tmdb/{api_type}/{tmdb_id}"
         return await self.api_call(client, path)
 
@@ -27,30 +26,39 @@ class KKPhimProvider(PhimAPIBase):
         season: int = None,
         episode: int = None,
         year: int = None,
-        anchor_slug: str = None,
         force: bool = False
     ) -> List[Dict[str, Any]]:
-        """KKPhim-specific lookup with TMDB ID endpoint support."""
-        anchor_slug_found = anchor_slug
+        
+        tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"year": int(year) if year else None}
+        all_results = []
+        seen_urls = set()
 
-        # 1. TMDB ID via phimapi TMDB endpoint.
-        if tmdb_id and not anchor_slug_found:
+        def _add_links(details: Dict):
+            if not details: return
+            for server in details.get("episodes", []):
+                sname = server.get("server_name", "Server")
+                for ep in server.get("server_data", []):
+                    u = ep.get("link_m3u8") or ep.get("link_embed")
+                    if u and u not in seen_urls:
+                        all_results.append({
+                            "type": "streamable", "provider": self.provider_name, "server": sname,
+                            "name": ep.get("name"), "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed")
+                        })
+                        seen_urls.add(u)
+
+        # PHASE 1: TMDB ID Search (KKPhim only)
+        if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
-                anchor_slug_found = res.get("movie", {}).get("slug")
+                # Check match even with ID search to be extra safe
+                if self._is_match(res.get("movie"), tmdb_info, media_type):
+                    _add_links(res)
+                    # If this is a movie or an all-in-one series, we stop here as requested
+                    # But we'll still allow fallback to slug if no links found
+                    if all_results: return all_results
 
-        return await super().lookup(
-            client,
-            tmdb_id,
-            title,
-            localize_title,
-            media_type,
-            season,
-            episode,
-            year,
-            anchor_slug=anchor_slug_found,
-            force=force
-        )
+        # PHASE 2: Slug-based lookup (Fallback)
+        return await super().lookup(client, tmdb_id, title, localize_title, media_type, season, episode, year, force=force)
 
 _kkphim = KKPhimProvider()
 
@@ -66,8 +74,3 @@ async def lookup_kkphim(
     force: bool = False
 ) -> List[Dict[str, Any]]:
     return await _kkphim.lookup(client, tmdb_id, title, localize_title, media_type, season, episode, year, force=force)
-
-async def kkphim_get_details(slug: str):
-    """Wrapper for external detail fetching."""
-    async with httpx.AsyncClient() as client:
-        return await _kkphim.get_formatted_details(client, slug)
