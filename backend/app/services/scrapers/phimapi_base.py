@@ -8,7 +8,6 @@ from typing import List, Dict, Optional, Any
 from app.core import config
 
 def title_to_slug(title: str) -> str:
-    """Convert a movie title to a phimapi-style URL slug."""
     t = title.replace('đ', 'd').replace('Đ', 'D')
     nfkd = unicodedata.normalize('NFKD', t)
     ascii_str = nfkd.encode('ascii', 'ignore').decode('ascii')
@@ -16,44 +15,32 @@ def title_to_slug(title: str) -> str:
     return slug
 
 def is_supported_lang(text: str) -> bool:
-    """Check if the text is primarily English or Vietnamese."""
     if not text: return False
     vi_pattern = r'^[a-zA-Z0-9\s.,!?:;\-\(\)àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]+$'
     return bool(re.match(vi_pattern, text))
 
 async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
-    """Fetch metadata from TMDB with robust fallback and multi-language support."""
     token = config.TMDB_READ_ACCESS_TOKEN or os.getenv("TMDB_READ_ACCESS_TOKEN")
     if not token or not tmdb_id: return {}
-    
     tmdb_type = "movie" if media_type == "movie" else "tv"
     url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}"
     headers = {"Authorization": f"Bearer {token}", "accept": "application/json"}
-    
     try:
         resp = await client.get(url, params={"language": "vi-VN"}, headers=headers)
         data = resp.json()
         if resp.status_code != 200 or not data.get("id"):
             resp = await client.get(url, params={"language": "en-US"}, headers=headers)
             data = resp.json()
-            
         if resp.status_code != 200: return {}
-
         raw_date = data.get("release_date") or data.get("first_air_date") or ""
         series_year = raw_date[:4]
-        
         seasons = []
         if tmdb_type == "tv":
             for s in (data.get("seasons") or []):
                 s_num = s.get("season_number", 0)
                 if s_num == 0: continue
                 s_date = s.get("air_date") or ""
-                seasons.append({
-                    "season_number": s_num, 
-                    "episode_count": s.get("episode_count", 0), 
-                    "year": int(s_date[:4]) if s_date[:4].isdigit() else 0
-                })
-        
+                seasons.append({"season_number": s_num, "episode_count": s.get("episode_count", 0), "year": int(s_date[:4]) if s_date[:4].isdigit() else 0})
         return {
             "series_year": int(series_year) if series_year.isdigit() else 0,
             "season_years": {s["season_number"]: s["year"] for s in seasons},
@@ -96,7 +83,6 @@ class PhimAPIBase:
         return None
 
     def _detect_season(self, name: str, origin_name: str, year: int, tmdb_info: Dict) -> Optional[int]:
-        """Intelligently detect season from Title Regex OR Year matching."""
         full_name = f"{name} {origin_name}".lower()
         s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', full_name, re.IGNORECASE)
         if s_match: return int(s_match.group(2))
@@ -158,8 +144,13 @@ class PhimAPIBase:
                 for server in (details.get("episodes") or []):
                     sname = server.get("server_name", "Server")
                     for ep in (server.get("server_data") or []):
-                        u = ep.get("link_m3u8") or ep.get("link_embed")
-                        if u and u not in seen_urls:
+                        m3u8_link = ep.get("link_m3u8")
+                        embed_link = ep.get("link_embed")
+                        
+                        # Use a composite key for deduplication to ensure we don't skip valid links
+                        # but still avoid exact duplicates.
+                        u_key = m3u8_link or embed_link
+                        if u_key and u_key not in seen_urls:
                             rs = current_s or 1
                             ename = str(ep.get("name") or "")
                             epm = re.search(r'\d+', ename)
@@ -169,8 +160,11 @@ class PhimAPIBase:
                                     ms = self._get_season_from_episode(num, tmdb_seasons)
                                     if ms: rs = ms
                             
-                            all_results.append({"type": "streamable", "provider": self.provider_name.upper(), "server": sname, "name": ename, "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed"), "season": rs})
-                            seen_urls.add(u)
+                            all_results.append({
+                                "type": "streamable", "provider": self.provider_name.upper(), "server": sname, 
+                                "name": ename, "m3u8": m3u8_link, "embed": embed_link, "season": rs
+                            })
+                            seen_urls.add(u_key)
 
         keywords = list(dict.fromkeys([q for q in [localize_title, title] if q and is_supported_lang(q)]))
         for kw in keywords:
