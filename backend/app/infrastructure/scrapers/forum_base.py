@@ -28,36 +28,59 @@ class ForumScraperBase:
             "Origin": self.base_url
         }
 
+    async def _fetch_token_and_cookie(self, session: requests.AsyncSession) -> Optional[str]:
+        """Visit search page to get session cookies and _xfToken."""
+        search_init_url = f"{self.base_url}/search/"
+        try:
+            resp = await session.get(search_init_url, headers=self._get_headers(), timeout=15, impersonate="chrome110")
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                # Extract _xfToken from input or data attribute
+                token_input = soup.find('input', {'name': '_xfToken'})
+                token = token_input.get('value') if token_input else None
+                if not token:
+                    # Fallback: look in script tags or data-csrf
+                    match = re.search(r'csrf":\s*"([^"]+)"', resp.text)
+                    if match: token = match.group(1)
+                return token
+        except Exception as e:
+            print(f"[{self.name}] Token Fetch Error: {e}")
+        return None
+
     async def _native_search(self, query: str) -> List[str]:
-        """Perform direct search on the forum using XenForo patterns."""
+        """Perform direct search with dynamic token bypass."""
         search_url = f"{self.base_url}/search/search"
-        payload = {
-            "keywords": query,
-            "c[users]": "",
-            "c[nodes][]": "",
-            "c[child_nodes]": "1",
-            "o": "date",
-            "_xfToken": ""
-        }
-        
         thread_urls = []
+        
         try:
             async with requests.AsyncSession() as session:
-                # 1. Initial request to establish session/cookies if needed
-                await session.get(self.base_url, headers=self._get_headers(), impersonate="chrome110")
+                # 1. Get Token and establish Session
+                token = await self._fetch_token_and_cookie(session)
+                if not token:
+                    # If forum requires login for search, token might be missing
+                    # Some XenForo forums use a default guest token like '12345678,abcdef...'
+                    token = "" 
+
+                # 2. Post search request with Token
+                payload = {
+                    "keywords": query,
+                    "c[users]": "",
+                    "c[nodes][]": "",
+                    "c[child_nodes]": "1",
+                    "o": "date",
+                    "_xfToken": token
+                }
                 
-                # 2. Post search
                 resp = await session.post(search_url, data=payload, headers=self._get_headers(), timeout=20, impersonate="chrome110")
                 
-                # XenForo redirects to /search/12345/
+                # Check for redirect to results
                 final_url = str(resp.url)
                 if "search/" not in final_url:
-                    print(f"[{self.name}] Search failed or gated. URL: {final_url}")
+                    print(f"[{self.name}] Search failed or restricted for '{query}'. URL: {final_url}")
                     return []
                 
                 # 3. Parse search results
                 soup = BeautifulSoup(resp.text, 'html.parser')
-                # Try multiple selectors for different XenForo versions
                 links = soup.select('h3.contentRow-title a[href*="/threads/"]') or \
                         soup.select('a[href*="/threads/"][data-tp-primary]') or \
                         soup.select('.structItem-title a[href*="/threads/"]')
@@ -65,7 +88,9 @@ class ForumScraperBase:
                 for a in links:
                     href = a.get('href')
                     if href:
-                        full_url = urllib.parse.urljoin(self.base_url, href)
+                        # Clean up URL (remove page suffix if any)
+                        clean_href = href.split('?')[0].split('#')[0]
+                        full_url = urllib.parse.urljoin(self.base_url, clean_href)
                         thread_urls.append(full_url)
                 
                 print(f"[{self.name}] Native search found {len(thread_urls)} threads for '{query}'")
@@ -75,7 +100,7 @@ class ForumScraperBase:
         return list(dict.fromkeys(thread_urls))[:5]
 
     async def _mine_thread(self, thread_url: str) -> List[DownloadableLink]:
-        """Deep mine links from thread content."""
+        """Mine FShare links from thread content."""
         links = []
         try:
             async with requests.AsyncSession() as session:
@@ -83,15 +108,20 @@ class ForumScraperBase:
                 if resp.status_code != 200: return []
                 
                 html = resp.text
-                fshare_matches = re.findall(r'https?://(?:www\.)?fshare\.vn/(?:file|folder)/[a-zA-Z0-9]+', html)
+                # Find both folder and file links
+                matches = re.findall(r'https?://(?:www\.)?fshare\.vn/(?:file|folder)/[a-zA-Z0-9]+', html)
                 
                 soup = BeautifulSoup(html, 'html.parser')
-                page_title = soup.title.string.split('|')[0].split('-')[0].strip() if soup.title else "Forum Post"
+                # Improved title extraction: split common suffixes
+                page_title = soup.title.string if soup.title else "Forum Post"
+                for sep in ['|', '-', '—']:
+                    page_title = page_title.split(sep)[0]
+                page_title = page_title.strip()
 
-                for url in list(dict.fromkeys(fshare_matches)):
+                for url in list(dict.fromkeys(matches)):
                     is_folder = "/folder/" in url
                     links.append(DownloadableLink(
-                        name=f"[{self.name}] {page_title}",
+                        name=f"[{'FOLDER' if is_folder else 'FILE'}] {page_title}",
                         url=url,
                         size=0,
                         source=self.name.lower(),
@@ -102,6 +132,7 @@ class ForumScraperBase:
         return links
 
     async def lookup(self, query: str, tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
+        """Discovery Lifecycle with Token Bypass."""
         all_found = []
         search_terms = [query]
         if tmdb_info and tmdb_info.title and tmdb_info.title != query:
@@ -116,6 +147,7 @@ class ForumScraperBase:
                 all_found.extend(r_list)
                 await asyncio.sleep(random.uniform(0.5, 1.0))
             
+        # Prioritize Folders and Deduplicate
         unique_links, seen = [], set()
         for link in all_found:
             if link.url not in seen:
