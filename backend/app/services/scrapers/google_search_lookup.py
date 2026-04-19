@@ -15,7 +15,6 @@ from typing import List, Dict, Optional
 
 import httpx
 from app.core import config
-from app.services.cache_manager import get_from_cache, set_to_cache
 
 _FSHARE_NAME_CACHE   = config.GOOGLE_SEARCH_NAME_CACHE
 _FSHARE_NAME_TTL     = config.FSHARE_NAME_TTL

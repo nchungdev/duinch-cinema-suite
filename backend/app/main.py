@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import httpx
-from app.api.endpoints import search, media, recommended, downloader, proxy, metadata, monitor, detail, user, stream
+from app.api.endpoints import search, media, recommended, downloader, proxy, monitor, detail, user, stream
 from collections import deque
 import time
 
@@ -54,7 +54,6 @@ app.add_middleware(
 app.include_router(detail.router, prefix="/api", tags=["Detail"])   # /api/movie/:id  /api/tv/:id
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(media.router, prefix="/api/media", tags=["Media"])
-app.include_router(metadata.router, prefix="/api/metadata", tags=["Metadata"])
 app.include_router(recommended.router, prefix="/api", tags=["Recommended"])
 app.include_router(downloader.router, prefix="/api/downloader", tags=["Downloader"])
 app.include_router(proxy.router, prefix="/api/proxy", tags=["Proxy"])

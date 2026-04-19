@@ -1,1 +1,1 @@
-from . import search, media, recommended, downloader, proxy, metadata, detail, monitor, user, stream
+from . import search, media, recommended, downloader, proxy, detail, monitor, user, stream
