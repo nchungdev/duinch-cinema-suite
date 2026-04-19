@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Request, Query, HTTPException
-from fastapi.responses import StreamingResponse
 import asyncio
 import re
 import json
 from typing import List, Dict, Any, Optional
-from app.services import tmdb_service
+from fastapi import APIRouter, Request, Query, HTTPException
+from fastapi.responses import StreamingResponse
+
 from app.services.scrapers.kkphim_lookup import lookup_kkphim
 from app.services.scrapers.ophim_lookup import lookup_ophim
 from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
@@ -31,60 +31,47 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
     clean_title    = re.sub(r'\(.*?\)', '', title).strip()
     clean_localize = re.sub(r'\(.*?\)', '', localize_title).strip() if localize_title else None
 
-    def _build_query(base: str) -> str:
+    # [STRATEGY] Build queries based on source power
+    def _build_refined_query(base: str) -> str:
         parts = [base]
-        if media_type == "movie" and year:
-            parts.append(str(year))
-        if season and episode:
-            parts.append(f"S{season:02d}E{episode:02d}")
-        elif season:
-            parts.append(f"Season {season}")
-        elif media_type == "tv" and year:
-            parts.append(str(year))
+        if media_type == "movie" and year: parts.append(str(year))
+        if season and episode: parts.append(f"S{season:02d}E{episode:02d}")
+        elif season: parts.append(f"Season {season}")
+        elif media_type == "tv" and year: parts.append(str(year))
         return " ".join(parts)
 
-    primary   = _build_query(clean_title)
-    secondary = _build_query(clean_localize) if clean_localize else None
+    # For streaming sites (KK/OPhim), search with BARE titles to get candidates
+    # For search engines (FShare/Torrent), search with REFINED query to reduce noise
+    primary_refined = _build_refined_query(clean_title)
+    secondary_refined = _build_refined_query(clean_localize) if clean_localize else None
+
     results = []
 
     try:
         if source_type == "m3u8":
             target_ep = None if media_type == "tv" else episode
-            if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
-            elif source == "ophim": results = await lookup_ophim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
+            # IMPORTANT: Use clean_title/clean_localize (bare) for streaming sites
+            if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
+            elif source == "ophim": results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
 
         elif source_type == "torrent":
             results = await lookup_torrent(clean_title, tmdb_id, media_type, None, None, year, tmdb_info=tmdb_info)
 
         elif source_type == "fshare":
             if source == "timfshare":
-                results = await lookup_timfshare(primary, year=year, filter_title=clean_title, media_type=media_type, tmdb_info=tmdb_info)
-                if secondary:
-                    sec = await lookup_timfshare(secondary, year=year, filter_title=clean_localize, media_type=media_type, tmdb_info=tmdb_info)
-                    results.extend(sec)
+                results = await lookup_timfshare(primary_refined, year=year, filter_title=clean_title, media_type=media_type, tmdb_info=tmdb_info)
             elif source == "thuviencine":
-                results = await lookup_thuviencine(primary)
-                if secondary:
-                    sec = await lookup_thuviencine(secondary)
-                    results.extend(sec)
+                results = await lookup_thuviencine(primary_refined)
             elif source == "web":
                 results = await lookup_google_fshare(clean_title, year, None, None)
-                if clean_localize:
-                    sec = await lookup_google_fshare(clean_localize, year, None, None)
-                    results.extend(sec)
 
         elif source_type == "gdrive":
-            results = await lookup_gdrive(primary)
-            if secondary:
-                sec = await lookup_gdrive(secondary)
-                results.extend(sec)
+            results = await lookup_gdrive(primary_refined)
 
-        # [LOG] Server console output
         raw_count = len(results) if results else 0
         status_icon = "🟢" if raw_count > 0 else "⚪"
-        print(f"[Discovery] {status_icon} {source_type.upper():<7} | {source:<12} | Found: {raw_count:<3} | Query: '{primary}'")
+        print(f"[Discovery] {status_icon} {source_type.upper():<7} | {source:<12} | Found: {raw_count:<3} | Provider Query: '{clean_title if source_type == 'm3u8' else primary_refined}'")
 
-        # Normalize & Deduplicate
         if results is None: results = []
         seen_urls = set()
         deduped = []
@@ -102,15 +89,10 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
             for r in deduped:
                 srv = r.get("server") or "Server"
                 if srv not in server_map: server_map[srv] = []
-                # Keep ALL relevant fields for the episode
                 ep_data = {
-                    "type": r["type"],
-                    "provider": r["provider"],
-                    "server": srv,
-                    "name": r.get("name"),
-                    "m3u8": r.get("m3u8"),
-                    "embed": r.get("embed"),
-                    "season": r.get("season", 1) # CRITICAL: Keep season info
+                    "type": r["type"], "provider": r["provider"], "server": srv,
+                    "name": r.get("name"), "m3u8": r.get("m3u8"), "embed": r.get("embed"),
+                    "season": r.get("season", 1)
                 }
                 server_map[srv].append(ep_data)
             final_results = [{"server": srv, "episodes": eps} for srv, eps in server_map.items()]
@@ -134,10 +116,8 @@ async def discovery_stream(
     episode: int = Query(None),
     force: bool = Query(False),
 ):
-    """Discovery via SSE — Path: /api/media/stream"""
     client = request.app.state.http_client
     tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
-    
     print(f"\n[SSE] 🚀 Starting Discovery Stream for: {title} ({year}) | ID: {tmdb_id}")
 
     async def event_generator():
@@ -165,7 +145,6 @@ async def discovery_fetch(
     source: str = Query(None),
     force: bool = Query(False),
 ):
-    """Single provider discovery — Path: /api/media/fetch"""
     client = request.app.state.http_client
     tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
     result = await _run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, source_type, source, force, tmdb_info=tmdb_info)
