@@ -109,7 +109,7 @@ class PhimAPIBase:
                 if series_start > 0 and abs(s_year - series_start) > 1: return -3000
                 if series_start > 0 and abs(s_year - series_start) <= 1: score += 600
             else:
-                # TV Rule: Must match current season year OR series start year
+                # TV Rule: Match current season year OR series start year
                 is_year_ok = False
                 if target_season_year > 0 and abs(s_year - target_season_year) <= 1: 
                     is_year_ok = True
@@ -117,6 +117,9 @@ class PhimAPIBase:
                 elif series_start > 0 and abs(s_year - series_start) <= 1:
                     is_year_ok = True
                     score += 400
+                
+                # IMPORTANT: If we have no TMDB metadata to compare against, we ALLOW it
+                if series_start == 0: is_year_ok = True 
                 
                 if not is_year_ok: return -3000
 
