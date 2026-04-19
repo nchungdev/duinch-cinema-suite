@@ -3,6 +3,7 @@ import urllib.parse
 from typing import List, Dict, Optional, Any
 from app.core import config
 from app.infrastructure.cache.redis_cache import cache_manager
+from app.domain.models.tmdb import TMDBSearchResult
 
 async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: str = "all", page: int = 1) -> Dict[str, Any]:
     if not config.TMDB_READ_ACCESS_TOKEN:
@@ -32,19 +33,18 @@ async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: s
             normalized_type = "tv" if item_type == "tv" else "movie"
             
             tmdb_id = item.get("id")
-            results.append({
-                "id": tmdb_id, # RESTORE: Frontend expects 'id'
-                "tmdb_id": tmdb_id,
-                "title": item.get("title") or item.get("name"),
-                "origin_name": item.get("original_title") or item.get("original_name"),
-                "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
-                "slug": str(tmdb_id),
-                "overview": item.get("overview"),
-                "media_type": normalized_type,
-                "actual_type": item_type,
-                "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
-                "source": "tmdb"
-            })
+            res_obj = TMDBSearchResult(
+                id=tmdb_id,
+                tmdb_id=tmdb_id,
+                title=item.get("title") or item.get("name") or "Unknown",
+                origin_name=item.get("original_title") or item.get("original_name"),
+                year=(item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
+                media_type=normalized_type,
+                poster=f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
+                overview=item.get("overview"),
+                slug=str(tmdb_id)
+            )
+            results.append(res_obj.dict())
 
         payload = {"results": results, "total_pages": total_pages, "page": page}
         if results:
@@ -74,7 +74,7 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
                     })
 
         return {
-            "id": item.get("id"), # RESTORE
+            "id": item.get("id"),
             "tmdb_id": item.get("id"),
             "title": item.get("title") or item.get("name"),
             "origin_name": item.get("original_title") or item.get("original_name"),
