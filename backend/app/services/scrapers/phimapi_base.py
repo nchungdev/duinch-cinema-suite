@@ -187,7 +187,10 @@ class PhimAPIBase:
         for base in slug_bases:
             await _process_slug(base)
             if media_type == "tv":
-                for p in range(1, 15): 
+                # Dynamic Discovery: Scan based on TMDB total seasons
+                total_s = tmdb_info.get("total_seasons", 1)
+                # Scan from 1 up to total_seasons (inclusive)
+                for p in range(1, total_s + 1): 
                     await _process_slug(f"{base}-phan-{p}", assigned_season=p)
 
         return all_results
