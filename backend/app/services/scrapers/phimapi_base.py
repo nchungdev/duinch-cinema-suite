@@ -20,6 +20,7 @@ def is_supported_lang(text: str) -> bool:
     return bool(re.match(vi_pattern, text))
 
 async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
+    """Fetch metadata from TMDB with robust fallback and multi-language support."""
     token = config.TMDB_READ_ACCESS_TOKEN or os.getenv("TMDB_READ_ACCESS_TOKEN")
     if not token or not tmdb_id: return {}
     tmdb_type = "movie" if media_type == "movie" else "tv"
@@ -137,23 +138,21 @@ class PhimAPIBase:
                     for ep in (server.get("server_data") or []):
                         u = ep.get("link_m3u8") or ep.get("link_embed")
                         if u:
-                            ename = str(ep.get("name") or "")
-                            # --- CLEANING EPISODE NAME ---
-                            # e.g. "Tập 01" -> "1", "002" -> "2"
-                            clean_ename = re.sub(r'\D+', '', ename).lstrip('0')
-                            if not clean_ename and ename: clean_ename = ename.strip().lower() # keep non-numeric like 'full'
-                            
                             rs = current_s or 1
+                            ename = str(ep.get("name") or "")
                             epm = re.search(r'\d+', ename)
                             if epm:
-                                num = int(epm.group())
-                                # indicators of all-in-one source
-                                if num > 50 or not current_s:
-                                    ms = self._get_season_from_episode(num, tmdb_seasons)
+                                ep_num = int(epm.group())
+                                if ep_num > 50 or not current_s:
+                                    ms = self._get_season_from_episode(ep_num, tmdb_seasons)
                                     if ms: rs = ms
                             
-                            # KEY: (URL, SEASON, CLEAN_NAME)
-                            key = (u, rs, clean_ename)
+                            # --- IMPROVED DEDUPLICATION ---
+                            # KEY: (Season, Cleaned_Episode_Name)
+                            # Within a SINGLE PROVIDER, we only want one link per unique episode in a season.
+                            # We allow different URLs ONLY if they belong to different server groups (handled at API level).
+                            # Here we deduplicate by (Server, Season, Episode) to ensure consistency.
+                            key = (sname, rs, ename.strip().lower())
                             if key not in seen_keys:
                                 all_results.append({"type": "streamable", "provider": self.provider_name.upper(), "server": sname, "name": ename, "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed"), "season": rs})
                                 seen_keys.add(key)
