@@ -235,11 +235,26 @@ function App() {
             <div className="max-w-screen-2xl mx-auto space-y-12">
             {searchActive ? (
                <div className="space-y-6">
-                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5 pb-6">
                    <div className="flex items-center gap-6">
                      <h2 className="text-xl font-black uppercase italic tracking-tighter text-blue-400">
                        "{lastSearchQuery.current || searchQuery}"
                      </h2>
+                   </div>
+                   <div className="flex items-center gap-4">
+                     {(['all', 'movie', 'tv'] as const).map((tab) => (
+                       <button
+                         key={tab}
+                         onClick={() => setSearchTab(tab)}
+                         className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-lg transition-all ${
+                           searchTab === tab 
+                             ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' 
+                             : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                         }`}
+                       >
+                         {tab === 'all' ? 'Everything' : tab === 'movie' ? 'Movies' : 'TV Shows'}
+                       </button>
+                     ))}
                    </div>
                  </div>
 
@@ -251,7 +266,7 @@ function App() {
                  ) : (
                    <DiscoveryGrid 
                      category="search" 
-                     mediaType="all" 
+                     mediaType={searchTab} 
                      searchQuery={lastSearchQuery.current || searchQuery}
                      onItemClick={(item) => handleMovieClick(item.slug, item.media_type)} 
                    />
