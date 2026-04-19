@@ -27,11 +27,9 @@ DISCOVERY_SOURCES = [
 ]
 
 async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, source_type, source, force, tmdb_info: Dict[str, Any] = {}):
-    """Core logic to run a single scraper and normalize its results."""
     clean_title    = re.sub(r'\(.*?\)', '', title).strip()
     clean_localize = re.sub(r'\(.*?\)', '', localize_title).strip() if localize_title else None
 
-    # [STRATEGY] Build queries based on source power
     def _build_refined_query(base: str) -> str:
         parts = [base]
         if media_type == "movie" and year: parts.append(str(year))
@@ -55,49 +53,42 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
         elif source_type == "fshare":
             if source == "timfshare":
                 results = await lookup_timfshare(primary_refined, year=year, filter_title=clean_title, media_type=media_type, tmdb_info=tmdb_info)
-            elif source == "thuviencine":
-                results = await lookup_thuviencine(primary_refined)
-            elif source == "web":
-                results = await lookup_google_fshare(clean_title, year, None, None)
+            elif source == "thuviencine": results = await lookup_thuviencine(primary_refined)
+            elif source == "web": results = await lookup_google_fshare(clean_title, year, None, None)
 
-        elif source_type == "gdrive":
-            results = await lookup_gdrive(primary_refined)
+        elif source_type == "gdrive": results = await lookup_gdrive(primary_refined)
 
         raw_count = len(results) if results else 0
         status_icon = "🟢" if raw_count > 0 else "⚪"
-        print(f"[Discovery] {status_icon} {source_type.upper():<7} | {source:<12} | Found: {raw_count:<3} | Provider Query: '{clean_title if source_type == 'm3u8' else primary_refined}'")
+        print(f"[Discovery] {status_icon} {source_type.upper():<7} | {source:<12} | Found: {raw_count:<3}")
 
         if results is None: results = []
-        seen_urls = set()
-        deduped = []
-        for r in results:
-            url = r.get("url") or r.get("m3u8") or r.get("embed") or r.get("magnet")
-            if url and url not in seen_urls:
-                if source_type == "m3u8": r["type"] = "streamable"
-                else: r.setdefault("type", "downloadable")
-                r["provider"] = (r.get("source") or source or "UNKNOWN").upper()
-                deduped.append(r)
-                seen_urls.add(url)
-
+        
         if source_type == "m3u8":
-            # Group by server and keep them distinct
-            server_map = {}
-            for r in deduped:
-                # Add Provider prefix to server name to keep them separate on UI
-                provider_prefix = (r.get("provider") or source).upper()
+            # For streaming, we need to group by THE SOURCE SLUG to avoid mixing different uploads
+            # However, PhimAPIBase doesn't return the slug in the flattened list yet.
+            # We will use (Server Name + M3U8 Domain) as a heuristic for unique server groupings.
+            server_groups = {}
+            for r in results:
                 srv = r.get("server") or "Server"
-                full_srv_name = f"[{provider_prefix}] {srv}"
+                # Extract domain from m3u8 as a unique marker for the CDN/Source
+                m3u8 = r.get("m3u8") or ""
+                domain_match = re.search(r'https?://([^/]+)', m3u8)
+                domain = domain_match.group(1) if domain_match else "unknown"
                 
-                if full_srv_name not in server_map: server_map[full_srv_name] = []
-                ep_data = {
-                    "type": r["type"], "provider": provider_prefix, "server": srv,
+                # Full unique identity for this server pipe
+                group_key = f"[{source.upper()}] {srv} ({domain})"
+                
+                if group_key not in server_groups: server_groups[group_key] = []
+                server_groups[group_key].append({
+                    "type": "streamable", "provider": source.upper(), "server": srv,
                     "name": r.get("name"), "m3u8": r.get("m3u8"), "embed": r.get("embed"),
                     "season": r.get("season", 1)
-                }
-                server_map[full_srv_name].append(ep_data)
-            final_results = [{"server": srv, "episodes": eps} for srv, eps in server_map.items()]
+                })
+            
+            final_results = [{"server": k, "episodes": eps} for k, eps in server_groups.items()]
         else:
-            final_results = deduped
+            final_results = results
 
         return {"source_type": source_type, "source": source, "results": final_results, "error": None}
     except Exception as e:
