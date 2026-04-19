@@ -28,10 +28,11 @@ async def get_trending(request: Request, media_type: str = "movie"):
             normalized_type = "tv" if media_type == "tv" else "movie"
             tid = item.get("id")
             
-            # Trả về Dictionary phẳng để Frontend nhận diện đúng trường 'id'
+            # Trả về đầy đủ id, tmdb_id và slug (alias của id) để tương thích 100% với Frontend
             results.append({
                 "id": tid,
                 "tmdb_id": tid,
+                "slug": str(tid), # RESTORE: Frontend DiscoveryGrid uses item.slug
                 "title": item.get("title") or item.get("name") or "Unknown",
                 "origin_name": item.get("original_title") or item.get("original_name"),
                 "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],

@@ -32,10 +32,11 @@ async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: s
             normalized_type = "tv" if item_type == "tv" else "movie"
             
             tid = item.get("id")
-            # Trả về Dictionary thuần để tránh mọi vấn đề về Serialization
+            # Trả về đầy đủ id, tmdb_id và slug (alias của id) để tương thích 100% với Frontend
             results.append({
-                "id": tid,           # BẮT BUỘC cho Frontend
+                "id": tid,
                 "tmdb_id": tid,
+                "slug": str(tid), # RESTORE: Frontend DiscoveryGrid uses item.slug
                 "title": item.get("title") or item.get("name") or "Unknown",
                 "origin_name": item.get("original_title") or item.get("original_name"),
                 "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
@@ -72,9 +73,11 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
                         "episode_count": s.get("episode_count")
                     })
 
+        tid = item.get("id")
         return {
-            "id": item.get("id"),
-            "tmdb_id": item.get("id"),
+            "id": tid,
+            "tmdb_id": tid,
+            "slug": str(tid), # Consistency
             "title": item.get("title") or item.get("name"),
             "origin_name": item.get("original_title") or item.get("original_name"),
             "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
@@ -93,3 +96,15 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
     except Exception as e:
         print(f"TMDB detail fetch error: {e}")
         return None
+
+async def get_tmdb_alternative_titles(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> List[str]:
+    """Fetch all alternative titles for a movie or TV show from TMDB."""
+    if not config.TMDB_READ_ACCESS_TOKEN: return []
+    url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}/alternative_titles"
+    headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
+    try:
+        resp = await client.get(url, headers=headers)
+        data = resp.json()
+        raw_titles = data.get("results" if media_type == "tv" else "titles", [])
+        return list(set([t.get("title") for t in raw_titles if t.get("title")]))
+    except Exception: return []
