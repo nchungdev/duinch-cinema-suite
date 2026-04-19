@@ -18,7 +18,7 @@ DISCOVERY_SOURCES = [
     {"source_type": "gdrive",      "source": "googlesearch"}
 ]
 
-@router.get("/test-timfshare", response_model=List[DownloadableLink], tags=["Test"])
+@router.post("/test-timfshare", response_model=List[DownloadableLink], tags=["Test"])
 async def test_timfshare_endpoint(
     request: Request,
     query: str = Query(..., description="Search keyword for TimFShare"),
@@ -26,11 +26,10 @@ async def test_timfshare_endpoint(
     filter_title: str = Query(None)
 ):
     """
-    Directly test TimFShare API v1. 
+    Directly test TimFShare API v1 using POST method. 
     Returns raw results after normalization and filtering.
     """
     client = request.app.state.http_client
-    # We call the infrastructure scraper directly for testing
     results = await lookup_timfshare(query, year=year, filter_title=filter_title or query)
     return results
 
