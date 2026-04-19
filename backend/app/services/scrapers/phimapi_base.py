@@ -62,33 +62,41 @@ class PhimAPIBase:
         api_type = "movie" if media_type == "movie" else "tv"
         return await self.api_call(client, f"/tmdb/{api_type}/{tmdb_id}")
 
-    async def search_slugs(self, client: httpx.AsyncClient, keyword: str) -> List[str]:
-        """Search for potential slugs using the V1 Search API."""
-        data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": keyword, "limit": 10})
-        items = data.get("data", {}).get("items", [])
-        return [i["slug"] for i in items if i.get("slug")]
-
-    def _is_match(self, source_movie: Dict, tmdb_info: Dict, media_type: str, requested_season: int = 1) -> bool:
-        if not source_movie: return False
-        s_type = source_movie.get("type", "").lower()
+    def _score_search_item(self, item: Dict, query: str, tmdb_id: Optional[str], year: Optional[int], media_type: str, requested_season: int, tmdb_info: Dict) -> int:
+        """Rules-based scoring for search results."""
+        score = 0
+        n_query = query.lower().strip()
+        n_name = item.get("name", "").lower().strip()
+        n_origin = item.get("origin_name", "").lower().strip()
+        
+        # 1. MUST MATCH TYPE
+        s_type = item.get("type", "").lower()
         is_tv_req = media_type == "tv"
         s_is_tv = s_type in ["series", "tvshows", "hoathinh"]
-        if is_tv_req != s_is_tv: return False
-        try:
-            s_year = int(source_movie.get("year") or 0)
-            if s_year == 0: return True
-            series_start = tmdb_info.get("series_year", 0)
-            if media_type == "movie":
-                if series_start > 0 and abs(s_year - series_start) > 1: return False
-            else:
-                target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
-                is_year_match = False
-                if series_start > 0 and abs(s_year - series_start) <= 1: is_year_match = True
-                if target_season_year > 0 and abs(s_year - target_season_year) <= 1: is_year_match = True
-                if not is_year_match and series_start > 0 and s_year >= series_start: is_year_match = True
-                if not is_year_match and series_start > 0: return False
-        except Exception: pass
-        return True
+        if is_tv_req != s_is_tv: return -1000
+
+        # 2. TMDB ID MATCH (Strongest indicator)
+        src_tmdb = item.get("tmdb", {})
+        item_tmdb_id = str(src_tmdb.get("id")) if src_tmdb.get("id") else None
+        if tmdb_id and item_tmdb_id and item_tmdb_id == str(tmdb_id):
+            score += 1000
+
+        # 3. YEAR MATCH (Critical for precision)
+        s_year = int(item.get("year") or 0)
+        t_year = tmdb_info.get("series_year", year or 0)
+        season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
+        
+        if s_year > 0:
+            if t_year > 0 and abs(s_year - t_year) <= 1: score += 500
+            elif season_year > 0 and abs(s_year - season_year) <= 1: score += 500
+            elif is_tv_req and t_year > 0 and s_year >= t_year: score += 200 # Likely a later season
+            else: score -= 300 # Mismatch year
+
+        # 4. TITLE MATCH
+        if n_query == n_name or n_query == n_origin: score += 300
+        elif n_query in n_name or n_query in n_origin: score += 100
+
+        return score
 
     async def lookup(
         self,
@@ -113,7 +121,11 @@ class PhimAPIBase:
             if not slug or slug in seen_slugs: return
             seen_slugs.add(slug)
             details = await self.get_details(client, slug)
-            if details and self._is_match(details.get("movie"), tmdb_info, media_type, s_num):
+            if not details: return
+            
+            # Re-validate with full details
+            movie = details.get("movie", {})
+            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, s_num, tmdb_info) > 0:
                 for server in details.get("episodes", []):
                     sname = server.get("server_name", "Server")
                     for ep in server.get("server_data", []):
@@ -125,11 +137,11 @@ class PhimAPIBase:
                             })
                             seen_urls.add(u)
 
-        # PHASE 1: TMDB ID Search (Highest Precision)
+        # PHASE 1: TMDB ID Search
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
-                if self._is_match(res.get("movie"), tmdb_info, media_type, req_season):
+                if self._score_search_item(res.get("movie"), title or "", str(tmdb_id), year, media_type, req_season, tmdb_info) > 500:
                     for server in res.get("episodes", []):
                         sname = server.get("server_name", "Server")
                         for ep in server.get("server_data", []):
@@ -139,24 +151,26 @@ class PhimAPIBase:
                             })
                     if all_results: return all_results
 
-        # PHASE 2: Slug & Search Fallback
-        slug_candidates = []
-        if title: slug_candidates.append(title_to_slug(title))
-        if localize_title: slug_candidates.append(title_to_slug(localize_title))
-        
-        # Add slugs from search results (Search-then-Validate)
+        # PHASE 2: Search & Score Candidates
         search_keywords = list(dict.fromkeys([q for q in [title, localize_title] if q]))
-        for kw in search_keywords:
-            found_slugs = await self.search_slugs(client, kw)
-            slug_candidates.extend(found_slugs)
+        candidates = []
         
-        slug_candidates = list(dict.fromkeys(slug_candidates))
-
-        for base in slug_candidates:
-            await _process_slug(base, req_season)
+        for kw in search_keywords:
+            search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 10})
+            items = search_data.get("data", {}).get("items", [])
+            for item in items:
+                score = self._score_search_item(item, kw, str(tmdb_id) if tmdb_id else None, year, media_type, req_season, tmdb_info)
+                if score > 100: # Positive match threshold
+                    candidates.append({"slug": item["slug"], "score": score})
+        
+        # Sort by score and take best
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        
+        for cand in candidates[:3]: # Only check top 3 best candidates to be safe and efficient
+            await _process_slug(cand["slug"], req_season)
             if media_type == "tv":
-                # Try parts for each candidate
-                for p in range(1, 6): # Limit to 5 parts for speed
-                    await _process_slug(f"{base}-phan-{p}", p)
+                # Check for parts ONLY if the candidate itself was a match
+                for p in range(1, 6):
+                    await _process_slug(f"{cand['slug']}-phan-{p}", p)
 
         return all_results
