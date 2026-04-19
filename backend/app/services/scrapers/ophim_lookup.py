@@ -25,6 +25,7 @@ class OPhimProvider(PhimAPIBase):
         
         req_season = season if season is not None else 1
         tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"series_year": int(year) if year else 0}
+        tmdb_seasons = tmdb_info.get("tmdb_seasons") or []
         
         all_results = []
         seen_urls = set()
@@ -37,7 +38,6 @@ class OPhimProvider(PhimAPIBase):
             if not details: return
             
             movie = details.get("movie") or {}
-            # Ràng buộc gắt gao cho giai đoạn Validation
             if self._score_search_item(movie, title or "", tmdb_id, year, media_type, assigned_season or 1, tmdb_info) >= 0:
                 for server in (details.get("episodes") or []):
                     sname = server.get("server_name", "Server")
@@ -48,7 +48,7 @@ class OPhimProvider(PhimAPIBase):
                             ep_name = str(ep.get("name") or "")
                             ep_match = re.search(r'\d+', ep_name)
                             if ep_match:
-                                mapped_s = self._get_season_from_episode(int(ep_match.group()), tmdb_info.get("tmdb_seasons", []))
+                                mapped_s = self._get_season_from_episode(int(ep_match.group()), tmdb_seasons)
                                 if mapped_s: res_season = mapped_s
                             
                             all_results.append({
@@ -58,27 +58,20 @@ class OPhimProvider(PhimAPIBase):
                             })
                             seen_urls.add(u)
 
-        # 1. PHASE 1: SEARCH & AGGREGATE
+        # 1. SEARCH API: Duyệt qua mọi kết quả mà OPhim trả về
         search_keywords = list(dict.fromkeys([q for q in [localize_title, title] if q and is_supported_lang(q)]))
         for kw in search_keywords:
             search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 20})
             items = (search_data.get("data") or {}).get("items") or []
             for item in items:
-                item_slug = item.get("slug")
                 item_tmdb = item.get("tmdb") or {}
                 item_tmdb_id = str(item_tmdb.get("id")) if item_tmdb.get("id") else None
-                item_season = item_tmdb.get("season")
                 
-                is_match = False
-                if tmdb_id and item_tmdb_id == str(tmdb_id):
-                    is_match = True
-                elif self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) > 500:
-                    is_match = True
-                
-                if is_match:
-                    await _process_slug(item_slug, item_season)
+                if (tmdb_id and item_tmdb_id == str(tmdb_id)) or \
+                   (self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) > 500):
+                    await _process_slug(item.get("slug"), item_tmdb.get("season"))
 
-        # 2. PHASE 2: TMDB ID Direct Lookup (Backup)
+        # 2. BACKUP: Direct TMDB ID lookup
         if tmdb_id and not all_results:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True:
