@@ -1,11 +1,10 @@
 import pytest
 import httpx
-from app.services.scrapers.kkphim_lookup import lookup_kkphim
-from app.services.scrapers.ophim_lookup import lookup_ophim
-from app.services.scrapers.gdrive_lookup import lookup_gdrive
-from app.services.scrapers.torrent_lookup import lookup_torrent
-from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
-from app.services.scrapers.google_search_lookup import lookup_google_fshare
+from app.infrastructure.scrapers.kkphim_lookup import lookup_kkphim
+from app.infrastructure.scrapers.ophim_lookup import lookup_ophim
+from app.infrastructure.scrapers.gdrive_lookup import lookup_gdrive
+from app.infrastructure.scrapers.torrent_lookup import lookup_torrent
+from app.infrastructure.scrapers.fshare_lookup import lookup_timfshare
 
 @pytest.mark.asyncio
 async def test_kkphim_provider():
@@ -43,6 +42,6 @@ async def test_gdrive_provider():
     assert isinstance(results, list)
 
 @pytest.mark.asyncio
-async def test_fshare_google_provider():
-    results = await lookup_google_fshare("One Piece")
+async def test_fshare_timfshare_provider():
+    results = await lookup_timfshare("One Piece")
     assert isinstance(results, list)
