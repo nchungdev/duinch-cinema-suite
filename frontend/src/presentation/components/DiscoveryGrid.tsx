@@ -4,9 +4,11 @@ import { PlayCircle, Loader2 } from 'lucide-react';
 import { MediaRepository } from '../../infrastructure/repositories/MediaRepository';
 
 interface DiscoveryItem {
+  id: number;
+  tmdb_id: number;
+  slug: string;
   title: string;
   origin_name: string;
-  slug: string;
   poster: string;
   year: string;
   media_type: 'movie' | 'tv';
@@ -15,11 +17,13 @@ interface DiscoveryItem {
 export function DiscoveryGrid({ 
   category, 
   mediaType, 
-  onItemClick 
+  onItemClick,
+  searchQuery // Thêm prop này để search
 }: { 
   category: string; 
   mediaType: string; 
   onItemClick: (item: DiscoveryItem) => void;
+  searchQuery?: string;
 }) {
   const [items, setItems] = useState<DiscoveryItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -38,14 +42,20 @@ export function DiscoveryGrid({
     
     try {
       let newItems: DiscoveryItem[] = [];
+      const currentPage = isInitial ? 1 : page;
+
       if (category === 'phim-le') {
-        const { data } = await api.get(`/movies?category=popular&page=${page}`, { signal: abortControllerRef.current.signal });
+        const { data } = await api.get(`/movies?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
         newItems = data.results || [];
       } else if (category === 'phim-bo') {
-        const { data } = await api.get(`/tvs?category=popular&page=${page}`, { signal: abortControllerRef.current.signal });
+        const { data } = await api.get(`/tvs?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        newItems = data.results || [];
+      } else if (category === 'search' && searchQuery) {
+        // HỖ TRỢ SEARCH TRỰC TIẾP
+        const { data } = await api.get(`/search?q=${encodeURIComponent(searchQuery)}&media_type=${mediaType}&page=${currentPage}`, { signal: abortControllerRef.current.signal });
         newItems = data.results || [];
       } else {
-        newItems = await MediaRepository.getTrending(mediaType, page);
+        newItems = await MediaRepository.getTrending(mediaType, currentPage);
       }
       
       setItems(prev => isInitial ? newItems : [...prev, ...newItems]);
@@ -60,7 +70,7 @@ export function DiscoveryGrid({
     } finally {
       setLoading(false);
     }
-  }, [category, mediaType, page, loading, hasMore]);
+  }, [category, mediaType, page, loading, hasMore, searchQuery]);
 
   // Initial load or reset
   useEffect(() => {
@@ -68,7 +78,7 @@ export function DiscoveryGrid({
     setPage(1);
     setHasMore(true);
     fetchItems(true);
-  }, [category, mediaType]);
+  }, [category, mediaType, searchQuery]);
 
   // Infinite scroll
   useEffect(() => {

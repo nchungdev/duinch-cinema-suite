@@ -252,6 +252,7 @@ function App() {
                    <DiscoveryGrid 
                      category="search" 
                      mediaType="all" 
+                     searchQuery={lastSearchQuery.current || searchQuery}
                      onItemClick={(item) => handleMovieClick(item.slug, item.media_type)} 
                    />
                  )}
