@@ -5,8 +5,8 @@ from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.use_cases.discovery import DiscoveryUseCase
-from app.infrastructure.scrapers.fshare_lookup import resolve_fshare_url
-from app.domain.models.media import DiscoveryTaskResult
+from app.infrastructure.scrapers.fshare_lookup import resolve_fshare_url, lookup_timfshare
+from app.domain.models.media import DiscoveryTaskResult, DownloadableLink
 
 router = APIRouter()
 
@@ -17,6 +17,22 @@ DISCOVERY_SOURCES = [
     {"source_type": "torrent",     "source": "default"},
     {"source_type": "gdrive",      "source": "googlesearch"}
 ]
+
+@router.get("/test-timfshare", response_model=List[DownloadableLink], tags=["Test"])
+async def test_timfshare_endpoint(
+    request: Request,
+    query: str = Query(..., description="Search keyword for TimFShare"),
+    year: int = Query(None),
+    filter_title: str = Query(None)
+):
+    """
+    Directly test TimFShare API v1. 
+    Returns raw results after normalization and filtering.
+    """
+    client = request.app.state.http_client
+    # We call the infrastructure scraper directly for testing
+    results = await lookup_timfshare(query, year=year, filter_title=filter_title or query)
+    return results
 
 @router.get("/stream")
 async def discovery_stream(
