@@ -15,51 +15,44 @@ class ForumScraperBase:
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Referer": self.base_url,
-            "Origin": self.base_url
+            "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
-    async def _native_search(self, query: str) -> List[str]:
-        """Perform direct search on XenForo forum and return thread URLs."""
-        search_url = f"{self.base_url}/search/search"
-        payload = {
-            "keywords": query,
-            "c[users]": "",
-            "c[nodes][]": "",
-            "c[child_nodes]": "1",
-            "o": "date",
-            "_xfToken": "" # XenForo guest token is usually empty
-        }
+    async def _dork_threads(self, query: str) -> List[str]:
+        """Find relevant forum threads using DuckDuckGo HTML (Anti-bot resilient)."""
+        dork_query = f'site:{self.domain} "{query}" Fshare'
+        encoded_query = urllib.parse.quote(dork_query)
+        # Use DDG HTML version - easier to scrape and less blocking
+        url = f"https://duckduckgo.com/html/?q={encoded_query}"
         
         thread_urls = []
         try:
             async with requests.AsyncSession() as session:
-                # 1. Post search request
-                resp = await session.post(search_url, data=payload, headers=self.headers, timeout=15, impersonate="chrome110")
+                resp = await session.get(url, headers=self.headers, timeout=20, impersonate="chrome110")
+                if resp.status_code != 200:
+                    print(f"[{self.name}] Dorking Blocked: {resp.status_code}")
+                    return []
                 
-                # XenForo redirects to /search/12345/
-                results_url = str(resp.url)
-                if "search/" not in results_url: return []
-                
-                # 2. Parse results page
                 soup = BeautifulSoup(resp.text, 'html.parser')
-                # XenForo 2 thread links usually have data-tp-primary="on" or class="contentRow-title"
-                for a in soup.select('h3.contentRow-title a[href*="/threads/"]'):
+                # Results are in 'a.result__a' in DDG HTML
+                for a in soup.select('a.result__a'):
                     href = a.get('href')
                     if href:
-                        full_url = urllib.parse.urljoin(self.base_url, href)
-                        thread_urls.append(full_url)
-                
-                # Dedup
-                thread_urls = list(dict.fromkeys(thread_urls))
-                print(f"[{self.name}] Native search found {len(thread_urls)} threads for '{query}'")
+                        # Decode DDG proxy links if necessary
+                        if "uddg=" in href:
+                            href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
+                        
+                        if self.domain in href and any(x in href for x in ["/threads/", "/t/", "/showthread.php"]):
+                            thread_urls.append(href)
+                            
+                print(f"[{self.name}] Dorking found {len(thread_urls)} threads for '{query}'")
         except Exception as e:
-            print(f"[{self.name}] Native Search Error: {e}")
+            print(f"[{self.name}] Dorking Error: {e}")
             
-        return thread_urls[:5] # Only take top 5 relevant threads
+        return list(dict.fromkeys(thread_urls))[:5]
 
     async def _mine_links(self, thread_url: str) -> List[DownloadableLink]:
-        """Visit thread and extract all FShare links."""
+        """Deep mine FShare links from thread content."""
         links = []
         try:
             async with requests.AsyncSession() as session:
@@ -67,19 +60,18 @@ class ForumScraperBase:
                 if resp.status_code != 200: return []
                 
                 html = resp.text
-                # Find FShare links (Files and Folders)
-                fshare_regex = r'https?://(?:www\.)?fshare\.vn/(?:file|folder)/[a-zA-Z0-9]+'
-                found = re.findall(fshare_regex, html)
+                # Look for folder and file links
+                fshare_matches = re.findall(r'https?://(?:www\.)?fshare\.vn/(?:file|folder)/[a-zA-Z0-9]+', html)
                 
                 soup = BeautifulSoup(html, 'html.parser')
                 page_title = soup.title.string.split('|')[0].split('-')[0].strip() if soup.title else "Forum Post"
 
-                for url in list(dict.fromkeys(found)):
+                for url in list(dict.fromkeys(fshare_matches)):
                     is_folder = "/folder/" in url
                     links.append(DownloadableLink(
                         name=f"[{self.name}] {page_title}",
                         url=url,
-                        size=0, # Size unknown from forum post
+                        size=0,
                         source=self.name.lower(),
                         is_folder=is_folder,
                         source_page=thread_url
@@ -89,28 +81,29 @@ class ForumScraperBase:
         return links
 
     async def lookup(self, query: str, tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-        """Direct Forum Discovery Cycle."""
+        """Discovery Cycle: Resilient Dorking -> Deep Mining."""
         all_found = []
-        # Combine titles
         search_terms = [query]
         if tmdb_info and tmdb_info.title and tmdb_info.title != query:
             search_terms.append(tmdb_info.title)
 
         for q in list(dict.fromkeys(search_terms)):
-            thread_urls = await self._native_search(q)
+            thread_urls = await self._dork_threads(q)
             if not thread_urls: continue
             
-            tasks = [self._mine_links(url) for url in thread_urls]
-            results = await asyncio.gather(*tasks)
-            for r_list in results:
+            # Mine each thread found
+            for url in thread_urls:
+                r_list = await self._mine_links(url)
                 all_found.extend(r_list)
+                await asyncio.sleep(0.5) # Polite delay
             
-            await asyncio.sleep(0.5)
-            
-        # Deduplicate
+        # Prioritize folders and deduplicate
         unique_links, seen = [], set()
         for link in all_found:
             if link.url not in seen:
                 unique_links.append(link)
                 seen.add(link.url)
+        
+        # Sort so folders come first
+        unique_links.sort(key=lambda x: not x.is_folder)
         return unique_links
