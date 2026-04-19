@@ -65,7 +65,10 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
         if results is None: results = []
         
         if source_type == "m3u8":
-            server_groups = {}
+            # ── INTERNAL GROUPING (Ensures no link contamination) ──
+            # We group by Movie+Server+CDN to keep DIFFERENT uploads separate,
+            # but we keep the DISPLAY NAME simple for the UI.
+            internal_groups = {}
             for r in results:
                 m_name = r.get("movie_name") or "Movie"
                 srv = r.get("server") or "Server"
@@ -73,17 +76,22 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
                 domain_match = re.search(r'https?://([^/]+)', m3u8)
                 domain = domain_match.group(1) if domain_match else "unknown"
                 
-                # FULL IDENTITY: [Provider] Movie Name - Server (CDN)
-                group_key = f"[{source.upper()}] {m_name} - {srv} ({domain})"
+                # Internal key for separation
+                group_key = f"{source}:{m_name}:{srv}:{domain}"
                 
-                if group_key not in server_groups: server_groups[group_key] = []
-                server_groups[group_key].append({
+                if group_key not in internal_groups: internal_groups[group_key] = []
+                internal_groups[group_key].append({
                     "type": "streamable", "provider": source.upper(), "server": srv,
                     "name": r.get("name"), "m3u8": r.get("m3u8"), "embed": r.get("embed"),
                     "season": r.get("season", 1)
                 })
             
-            final_results = [{"server": k, "episodes": eps} for k, eps in server_groups.items()]
+            # Map back to simple server names for display, keeping the groups distinct
+            final_results = []
+            for eps in internal_groups.values():
+                # Display name: [PROVIDER] Server Name (e.g. [OPHIM] Vietsub #1)
+                display_name = f"[{eps[0]['provider']}] {eps[0]['server']}"
+                final_results.append({"server": display_name, "episodes": eps})
         else:
             final_results = results
 
