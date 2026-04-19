@@ -8,7 +8,8 @@ from app.core import config
 from app.domain.models.media import DownloadableLink
 from app.domain.models.tmdb import TMDBInfo
 
-VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.iso', '.m4v', '.mov', '.wmv', '.ts'}
+# BỘ LỌC ĐUÔI VIDEO CHUẨN
+VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.iso', '.m4v', '.mov', '.wmv', '.ts', '.m2ts'}
 
 def normalize_for_match(text: str) -> str:
     """Normalize text for robust file name matching."""
@@ -32,9 +33,9 @@ def extract_season_from_name(name: str) -> int:
     return 1
 
 async def lookup_timfshare(query: str, year: int = None, filter_title: str = None, localize_title: str = None, media_type: str = "movie", tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-    """Discovery via timfshare.com with smart video filtering and season grouping."""
+    """Discovery via timfshare.com with STRICT video-only filtering."""
     base_url = "https://timfshare.com/api/v1/string-query-search"
-    search_terms = list(dict.fromkeys([q for q in [filter_title, localize_title] if q]))
+    search_terms = list(dict.fromkeys([filter_title, localize_title] if filter_title or localize_title else [query]))
     if not search_terms: search_terms = [query]
     
     all_links = []
@@ -66,19 +67,20 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                     link = item.get("url", "")
                     if not name or not link or link in seen_urls: continue
                     
-                    # 1. VIDEO & QUALITY FILTER
+                    # --- STRICT VIDEO & FOLDER FILTER ---
                     is_folder = "/folder/" in link or item.get("file_type") == 2
                     ext = os.path.splitext(name.lower())[1]
                     size_bytes = item.get("size", 0)
                     
                     if not is_folder:
-                        # Skip small non-video files
-                        if ext not in VIDEO_EXTENSIONS and size_bytes < 300 * 1024 * 1024:
+                        # MUST be a video extension
+                        if ext not in VIDEO_EXTENSIONS:
                             continue
+                        # AND must be at least 50MB (Exclude samples/trash)
                         if size_bytes < 50 * 1024 * 1024:
                             continue
 
-                    # 2. TITLE MATCH
+                    # --- TITLE MATCH ---
                     norm_name = normalize_for_match(name)
                     match_t = False
                     for st in search_terms:
@@ -86,14 +88,14 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                             match_t = True; break
                     if not match_t: continue
                     
-                    # 3. YEAR MATCH
+                    # --- YEAR MATCH ---
                     if series_start > 0:
                         found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
                         if found_years:
                             if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
                                 continue
                     
-                    # 4. SEASON DETECTION
+                    # --- SEASON DETECTION ---
                     season_num = extract_season_from_name(name)
                     
                     all_links.append(DownloadableLink(
@@ -105,9 +107,7 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                         source_page=f"Season {season_num}" if media_type == "tv" else None
                     ))
                     seen_urls.add(link)
-            except Exception as e:
-                print(f"[TimFShare] Error: {e}")
-                continue
+            except Exception: continue
             
     return all_links
 
