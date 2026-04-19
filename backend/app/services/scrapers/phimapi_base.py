@@ -15,6 +15,14 @@ def title_to_slug(title: str) -> str:
     slug = re.sub(r'[^a-z0-9]+', '-', ascii_str.lower()).strip('-')
     return slug
 
+def is_supported_lang(text: str) -> bool:
+    """Check if the text is primarily English or Vietnamese (ignores CJK, Arabic, etc)."""
+    if not text: return False
+    # Regex to allow English + Vietnamese accented characters
+    # Matches: Latin letters, numbers, spaces, common punctuation, and Vietnamese specific vowels/marks
+    vi_pattern = r'^[a-zA-Z0-9\s.,!?:;\-\(\)àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]+$'
+    return bool(re.match(vi_pattern, text))
+
 async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
     if not config.TMDB_READ_ACCESS_TOKEN or not tmdb_id: return {}
     tmdb_type = "movie" if media_type == "movie" else "tv"
@@ -97,12 +105,6 @@ class PhimAPIBase:
                 if s_year >= series_start: score += 500
                 else: score -= 500
 
-        # Season in title check
-        s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', n_name + " " + n_origin, re.IGNORECASE)
-        if s_match:
-            found_s = int(s_match.group(2))
-            if found_s == requested_season: score += 400
-
         n_query = query.lower().strip()
         if n_query and (n_query == n_name or n_query == n_origin): score += 300
         elif n_query and (n_query in n_name or n_query in n_origin): score += 100
@@ -158,39 +160,45 @@ class PhimAPIBase:
                             })
                             seen_urls.add(u)
 
-        # PHASE 1: TMDB ID Search
+        # PHASE 1: TMDB ID Search (Highest Precision)
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
                 await _process_slug(res.get("movie", {}).get("slug"))
+                if all_results: return all_results
 
-        # PHASE 2: Slug Candidate Generation from CLEAN names
+        # PHASE 2: Lang-aware Slug & Search
         def clean_for_slug(t: str) -> str:
             if not t: return ""
             return re.sub(r'\s+\d{4}|\s+Season\s+\d+|\s+S\d+E\d+', '', t, flags=re.IGNORECASE).strip()
 
-        slug_bases = []
-        if title: slug_bases.append(title_to_slug(clean_for_slug(title)))
-        if localize_title: slug_bases.append(title_to_slug(clean_for_slug(localize_title)))
-        
-        # Add slugs from search results (using full query for better search)
-        search_keywords = list(dict.fromkeys([q for q in [title, localize_title] if q]))
-        for kw in search_keywords:
-            search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 10})
-            items = search_data.get("data", {}).get("items", [])
-            for item in items:
-                score = self._score_search_item(item, kw, str(tmdb_id) if tmdb_id else None, year, media_type, 1, tmdb_info)
-                if score > 0: slug_bases.append(item["slug"])
-        
-        slug_bases = list(dict.fromkeys(slug_bases))
+        # Prioritize titles based on language support (VI first, then EN)
+        raw_titles = list(dict.fromkeys([q for q in [localize_title, title] if q]))
+        supported_titles = [t for t in raw_titles if is_supported_lang(t)]
 
-        for base in slug_bases:
-            await _process_slug(base)
+        for t in supported_titles:
+            clean_t = clean_for_slug(t)
+            base_slug = title_to_slug(clean_t)
+            
+            # 1. Try Direct Slugs
+            await _process_slug(base_slug)
             if media_type == "tv":
-                # Dynamic Discovery: Scan based on TMDB total seasons
                 total_s = tmdb_info.get("total_seasons", 1)
-                # Scan from 1 up to total_seasons (inclusive)
-                for p in range(1, total_s + 1): 
-                    await _process_slug(f"{base}-phan-{p}", assigned_season=p)
+                for p in range(1, total_s + 1): await _process_slug(f"{base_slug}-phan-{p}", assigned_season=p)
+            
+            # 2. Try Search API for this title if slug not found
+            if not all_results:
+                search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": t, "limit": 5})
+                items = search_data.get("data", {}).get("items", [])
+                for item in items:
+                    score = self._score_search_item(item, t, str(tmdb_id) if tmdb_id else None, year, media_type, 1, tmdb_info)
+                    if score > 0:
+                        await _process_slug(item["slug"])
+                        if media_type == "tv":
+                            total_s = tmdb_info.get("total_seasons", 1)
+                            for p in range(1, total_s + 1): await _process_slug(f"{item['slug']}-phan-{p}", assigned_season=p)
+
+            # EARLY BREAK: If results found for current title, don't try next title
+            if all_results: return all_results
 
         return all_results
