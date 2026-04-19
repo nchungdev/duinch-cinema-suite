@@ -1,70 +1,109 @@
-import httpx
-import re
 import asyncio
-from typing import List, Dict, Optional, Any
-from app.services import cache_manager
+import re
+import httpx
+from typing import List, Dict, Any, Optional
+import urllib.parse
 from app.core import config
 
-def _is_relevant(name: str, title: str, year: Optional[str] = None, media_type: str = "movie", tmdb_info: Dict[str, Any] = {}) -> bool:
-    name_lower = name.lower(); title_lower = title.lower()
-    if any(x in name_lower for x in ['porn', 'xxx', 'hentai', 'sexy', 'cam']): return False
-    
-    # 1. Number Semantic Analysis
-    nums = [int(n) for n in re.findall(r'\d+', name)]
-    potential_years = [n for n in nums if 1900 <= n <= 2030]
-    potential_episodes = [n for n in nums if n > 30 and n not in potential_years]
-    
-    # Episode count sanity check
-    if media_type == "tv" and tmdb_info.get("total_episodes"):
-        max_ep = tmdb_info["total_episodes"]
-        if potential_episodes and any(ep > max_ep * 1.5 + 5 for ep in potential_episodes):
-            return False
+def is_english_like(text: str) -> bool:
+    """Check if the text consists mostly of ASCII characters (no accents)."""
+    try:
+        text.encode('ascii')
+        return True
+    except UnicodeEncodeError:
+        return False
 
-    # 2. Year Filter
-    if year:
-        year_val = int(year)
-        if potential_years:
-            if media_type == "movie" and year_val not in potential_years: return False
-            if media_type == "tv" and not any(abs(y - year_val) <= 1 for y in potential_years): return False
+async def get_english_title(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> Optional[str]:
+    """Fetch the English title from TMDB."""
+    if not config.TMDB_READ_ACCESS_TOKEN or not tmdb_id:
+        return None
+    url = f"https://api.themoviedb.org/3/{media_type}/{tmdb_id}"
+    headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
+    try:
+        resp = await client.get(url, headers=headers)
+        data = resp.json()
+        return data.get("name") if media_type == "tv" else data.get("title")
+    except Exception: return None
 
-    # 3. Simple Keyword Check
-    title_words = [w for w in re.sub(r'[^a-z0-9]', ' ', title_lower).split() if len(w) > 3]
-    match_count = sum(1 for w in title_words if w in name_lower)
-    return match_count >= min(len(title_words), 2) if title_words else True
-
-def _parse_quality(text: str) -> str:
-    t = text.upper()
-    if '2160P' in t or '4K' in t: return '4K'
-    if 'REMUX' in t: return 'Remux'
-    if '1080P' in t: return '1080p'
-    if '720P' in t: return '720p'
-    return 'HD'
-
-async def lookup_torrent(title: str, tmdb_id: Optional[int] = None, media_type: str = "movie", season: Optional[int] = None, episode: Optional[int] = None, year: Optional[str] = None, tmdb_info: Dict[str, Any] = {}) -> List[Dict]:
-    cache_key = f"torrent_{title}_{tmdb_id or ''}_{season or ''}_{episode or ''}_{year or ''}"
-    cached = cache_manager.get_from_cache(config.TORRENT_CACHE, cache_key, 86400)
-    if cached is not None: return cached
-
+async def lookup_torrent(title: str, tmdb_id: Optional[int] = None, media_type: str = "movie", season: Optional[int] = None, episode: Optional[int] = None, year: Optional[str] = None, tmdb_info: Dict = {}) -> List[Dict[str, Any]]:
+    """Search for Torrent links using multiple reliable Search APIs."""
     results = []
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        try:
-            resp = await client.get(f"https://apibay.org/q.php?q={title}")
-            items = resp.json() if resp.status_code == 200 else []
-        except: items = []
-
-    for item in items:
-        if item.get("id") == "0": continue
-        name = item.get("name", "")
-        if not _is_relevant(name, title, year, media_type, tmdb_info): continue
-        
-        quality = _parse_quality(name)
-        results.append({
-            "url": f"magnet:?xt=urn:btih:{item.get('info_hash')}&dn={name}",
-            "name": name, "size": int(item.get("size", 0)), "seeders": int(item.get("seeders", 0)),
-            "leechers": int(item.get("leechers", 0)), "quality": quality, "source": "apibay",
-            "info_hash": item.get("info_hash"), "num_files": int(item.get("num_files", 1))
-        })
+    search_title = title
     
-    results.sort(key=lambda x: (x['seeders'], x['quality'] == '4K', x['quality'] == '1080p'), reverse=True)
-    if results: cache_manager.set_to_cache(config.TORRENT_CACHE, cache_key, results)
-    return results
+    if not is_english_like(title) and tmdb_id:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            eng_title = await get_english_title(client, tmdb_id, media_type)
+            if eng_title: search_title = eng_title
+
+    def _build_query(base: str) -> str:
+        clean_base = re.sub(r'\(.*?\)', '', base).strip()
+        parts = [clean_base]
+        if media_type == "movie" and year: parts.append(str(year))
+        if season and episode: parts.append(f"S{season:02d}E{episode:02d}")
+        elif season: parts.append(f"Season {season}")
+        elif media_type == "tv" and year: parts.append(str(year))
+        return " ".join(parts)
+
+    final_query = _build_query(search_title)
+    tasks = [lookup_solidtorrents_api(final_query), lookup_apibay_api(final_query), lookup_yts_api(final_query)]
+    
+    all_res = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in all_res:
+        if isinstance(r, list): results.extend(r)
+            
+    seen = set()
+    final = []
+    for r in results:
+        if r["url"] not in seen:
+            final.append(r)
+            seen.add(r["url"])
+    return final
+
+async def lookup_solidtorrents_api(q: str) -> List[Dict[str, Any]]:
+    try:
+        url = f"https://solidtorrents.net/api/v1/search?q={urllib.parse.quote(q)}&category=all&sort=seeders"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return [{
+                    "type": "downloadable", "provider": "torrent", "source": "solid",
+                    "url": i.get("magnet"), "name": f"SOLID | {i.get('title')}", "size": int(i.get("size", 0))
+                } for i in resp.json().get("results", []) if i.get("magnet")]
+    except Exception: pass
+    return []
+
+async def lookup_apibay_api(q: str) -> List[Dict[str, Any]]:
+    try:
+        url = f"https://apibay.org/q.php?q={urllib.parse.quote(q)}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and isinstance(data, list) and data[0].get("id") != "0":
+                    return [{
+                        "type": "downloadable", "provider": "torrent", "source": "apibay",
+                        "url": f"magnet:?xt=urn:btih:{i.get('info_hash')}&dn={urllib.parse.quote(i.get('name'))}",
+                        "name": f"TPB | {i.get('name')}", "size": int(i.get("size", 0))
+                    } for i in data[:15]]
+    except Exception: pass
+    return []
+
+async def lookup_yts_api(q: str) -> List[Dict[str, Any]]:
+    try:
+        url = f"https://yts.mx/api/v2/list_movies.json?query_term={urllib.parse.quote(q)}&sort_by=seeds"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                movies = resp.json().get("data", {}).get("movies", [])
+                results = []
+                for m in movies:
+                    for tor in m.get("torrents", []):
+                        if tor.get("hash"):
+                            results.append({
+                                "type": "downloadable", "provider": "torrent", "source": "yts",
+                                "url": f"magnet:?xt=urn:btih:{tor['hash']}&dn={urllib.parse.quote(m['title'])}",
+                                "name": f"YTS | {m['title']} [{tor.get('quality')}]", "size": int(tor.get("size_bytes", 0))
+                            })
+                return results
+    except Exception: pass
+    return []
