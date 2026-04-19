@@ -96,9 +96,10 @@ class PhimAPIBase:
             if item_tmdb_id == str(tmdb_id): score += 2000
             else: return -5000
 
-        # 3. SMART YEAR MATCH
+        # 3. YEAR LOGIC
         s_year = int(item.get("year") or 0)
         series_start = int(tmdb_info.get("series_year") or year or 0)
+        target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
         
         if s_year > 0 and series_start > 0:
             if media_type == "movie":
@@ -106,13 +107,13 @@ class PhimAPIBase:
                 score += 600
             else:
                 all_possible_years = [series_start] + list(tmdb_info.get("season_years", {}).values())
-                target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
                 is_valid_series_year = any(abs(s_year - y) <= 1 for y in all_possible_years if y > 0)
                 
                 if is_search_phase:
                     if is_valid_series_year: score += 500
                     else: return -3000
                 else:
+                    # In validation phase, be more lenient if no target_season_year
                     if target_season_year > 0 and abs(s_year - target_season_year) <= 1: score += 700
                     elif series_start > 0 and abs(s_year - series_start) <= 1: score += 400
                     elif s_year >= series_start: score += 200
@@ -155,20 +156,22 @@ class PhimAPIBase:
         seen_urls = set()
         seen_slugs = set()
 
-        async def _process_slug(slug: str, current_s: int):
+        async def _process_slug(slug: str, assigned_season: int):
             if not slug or slug in seen_slugs: return
             seen_slugs.add(slug)
             details = await self.get_details(client, slug)
             if not details: return
             
             movie = details.get("movie") or {}
-            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s, tmdb_info, is_search_phase=False) > 0:
+            # CRITICAL FIX: If we assigned a season (e.g. from phan-x), we MUST trust it more
+            # even if metadata scoring is slightly off due to missing TMDB info.
+            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, assigned_season, tmdb_info, is_search_phase=False) > -500:
                 for server in (details.get("episodes") or []):
                     sname = server.get("server_name", "Server")
                     for ep in (server.get("server_data") or []):
                         u = ep.get("link_m3u8") or ep.get("link_embed")
                         if u and u not in seen_urls:
-                            real_season = current_s
+                            real_season = assigned_season
                             ep_name = str(ep.get("name") or "")
                             ep_match = re.search(r'\d+', ep_name)
                             if ep_match:
@@ -207,9 +210,12 @@ class PhimAPIBase:
                     show_candidates.append(item.get("slug"))
             
             for base in list(dict.fromkeys([s for s in show_candidates if s])):
+                # Check root slug
                 await _process_slug(base, req_season)
+                # Check all potential parts based on TMDB total seasons
                 if media_type == "tv":
                     total_s = tmdb_info.get("total_seasons", 1)
-                    for p in range(1, total_s + 1): await _process_slug(f"{base}-phan-{p}", p)
+                    for p in range(1, total_s + 1):
+                        await _process_slug(f"{base}-phan-{p}", p)
 
         return all_results
