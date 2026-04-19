@@ -4,7 +4,6 @@ import asyncio
 import re
 import json
 from typing import List, Dict, Any, Optional
-from app.services import tmdb_service
 from app.services.scrapers.kkphim_lookup import lookup_kkphim
 from app.services.scrapers.ophim_lookup import lookup_ophim
 from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
@@ -52,12 +51,8 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
             target_ep = None if media_type == "tv" else episode
             if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
             elif source == "ophim": results = await lookup_ophim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
-
         elif source_type == "torrent":
-            t_season = None if media_type == "tv" else season
-            t_episode = None if media_type == "tv" else episode
-            results = await lookup_torrent(clean_title, tmdb_id, media_type, t_season, t_episode, year, tmdb_info=tmdb_info)
-
+            results = await lookup_torrent(clean_title, tmdb_id, media_type, season if media_type != "tv" else None, episode if media_type != "tv" else None, year, tmdb_info=tmdb_info)
         elif source_type == "fshare":
             if source == "timfshare":
                 results = await lookup_timfshare(primary, year=year, filter_title=clean_title, media_type=media_type, tmdb_info=tmdb_info)
@@ -70,20 +65,16 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
                     sec = await lookup_thuviencine(secondary)
                     results.extend(sec)
             elif source == "web":
-                g_season = None if media_type == "tv" else season
-                g_episode = None if media_type == "tv" else episode
-                results = await lookup_google_fshare(clean_title, year, g_season, g_episode)
+                results = await lookup_google_fshare(clean_title, year, None if media_type == "tv" else season, None if media_type == "tv" else episode)
                 if clean_localize:
-                    sec = await lookup_google_fshare(clean_localize, year, g_season, g_episode)
+                    sec = await lookup_google_fshare(clean_localize, year, None if media_type == "tv" else season, None if media_type == "tv" else episode)
                     results.extend(sec)
-
         elif source_type == "gdrive":
             results = await lookup_gdrive(primary)
             if secondary:
                 sec = await lookup_gdrive(secondary)
                 results.extend(sec)
 
-        # Normalize & Deduplicate
         if results is None: results = []
         seen_urls = set()
         deduped = []
@@ -108,11 +99,10 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
 
         return {"source_type": source_type, "source": source, "results": final_results, "error": None}
     except Exception as e:
-        print(f"[Discovery] Error in {source_type}/{source}: {e}")
         return {"source_type": source_type, "source": source, "results": [], "error": str(e)}
 
-@router.get("/discovery-stream")
-async def discovery_stream(
+@router.get("/stream")
+async def discovery_stream_sse(
     request: Request,
     tmdb_id: int = Query(None),
     media_type: str = Query("movie"),
@@ -123,34 +113,22 @@ async def discovery_stream(
     episode: int = Query(None),
     force: bool = Query(False),
 ):
+    """Discovery via SSE — Path: /api/media/stream"""
     client = request.app.state.http_client
     tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
 
     async def event_generator():
-        tasks = []
-        for src in DISCOVERY_SOURCES:
-            task = asyncio.create_task(
-                _run_scraper_task(
-                    client, tmdb_id, media_type, title, localize_title, year, season, episode,
-                    src["source_type"], src["source"], force, tmdb_info=tmdb_info
-                )
-            )
-            tasks.append(task)
-        
-        init_payload = {"type": "init", "total_sources": len(tasks), "sources": DISCOVERY_SOURCES}
-        yield f"data: {json.dumps(init_payload)}\n\n"
-
+        tasks = [asyncio.create_task(_run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, src["source_type"], src["source"], force, tmdb_info)) for src in DISCOVERY_SOURCES]
+        yield f"data: {json.dumps({'type': 'init', 'total_sources': len(tasks), 'sources': DISCOVERY_SOURCES})}\n\n"
         for completed_task in asyncio.as_completed(tasks):
             result = await completed_task
-            payload = {"type": "result", "data": result}
-            yield f"data: {json.dumps(payload)}\n\n"
-            
+            yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@router.get("/discovery")
-async def discovery(
+@router.get("/fetch")
+async def discovery_fetch(
     request: Request,
     tmdb_id: int = Query(None),
     media_type: str = Query("movie"),
@@ -163,14 +141,11 @@ async def discovery(
     source: str = Query(None),
     force: bool = Query(False),
 ):
+    """Single provider discovery — Path: /api/media/fetch"""
     client = request.app.state.http_client
     tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
     result = await _run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, source_type, source, force, tmdb_info=tmdb_info)
-    return {
-        "data": { "source_type": source_type, "source": source, "results": result["results"] },
-        "error_code": 500 if result["error"] else 0,
-        "error_msg": result["error"] or ""
-    }
+    return {"data": result, "error_code": 0, "error_msg": ""}
 
 @router.get("/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
@@ -179,6 +154,6 @@ async def folder_expand(request: Request, url: str, provider: str = "fshare"):
         if provider == "fshare":
             files = await resolve_fshare_url(url, client)
             return { "data": {"results": files}, "error_code": 0, "error_msg": "" }
-        return { "data": None, "error_code": 400, "error_msg": f"Provider {provider} not supported" }
+        return { "data": None, "error_code": 400, "error_msg": "Not supported" }
     except Exception as e:
         return { "data": None, "error_code": 500, "error_msg": str(e) }

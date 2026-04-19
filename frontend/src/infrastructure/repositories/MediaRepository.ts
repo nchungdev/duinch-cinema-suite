@@ -34,7 +34,7 @@ export class MediaRepository {
     localize_title?: string;
   }) {
     const query = new URLSearchParams(params as any).toString();
-    const { data: response } = await api.get(`/media/discovery?${query}`);
+    const { data: response } = await api.get(`/media/fetch?${query}`);
     return response?.data?.results || response?.results || [];
   }
 
@@ -70,7 +70,7 @@ export class MediaRepository {
       });
 
       const baseURL = api.defaults.baseURL || '';
-      const url = `${baseURL.replace(/\/$/, '')}/media/discovery-stream?${searchParams.toString()}`;
+      const url = `${baseURL.replace(/\/$/, '')}/media/stream?${searchParams.toString()}`;
 
       const response = await fetch(url, {
         method: 'GET',
