@@ -20,13 +20,29 @@ const CATEGORIES = [
 ];
 
 function App() {
-  const [slug, setSlug] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<string>('movie');
-  const [view, setView] = useState<'discovery' | 'detail'>('discovery');
-  const [category, setCategory] = useState('new');
+  // ── Smart Initial State (Prevention of Flicker) ───────────────────────────
+  const getInit = () => {
+    const hash = window.location.hash || '#/new';
+    const [fullPath, queryPart] = hash.split('?');
+    const params = new URLSearchParams(queryPart || '');
+    const parts = fullPath.split('/').filter(p => p && p !== '#');
+    const q = params.get('q') || '';
+    
+    if (parts.length >= 3) {
+      return { view: 'detail' as const, category: parts[0], mediaType: parts[1], slug: parts[2], searchQuery: q };
+    }
+    return { view: 'discovery' as const, category: parts[0] || 'new', mediaType: 'movie', slug: null, searchQuery: q };
+  };
+
+  const init = getInit();
+  const [slug, setSlug] = useState<string | null>(init.slug);
+  const [mediaType, setMediaType] = useState<string>(init.mediaType);
+  const [view, setView] = useState<'discovery' | 'detail'>(init.view);
+  const [category, setCategory] = useState(init.category);
+  const [searchQuery,   setSearchQuery]   = useState(init.searchQuery);
+  
   const [scrolled, setScrolled] = useState(false);
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [searchActive,  setSearchActive]  = useState(false);
+  const [searchActive,  setSearchActive]  = useState(!!init.searchQuery && init.category === 'search');
   const [searchTab,     setSearchTab]     = useState<SearchTab>('all');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchPage,    setSearchPage]    = useState(1);
@@ -44,13 +60,9 @@ function App() {
     try {
       const progress = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
       const history  = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
-      
       const res = await api.post<any>('/user/sync', { progress, history });
-      const data = res.data;
-
-      if (data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(data.progress));
-      if (data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(data.history));
-
+      if (res.data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(res.data.progress));
+      if (res.data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(res.data.history));
     } catch (err) {
       console.error('[Sync] Background sync failed:', err);
     }
@@ -60,22 +72,7 @@ function App() {
     performSync();
     const interval = setInterval(performSync, 15 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [performSync]);
-
-  const saveSearch = (q: string) => {
-    if (!q.trim()) return;
-    const updated = [q, ...recentSearches.filter(s => s !== q)].slice(0, 10);
-    setRecentSearches(updated);
-    localStorage.setItem('recent_searches', JSON.stringify(updated));
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-    saveSearch(searchQuery);
-    setShowRecent(false);
-    window.location.hash = `#/search?q=${encodeURIComponent(searchQuery)}`;
-  };
+  }, []);
 
   const executeSearch = useCallback(async (q: string, tab: SearchTab = 'all', page: number = 1, background = false) => {
     if (page === 1) {
@@ -88,20 +85,15 @@ function App() {
       const res = await api.get<{ results: any[]; total_pages: number; page: number }>(
         `/search?q=${encodeURIComponent(q)}&media_type=${tab}&page=${page}`
       );
-      const data = res.data;
-      setSearchResults(prev => page === 1 ? (data?.results || []) : [...prev, ...(data?.results || [])]);
-      setSearchTotal(data?.total_pages || 1);
+      setSearchResults(prev => page === 1 ? (res.data?.results || []) : [...prev, ...(res.data?.results || [])]);
+      setSearchTotal(res.data?.total_pages || 1);
       setSearchPage(page);
       setSearchQuery(q);
       lastSearchQuery.current = q;
       setSearchActive(true);
-      if (!background) {
-        setView('discovery');
-        setSlug(null);
-      }
+      if (!background) { setView('discovery'); setSlug(null); }
     } catch (err) {
       console.error('Search failed:', err);
-      if (page === 1) setSearchResults([]);
     } finally {
       setSearchLoading(false);
     }
@@ -127,25 +119,16 @@ function App() {
       const parts = fullPath.split('/').filter(p => p && p !== '#');
       
       if (parts.length >= 3) {
-        const cat = parts[0];
-        const type = parts[1];
-        const id = parts[2];
-        
-        setCategory(cat);
-        setMediaType(type);
-        setSlug(id);
+        setCategory(parts[0]);
+        setMediaType(parts[1]);
+        setSlug(parts[2]);
         setView('detail');
-        
-        if (cat === 'search' && q && !searchActive) {
-            executeSearch(q, 'all', 1, true);
-        }
+        if (parts[0] === 'search' && q && !searchActive) executeSearch(q, 'all', 1, true);
       } else if (parts.length >= 1) {
-        const cat = parts[0];
-        setCategory(cat);
+        setCategory(parts[0]);
         setView('discovery');
         setSlug(null);
-
-        if (cat === 'search') {
+        if (parts[0] === 'search') {
             setSearchActive(true);
             if (q && lastSearchQuery.current !== q) executeSearch(q, 'all', 1);
         } else {
@@ -153,42 +136,19 @@ function App() {
             setSearchResults([]);
             setSearchTab('all');
             lastSearchQuery.current = null;
-            if (!searchQuery) setSearchQuery('');
         }
-      } else {
-        window.location.hash = '#/new';
       }
     };
 
-    window.addEventListener('popstate', handleUrlSync);
     window.addEventListener('hashchange', handleUrlSync);
     handleUrlSync();
-    return () => {
-      window.removeEventListener('popstate', handleUrlSync);
-      window.removeEventListener('hashchange', handleUrlSync);
-    };
-  }, [searchActive, executeSearch, searchQuery]);
+    return () => window.removeEventListener('hashchange', handleUrlSync);
+  }, [searchActive, executeSearch]);
 
   const handleMovieClick = (clickedSlug: string, mType: string = 'movie') => {
     const currentCat = searchActive ? 'search' : category;
     const qParam = urlParams.q ? `?q=${encodeURIComponent(urlParams.q)}` : '';
     window.location.hash = `#/${currentCat}/${mType}/${clickedSlug}${qParam}`;
-  };
-
-  useEffect(() => {
-    if (!searchActive || !sentinelRef.current) return;
-    const obs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && !searchLoading && searchPage < searchTotal) {
-        executeSearch(lastSearchQuery.current!, searchTab, searchPage + 1);
-      }
-    }, { threshold: 0.1 });
-    obs.observe(sentinelRef.current);
-    return () => obs.disconnect();
-  }, [searchActive, searchLoading, searchPage, searchTotal, searchTab, executeSearch]);
-
-  const handleSearchTabChange = (tab: SearchTab) => {
-    setSearchTab(tab);
-    if (lastSearchQuery.current) executeSearch(lastSearchQuery.current, tab, 1);
   };
 
   const navToDiscoveryClear = (newCat?: string) => {
@@ -239,48 +199,16 @@ function App() {
 
         <div className="flex items-center gap-8">
            <div className="relative hidden md:block group">
-              <form onSubmit={handleSearch} className="relative">
+              <form onSubmit={(e) => { e.preventDefault(); window.location.hash = `#/search?q=${encodeURIComponent(searchQuery)}`; }} className="relative">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 group-focus-within:text-blue-500 transition-colors" />
                 <input 
                   type="text"
                   placeholder="Lookup Metadata..."
                   value={searchQuery}
-                  onFocus={() => setShowRecent(true)}
-                  onBlur={() => setTimeout(() => setShowRecent(false), 200)}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-64 bg-white/5 border border-white/10 rounded-2xl py-2.5 pl-12 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:bg-white/10 transition-all"
                 />
               </form>
-
-              {showRecent && recentSearches.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-black/90 backdrop-blur-2xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl z-[200] animate-in fade-in slide-in-from-top-2 duration-300">
-                  <div className="p-4 border-b border-white/5 flex items-center justify-between">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Recent Searches</span>
-                    <button 
-                      onClick={() => { setRecentSearches([]); localStorage.removeItem('recent_searches'); }}
-                      className="text-[8px] font-black uppercase tracking-widest text-blue-500 hover:text-blue-400"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {recentSearches.map((s, idx) => (
-                      <div 
-                        key={idx}
-                        onClick={() => {
-                          setSearchQuery(s);
-                          window.location.hash = `#/search?q=${encodeURIComponent(s)}`;
-                          setShowRecent(false);
-                        }}
-                        className="px-4 py-3 flex items-center gap-3 hover:bg-white/5 cursor-pointer transition-colors group/item"
-                      >
-                        <Search className="w-3 h-3 text-gray-600 group-hover/item:text-blue-500" />
-                        <span className="text-[10px] font-bold text-gray-300 group-hover/item:text-white truncate">{s}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
            </div>
            <div className="flex items-center gap-4">
               <ToolIcon icon={<Bell className="w-4 h-4" />} />
@@ -307,26 +235,9 @@ function App() {
                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                    <div className="flex items-center gap-6">
                      <h2 className="text-xl font-black uppercase italic tracking-tighter text-blue-400">
-                       "{lastSearchQuery.current}"
+                       "{lastSearchQuery.current || searchQuery}"
                      </h2>
                    </div>
-                   <button onClick={() => { setSearchActive(false); setSearchResults([]); setSearchTab('all'); lastSearchQuery.current = null; setSearchQuery(''); window.location.hash = `#/${category}`; }}
-                     className="text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-white transition-colors self-start md:self-auto">
-                     ✕ Clear
-                   </button>
-                 </div>
-
-                 <div className="flex items-center gap-1 border-b border-white/5 pb-0">
-                   {SEARCH_TABS.map(tab => (
-                     <button key={tab.id} onClick={() => handleSearchTabChange(tab.id)}
-                       className={`px-5 py-2.5 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all -mb-px ${
-                         searchTab === tab.id
-                           ? 'text-blue-400 border-blue-500'
-                           : 'text-gray-600 border-transparent hover:text-gray-300 hover:border-white/20'
-                       }`}>
-                       {tab.label}
-                     </button>
-                   ))}
                  </div>
 
                  {searchLoading && searchResults.length === 0 ? (
@@ -334,17 +245,12 @@ function App() {
                      <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
                      <span className="text-[10px] font-black uppercase tracking-widest">Searching…</span>
                    </div>
-                 ) : searchResults.length === 0 ? (
-                   <div className="flex flex-col items-center justify-center p-20 opacity-50">
-                     <Search className="w-10 h-10 mb-4" />
-                     <div className="text-xs font-bold uppercase tracking-widest">No results found</div>
-                   </div>
                  ) : (
-                 <DiscoveryGrid 
-                   category="search" 
-                   mediaType="all" 
-                   onItemClick={(item) => handleMovieClick(item.slug, item.media_type)} 
-                 />
+                   <DiscoveryGrid 
+                     category="search" 
+                     mediaType="all" 
+                     onItemClick={(item) => handleMovieClick(item.slug, item.media_type)} 
+                   />
                  )}
                  </div>
                  ) : (
@@ -362,7 +268,6 @@ function App() {
                  />
                  </div>
                  )}
-
             </div>
          ) : slug ? (
             <MediaDetail 
