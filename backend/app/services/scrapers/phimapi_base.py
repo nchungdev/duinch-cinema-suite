@@ -45,10 +45,10 @@ class PhimAPIBase:
         self.provider_name = provider_name
         self.base_url = base_url
 
-    async def api_call(self, client: httpx.AsyncClient, path: str) -> Dict[str, Any]:
+    async def api_call(self, client: httpx.AsyncClient, path: str, params: Dict = None) -> Dict[str, Any]:
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
         try:
-            resp = await client.get(url, timeout=10)
+            resp = await client.get(url, params=params, timeout=10)
             if resp.status_code == 200: return resp.json()
         except Exception: pass
         return {}
@@ -59,9 +59,14 @@ class PhimAPIBase:
         return data
 
     async def get_by_tmdb(self, client: httpx.AsyncClient, media_type: str, tmdb_id: str) -> Dict[str, Any]:
-        """Try to fetch directly by TMDB ID."""
         api_type = "movie" if media_type == "movie" else "tv"
         return await self.api_call(client, f"/tmdb/{api_type}/{tmdb_id}")
+
+    async def search_slugs(self, client: httpx.AsyncClient, keyword: str) -> List[str]:
+        """Search for potential slugs using the V1 Search API."""
+        data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": keyword, "limit": 10})
+        items = data.get("data", {}).get("items", [])
+        return [i["slug"] for i in items if i.get("slug")]
 
     def _is_match(self, source_movie: Dict, tmdb_info: Dict, media_type: str, requested_season: int = 1) -> bool:
         if not source_movie: return False
@@ -72,11 +77,10 @@ class PhimAPIBase:
         try:
             s_year = int(source_movie.get("year") or 0)
             if s_year == 0: return True
+            series_start = tmdb_info.get("series_year", 0)
             if media_type == "movie":
-                t_year = tmdb_info.get("series_year", 0)
-                if t_year > 0 and abs(s_year - t_year) > 1: return False
+                if series_start > 0 and abs(s_year - series_start) > 1: return False
             else:
-                series_start = tmdb_info.get("series_year", 0)
                 target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
                 is_year_match = False
                 if series_start > 0 and abs(s_year - series_start) <= 1: is_year_match = True
@@ -103,45 +107,56 @@ class PhimAPIBase:
         tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"series_year": int(year) if year else 0}
         all_results = []
         seen_urls = set()
+        seen_slugs = set()
 
-        def _add_links(details: Dict):
-            if not details: return
-            for server in details.get("episodes", []):
-                sname = server.get("server_name", "Server")
-                for ep in server.get("server_data", []):
-                    u = ep.get("link_m3u8") or ep.get("link_embed")
-                    if u and u not in seen_urls:
-                        all_results.append({
-                            "type": "streamable", "provider": self.provider_name, "server": sname,
-                            "name": ep.get("name"), "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed")
-                        })
-                        seen_urls.add(u)
+        async def _process_slug(slug: str, s_num: int):
+            if not slug or slug in seen_slugs: return
+            seen_slugs.add(slug)
+            details = await self.get_details(client, slug)
+            if details and self._is_match(details.get("movie"), tmdb_info, media_type, s_num):
+                for server in details.get("episodes", []):
+                    sname = server.get("server_name", "Server")
+                    for ep in server.get("server_data", []):
+                        u = ep.get("link_m3u8") or ep.get("link_embed")
+                        if u and u not in seen_urls:
+                            all_results.append({
+                                "type": "streamable", "provider": self.provider_name, "server": sname,
+                                "name": ep.get("name"), "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed")
+                            })
+                            seen_urls.add(u)
 
-        # PHASE 1: TMDB ID Search (Priority)
+        # PHASE 1: TMDB ID Search (Highest Precision)
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
             if res and res.get("status") is True and res.get("movie"):
                 if self._is_match(res.get("movie"), tmdb_info, media_type, req_season):
-                    _add_links(res)
-                    if all_results: return all_results # Stop if found by ID
+                    for server in res.get("episodes", []):
+                        sname = server.get("server_name", "Server")
+                        for ep in server.get("server_data", []):
+                            all_results.append({
+                                "type": "streamable", "provider": self.provider_name, "server": sname,
+                                "name": ep.get("name"), "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed")
+                            })
+                    if all_results: return all_results
 
-        # PHASE 2: Slug-based lookup (Fallback)
-        slug_bases = []
-        if title: slug_bases.append(title_to_slug(title))
-        if localize_title: slug_bases.append(title_to_slug(localize_title))
-        slug_bases = list(dict.fromkeys(slug_bases))
+        # PHASE 2: Slug & Search Fallback
+        slug_candidates = []
+        if title: slug_candidates.append(title_to_slug(title))
+        if localize_title: slug_candidates.append(title_to_slug(localize_title))
+        
+        # Add slugs from search results (Search-then-Validate)
+        search_keywords = list(dict.fromkeys([q for q in [title, localize_title] if q]))
+        for kw in search_keywords:
+            found_slugs = await self.search_slugs(client, kw)
+            slug_candidates.extend(found_slugs)
+        
+        slug_candidates = list(dict.fromkeys(slug_candidates))
 
-        for base in slug_bases:
-            # root slug
-            details = await self.get_details(client, base)
-            if details and self._is_match(details.get("movie"), tmdb_info, media_type, req_season):
-                _add_links(details)
-            
-            # parts variants
+        for base in slug_candidates:
+            await _process_slug(base, req_season)
             if media_type == "tv":
-                for p in range(1, 11):
-                    p_details = await self.get_details(client, f"{base}-phan-{p}")
-                    if p_details and self._is_match(p_details.get("movie"), tmdb_info, media_type, p):
-                        _add_links(p_details)
+                # Try parts for each candidate
+                for p in range(1, 6): # Limit to 5 parts for speed
+                    await _process_slug(f"{base}-phan-{p}", p)
 
         return all_results
