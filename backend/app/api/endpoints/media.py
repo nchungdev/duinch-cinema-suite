@@ -23,14 +23,31 @@ async def test_timfshare_endpoint(
     request: Request,
     query: str = Query(..., description="Search keyword for TimFShare"),
     year: int = Query(None),
-    filter_title: str = Query(None)
+    filter_title: str = Query(None),
+    media_type: str = Query("movie", description="movie or tv")
 ):
     """
-    Directly test TimFShare API v1 using POST method. 
-    Returns raw results after normalization and filtering.
+    Directly test TimFShare API v1. 
+    Returns grouped and sorted results for TV shows.
     """
     client = request.app.state.http_client
-    results = await lookup_timfshare(query, year=year, filter_title=filter_title or query)
+    results = await lookup_timfshare(query, year=year, filter_title=filter_title or query, media_type=media_type)
+    
+    if media_type == "tv":
+        # Group and Sort by Season
+        season_groups = {}
+        for r in results:
+            s_label = r.source_page if r.source_page else "Season 01"
+            if s_label not in season_groups: season_groups[s_label] = []
+            season_groups[s_label].append(r)
+        
+        final_sorted = []
+        for s_label in sorted(season_groups.keys()):
+            links = season_groups[s_label]
+            links.sort(key=lambda x: x.name)
+            final_sorted.extend(links)
+        return final_sorted
+        
     return results
 
 @router.get("/stream")
