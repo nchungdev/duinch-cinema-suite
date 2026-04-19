@@ -25,22 +25,34 @@ def extract_season_from_name(name: str) -> int:
     return 1
 
 def is_episode_format(name: str) -> bool:
-    """Detect if a filename strictly follows an episode/series pattern."""
-    # 1. Standard patterns: E01, EP01, S01E01, Tập 01, Tap 01, Part 01
-    patterns = [
-        r'[Ee]\d{1,4}',            # E01, E1000
-        r'[Ee]p\s*\d{1,4}',        # Ep 01, Ep01
-        r'[Ss]\d{1,2}[Ee]\d{1,4}', # S01E01
-        r'[Tt]ập\s*\d{1,4}',       # Tập 01
-        r'[Tt]ap\s*\d{1,4}',       # Tap 01
-        r'[Pp]art\s*\d{1,2}',      # Part 01
-        r'[Cc]ương\s*\d{1,4}',     # Chương 01 (Anime/Manga style)
-        r'\b\d{1,3}\.(?:mkv|mp4|avi|ts)$' # Standalone numbers at the end like "01.mp4"
+    """Strictly detect if a filename follows an episode/series pattern."""
+    # Remove extension for easier checking
+    base_name = os.path.splitext(name)[0]
+    
+    # 1. Standard patterns: E01, EP01, S01E01, Tập 01, Part 01, etc.
+    explicit_patterns = [
+        r'[Ee]\d{1,4}',             # E01, E1000
+        r'[Ee]p\s*\d{1,4}',         # Ep 01, Ep01
+        r'[Ss]\d{1,2}[Ee]\d{1,4}',  # S01E01
+        r'[Tt]ập\s*\d{1,4}',        # Tập 01
+        r'[Tt]ap\s*\d{1,4}',        # Tap 01
+        r'[Pp]art\s*\d{1,2}',       # Part 01
+        r'[Cc]ương\s*\d{1,4}',      # Chương 01
     ]
-    return any(re.search(p, name, re.IGNORECASE) for p in patterns)
+    if any(re.search(p, base_name, re.IGNORECASE) for p in explicit_patterns):
+        return True
+        
+    # 2. Number patterns at delimiters or end: _01, .01, -01, " 01"
+    # We exclude years (19xx, 20xx) to avoid false positives
+    # This catches "Naruto_01", "Naruto 01", "Naruto.01"
+    num_match = re.search(r'[\s\._-](?!19|20)(\d{1,3})$', base_name)
+    if num_match:
+        return True
+        
+    return False
 
 async def lookup_timfshare(query: str, year: int = None, filter_title: str = None, localize_title: str = None, media_type: str = "movie", tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-    """Discovery via timfshare.com with strict Movie vs Episode separation."""
+    """Discovery via timfshare.com with ultra-strict episode detection."""
     base_url = "https://timfshare.com/api/v1/string-query-search"
     
     tmdb_title = tmdb_info.title if tmdb_info and tmdb_info.title else (filter_title or query)
@@ -80,10 +92,8 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                         if size_bytes < 50 * 1024 * 1024: continue
 
                     # --- B. STRICT MEDIA TYPE GUARD ---
-                    is_ep = is_episode_format(name)
                     if media_type == "movie":
-                        # CRITICAL: If searching for Movie, NO episode patterns allowed (except folders)
-                        if is_ep and not is_folder: continue
+                        if is_episode_format(name) and not is_folder: continue
                     
                     # --- C. IDENTITY & YEAR GUARD ---
                     norm_name = normalize_for_match(name)
@@ -102,7 +112,6 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                         if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
                             continue
                     elif not is_folder and series_start > 0:
-                        # Case Naruto 1999 cap
                         ep_match = re.search(r'(?:tập|ep|e)\s*(\d+)', norm_name, re.IGNORECASE)
                         if ep_match and series_start == 1999 and int(ep_match.group(1)) > 220: continue
 
