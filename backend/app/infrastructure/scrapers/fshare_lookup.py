@@ -20,31 +20,27 @@ def normalize_for_match(text: str) -> str:
 def extract_season_from_name(name: str) -> int:
     patterns = [r'[Ss]eason\s*(\d+)', r'[Ss](\d+)[\.E\s]', r'[Pp]hần\s*(\d+)', r'[Pp](\d+)[\.\s]']
     for p in patterns:
-        match = re.search(p, name)
+        match = re.search(p, name, re.IGNORECASE)
         if match: return int(match.group(1))
     return 1
 
 def is_series_file(name: str) -> bool:
-    series_patterns = [r'[Ee]\d+', r'[Tt]ập\s*\d+', r'[Ee]p\s*\d+', r'S\d{2}E\d{2}']
-    return any(re.search(p, name) for p in series_patterns)
+    series_patterns = [r'[Ee]\d+', r'[Tt]ập\s*\d+', r'[Ee]p\s*\d+', r'S\d{2}E\d{2}', r'\b\d{2,3}\b']
+    return any(re.search(p, name, re.IGNORECASE) for p in series_patterns)
 
 async def lookup_timfshare(query: str, year: int = None, filter_title: str = None, localize_title: str = None, media_type: str = "movie", tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-    """Discovery via timfshare.com with strict series identity filtering."""
+    """Discovery via timfshare.com with ultimate series identity guard."""
     base_url = "https://timfshare.com/api/v1/string-query-search"
     
-    # 1. Identity Setup
+    # 1. Identity Guard Setup
     tmdb_title = tmdb_info.title if tmdb_info and tmdb_info.title else (filter_title or query)
     norm_tmdb_title = normalize_for_match(tmdb_title)
     
-    # search_terms for API call
     search_terms = list(dict.fromkeys([str(q) for q in [filter_title, localize_title, query] if q and str(q).lower() != 'none']))
-    
-    all_links = []
-    seen_urls = set()
+    all_links, seen_urls = [], set()
     
     series_start = tmdb_info.series_year if tmdb_info else (int(year) if year else 0)
-    actual_season_years = [y for y in tmdb_info.season_years.values() if y > 0] if tmdb_info else []
-    valid_years = [series_start] + actual_season_years
+    valid_years = [series_start] + list(tmdb_info.season_years.values()) if tmdb_info else [series_start]
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -65,7 +61,7 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                     link = item.get("url", "")
                     if not name or not link or link in seen_urls: continue
                     
-                    # --- A. PRE-FILTER: FILE TYPE ---
+                    # --- A. PRE-FILTER ---
                     is_folder = "/folder/" in link or item.get("file_type") == 2
                     ext = os.path.splitext(name.lower())[1]
                     size_bytes = item.get("size", 0)
@@ -73,16 +69,15 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                         if ext not in VIDEO_EXTENSIONS: continue
                         if size_bytes < 50 * 1024 * 1024: continue
 
-                    # --- B. STRICT IDENTITY MATCH ---
+                    # --- B. STRICT IDENTITY GUARD ---
                     norm_name = normalize_for_match(name)
                     
-                    # Special Rule for Naruto vs Naruto Shippuden
-                    # If we search for Naruto (1999) but file says "shippuden" -> Reject
-                    # If we search for Naruto Shippuden but file says "boruto" -> Reject
-                    if "shippuden" in norm_name and "shippuden" not in norm_tmdb_title: continue
+                    # 1. Broad exclusion for known sub-series
+                    # If target title DOES NOT have "shippuden" but file DOES -> Skip
+                    if re.search(r'shippu?den', norm_name) and "shippuden" not in norm_tmdb_title: continue
                     if "boruto" in norm_name and "boruto" not in norm_tmdb_title: continue
                     
-                    # Main Title Match (Word Boundary)
+                    # 2. Year & Title Boundary Match
                     is_match = False
                     for st in search_terms:
                         norm_st = normalize_for_match(st)
@@ -90,19 +85,19 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                             is_match = True; break
                     if not is_match: continue
 
-                    # --- C. YEAR FILTER (HARSH) ---
+                    # --- C. YEAR & EPISODE LOGIC ---
                     found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
                     if found_years:
-                        match_y = any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0)
-                        if not match_y: continue
-                    else:
-                        # CRITICAL: If no year in filename, we MUST check keywords
-                        # Naruto (1999) vs Shippuden (2007)
-                        if series_start == 1999 and "shippuden" in norm_name: continue
-                        if series_start == 2007 and "shippuden" not in norm_name and not is_folder: continue
+                        if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
+                            continue
+                    elif not is_folder and series_start > 0:
+                        # Special Case: Naruto (1999) has only 220 episodes. 
+                        # If we see "Tập 221" or higher and it's Naruto 1999 -> Skip
+                        ep_match = re.search(r'(?:tập|ep|e)\s*(\d+)', norm_name, re.IGNORECASE)
+                        if ep_match and series_start == 1999 and int(ep_match.group(1)) > 220:
+                            continue
 
-                    # --- D. MEDIA TYPE & TRASH FILTER ---
-                    if media_type == "movie" and is_series_file(name) and not is_folder: continue
+                    # --- D. TRASH FILTER ---
                     if any(x in norm_name for x in ['storm', 'ninja storm', 'connections', 'striker', 'repack', 'crack']): continue
 
                     season_num = extract_season_from_name(name)
