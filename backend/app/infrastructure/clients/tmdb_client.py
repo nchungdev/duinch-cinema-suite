@@ -30,12 +30,15 @@ async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: s
             item_type = item.get("media_type") or media_type
             if item_type not in ["movie", "tv", "collection"]: continue
             normalized_type = "tv" if item_type == "tv" else "movie"
+            
+            tmdb_id = item.get("id")
             results.append({
+                "id": tmdb_id, # RESTORE: Frontend expects 'id'
+                "tmdb_id": tmdb_id,
                 "title": item.get("title") or item.get("name"),
                 "origin_name": item.get("original_title") or item.get("original_name"),
                 "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
-                "tmdb_id": item.get("id"),
-                "slug": str(item.get("id")),
+                "slug": str(tmdb_id),
                 "overview": item.get("overview"),
                 "media_type": normalized_type,
                 "actual_type": item_type,
@@ -71,6 +74,8 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
                     })
 
         return {
+            "id": item.get("id"), # RESTORE
+            "tmdb_id": item.get("id"),
             "title": item.get("title") or item.get("name"),
             "origin_name": item.get("original_title") or item.get("original_name"),
             "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
