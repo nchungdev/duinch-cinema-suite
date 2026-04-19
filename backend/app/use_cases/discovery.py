@@ -11,6 +11,7 @@ from app.infrastructure.scrapers.ophim_lookup import lookup_ophim
 from app.infrastructure.scrapers.fshare_lookup import lookup_timfshare
 from app.infrastructure.scrapers.torrent_lookup import lookup_torrent
 from app.infrastructure.scrapers.gdrive_lookup import lookup_gdrive
+from app.infrastructure.scrapers.forum_scrapers import lookup_all_forums
 from app.infrastructure.cache.redis_cache import cache_manager
 
 class DiscoveryUseCase:
@@ -34,7 +35,7 @@ class DiscoveryUseCase:
         
         results = []
         try:
-            # 2. Execution logic based on source and media type
+            # 2. Execution logic
             if source_type == "m3u8":
                 target_ep = None if media_type == "tv" else episode
                 if source == "kkphim":
@@ -44,12 +45,11 @@ class DiscoveryUseCase:
 
             elif source_type == "fshare":
                 if source == "timfshare" and media_type == "movie":
-                    # TimFShare API is only used for Movies (individual files)
+                    # TimFShare API is for Movies (individual files)
                     results = await lookup_timfshare(clean_title, year=year, filter_title=clean_title, localize_title=clean_localize, media_type=media_type, tmdb_info=tmdb_info)
-                
-                # Placeholder for Forum Discovery (TV Series Folders)
-                # elif source == "forum" and media_type == "tv":
-                #     results = await forum_scraper.lookup(clean_title, media_type="tv")
+                elif source == "forum":
+                    # Forum Miner: Best for Folders and TV Series Collections
+                    results = await lookup_all_forums(clean_title, tmdb_info=tmdb_info)
 
             elif source_type == "torrent":
                 results = await lookup_torrent(clean_title, tmdb_id, media_type, None, None, str(year) if year else None, tmdb_info=tmdb_info)
@@ -74,10 +74,9 @@ class DiscoveryUseCase:
                     display_name = f"[{eps[0].provider}] {eps[0].server}"
                     final_results.append(StreamingServerGroup(server=display_name, episodes=eps))
             else:
-                # Flat list for downloadable links
                 final_results = results
 
-            # 4. Cache and Return
+            # 4. Cache
             if final_results:
                 cache_manager.set_discovery(source, tmdb_id, cache_key_season, [r.dict(exclude_none=True) for r in (final_results if isinstance(final_results, list) else [])], ttl=3600 * 6)
 

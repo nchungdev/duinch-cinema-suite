@@ -14,6 +14,7 @@ DISCOVERY_SOURCES = [
     {"source_type": "m3u8",        "source": "kkphim"},
     {"source_type": "m3u8",        "source": "ophim"},
     {"source_type": "fshare",      "source": "timfshare"},
+    {"source_type": "fshare",      "source": "forum"}, # New Forum Hunter
     {"source_type": "torrent",     "source": "default"},
     {"source_type": "gdrive",      "source": "googlesearch"}
 ]
@@ -26,27 +27,9 @@ async def test_timfshare_endpoint(
     filter_title: str = Query(None),
     media_type: str = Query("movie", description="movie or tv")
 ):
-    """
-    Directly test TimFShare API v1. 
-    Returns grouped and sorted results for TV shows.
-    """
+    """Directly test TimFShare API v1."""
     client = request.app.state.http_client
     results = await lookup_timfshare(query, year=year, filter_title=filter_title or query, media_type=media_type)
-    
-    if media_type == "tv":
-        season_groups = {}
-        for r in results:
-            s_label = r.source_page if r.source_page else "Season 01"
-            if s_label not in season_groups: season_groups[s_label] = []
-            season_groups[s_label].append(r)
-        
-        final_sorted = []
-        for s_label in sorted(season_groups.keys()):
-            links = season_groups[s_label]
-            links.sort(key=lambda x: x.name)
-            final_sorted.extend(links)
-        return final_sorted
-        
     return results
 
 @router.get("/stream")
@@ -61,10 +44,7 @@ async def discovery_stream(
     episode: int = Query(None, description="Episode number"),
     force: bool = Query(False, description="Bypass cache and force re-scan"),
 ):
-    """
-    Server-Sent Events (SSE) stream for real-time discovery results.
-    Each event contains results from one provider.
-    """
+    """Server-Sent Events (SSE) stream for real-time discovery results."""
     client = request.app.state.http_client
     use_case = DiscoveryUseCase(client)
     tmdb_info = await use_case.get_tmdb_info(media_type, str(tmdb_id)) if tmdb_id else None
@@ -81,7 +61,6 @@ async def discovery_stream(
         yield f"data: {json.dumps({'type': 'init', 'total_sources': len(tasks), 'sources': DISCOVERY_SOURCES})}\n\n"
         for completed_task in asyncio.as_completed(tasks):
             result = await completed_task
-            # DiscoveryTaskResult model can be serialized using .dict(exclude_none=True)
             yield f"data: {json.dumps({'type': 'result', 'data': result.dict(exclude_none=True)})}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
 
