@@ -11,10 +11,10 @@ from app.services.scrapers.fshare_lookup import resolve_fshare_url, lookup_timfs
 from app.services.scrapers.gdrive_lookup import lookup_gdrive
 from app.services.scrapers.torrent_lookup import lookup_torrent
 from app.services.scrapers.phimapi_base import tmdb_get_info
+from app.services.cache_manager import cache_manager
 
 router = APIRouter()
 
-# CLEAN PIPELINE: Focus on centralized high-quality indexes
 DISCOVERY_SOURCES = [
     {"source_type": "m3u8",        "source": "kkphim"},
     {"source_type": "m3u8",        "source": "ophim"},
@@ -24,12 +24,25 @@ DISCOVERY_SOURCES = [
 ]
 
 async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, source_type, source, force, tmdb_info: Dict[str, Any] = {}):
+    """Core logic to run a single scraper with Caching support."""
+    
+    # 1. HANDLE CACHE (Skip if force refresh)
+    cache_key_season = season if season else 1
+    if not force:
+        cached = cache_manager.get_discovery(source, tmdb_id, cache_key_season)
+        if cached:
+            print(f"[Cache] HIT for {source} | ID: {tmdb_id}")
+            return {"source_type": source_type, "source": source, "results": cached, "error": None}
+    else:
+        # Clear specific cache if force refreshing
+        cache_manager.clear_discovery(tmdb_id, cache_key_season)
+
     clean_title    = re.sub(r'\(.*?\)', '', title).strip()
     clean_localize = re.sub(r'\(.*?\)', '', localize_title).strip() if localize_title else None
-
     results = []
 
     try:
+        # 2. DISCOVERY EXECUTION
         if source_type == "m3u8":
             target_ep = None if media_type == "tv" else episode
             if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
@@ -40,7 +53,6 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
 
         elif source_type == "fshare":
             if source == "timfshare":
-                # Primary FShare Index
                 results = await lookup_timfshare(clean_title, year=year, filter_title=clean_title, localize_title=clean_localize, media_type=media_type, tmdb_info=tmdb_info)
 
         elif source_type == "gdrive":
@@ -52,6 +64,7 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
 
         if results is None: results = []
         
+        # 3. TRANSFORM & FORMAT
         if source_type == "m3u8":
             internal_groups = {}
             for r in results:
@@ -70,6 +83,10 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
             final_results = [{"server": f"[{eps[0]['provider']}] {eps[0]['server']}", "episodes": eps} for eps in internal_groups.values()]
         else:
             final_results = results
+
+        # 4. SET CACHE (6 hours for static results)
+        if final_results:
+            cache_manager.set_discovery(source, tmdb_id, cache_key_season, final_results, ttl=3600 * 6)
 
         return {"source_type": source_type, "source": source, "results": final_results, "error": None}
     except Exception as e:
@@ -90,7 +107,7 @@ async def discovery_stream(
 ):
     client = request.app.state.http_client
     tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
-    print(f"\n[SSE] 🚀 Starting Discovery Stream for: {title} ({year}) | ID: {tmdb_id}")
+    print(f"\n[SSE] 🚀 Starting Discovery Stream for: {title} ({year}) | ID: {tmdb_id} | Force: {force}")
 
     async def event_generator():
         tasks = [asyncio.create_task(_run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, src["source_type"], src["source"], force, tmdb_info)) for src in DISCOVERY_SOURCES]
