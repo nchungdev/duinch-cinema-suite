@@ -80,7 +80,7 @@ class DiscoveryUseCase:
 
             # Cache results (as list of dicts for simplicity in redis)
             if final_results:
-                cache_manager.set_discovery(source, tmdb_id, cache_key_season, [r.dict() for r in final_results], ttl=3600 * 6)
+                cache_manager.set_discovery(source, tmdb_id, cache_key_season, [r.dict(exclude_none=True) for r in final_results], ttl=3600 * 6)
 
             return DiscoveryTaskResult(source_type=source_type, source=source, results=final_results)
 

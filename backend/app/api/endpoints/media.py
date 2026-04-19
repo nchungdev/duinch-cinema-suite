@@ -65,7 +65,7 @@ async def discovery_stream(
         yield f"data: {json.dumps({'type': 'init', 'total_sources': len(tasks), 'sources': DISCOVERY_SOURCES})}\n\n"
         for completed_task in asyncio.as_completed(tasks):
             result = await completed_task
-            yield f"data: {json.dumps({'type': 'result', 'data': result.dict()})}\n\n"
+            yield f"data: {json.dumps({'type': 'result', 'data': result.dict(exclude_none=True)})}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -92,7 +92,7 @@ async def discovery_fetch(
         tmdb_id, media_type, title, localize_title, year, season, episode, 
         source_type, source, force, tmdb_info
     )
-    return {"data": result.dict(), "error_code": 0, "error_msg": ""}
+    return {"data": result.dict(exclude_none=True), "error_code": 0, "error_msg": ""}
 
 @router.get("/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
