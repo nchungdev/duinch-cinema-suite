@@ -153,7 +153,7 @@ class PhimAPIBase:
                         embed_link = ep.get("link_embed")
                         u_key = m3u8_link or embed_link
                         
-                        if u_key and u_key not in seen_keys: # FIXED: was seen_urls
+                        if u_key and u_key not in seen_keys:
                             rs = current_s or 1
                             ename = str(ep.get("name") or "")
                             epm = re.search(r'\d+', ename)
@@ -163,10 +163,13 @@ class PhimAPIBase:
                                     ms = self._get_season_from_episode(num, tmdb_seasons)
                                     if ms: rs = ms
                             
+                            # DEBUG UI: Append Movie Name to Episode Name
+                            debug_ename = f"{ename} ({movie_name})"
+                            
                             all_results.append({
                                 "type": "streamable", "provider": self.provider_name.upper(), "server": sname, 
-                                "name": ename, "m3u8": m3u8_link, "embed": embed_link, "season": rs,
-                                "movie_name": movie_name, "slug": slug # Add metadata for unique grouping
+                                "name": debug_ename, "m3u8": m3u8_link, "embed": embed_link, "season": rs,
+                                "movie_name": movie_name, "slug": slug
                             })
                             seen_keys.add(u_key)
 
