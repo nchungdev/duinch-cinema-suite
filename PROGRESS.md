@@ -44,4 +44,9 @@ Hệ thống đã được refactor hoàn toàn:
 ## 6. How to Start Next Session
 1. Chạy `redis-server`.
 2. Chạy `./start_all.sh` để kích hoạt Watch Mode cho cả FE và BE.
-3. Truy cập `http://localhost:8086/docs` để kiểm tra API mới nhất.
+3. **Kích hoạt Skills:** Trong phiên tương tác Gemini CLI, chạy lệnh `/skills reload` để hệ thống nhận diện các kỹ năng trong `.gemini/skills/`.
+4. **Sử dụng:** Luôn bắt đầu task bằng cách yêu cầu Gemini: *"Sử dụng skill task-master để..."*
+
+## 7. Available Project Skills
+- **`task-master`**: Quy trình 5 giai đoạn (Đọc hiểu, Thiết kế, Triển khai, Test, Release).
+- **`auto-validator`**: Tự động hóa kiểm thử và bàn giao.
