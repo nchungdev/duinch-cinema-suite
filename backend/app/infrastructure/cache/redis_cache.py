@@ -1,12 +1,15 @@
 import json
 import redis
+import os
 from typing import Optional, Any
 from app.core import config
 
 class CacheManager:
     def __init__(self):
         try:
-            self.redis = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            # Use environment variable for redis host to be flexible
+            redis_host = os.getenv("REDIS_HOST", "localhost")
+            self.redis = redis.Redis(host=redis_host, port=6379, db=0, decode_responses=True)
             self.redis.ping()
             print("[Cache] Redis connected.")
         except Exception:
@@ -31,4 +34,5 @@ class CacheManager:
         keys = self.redis.keys(pattern)
         if keys: self.redis.delete(*keys)
 
+# Singleton instance
 cache_manager = CacheManager()

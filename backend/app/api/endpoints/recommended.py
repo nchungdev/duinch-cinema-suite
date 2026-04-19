@@ -1,156 +1,46 @@
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request
 from app.core import config
-from app.services import cache_manager, tmdb_service
-import urllib.parse
-import re
+from app.infrastructure.cache.redis_cache import cache_manager
+import httpx
 
 router = APIRouter()
 
-TMDB_BASE = "https://api.themoviedb.org/3"
-TMDB_IMG = "https://image.tmdb.org/t/p"
+@router.get("/trending")
+async def get_trending(request: Request, media_type: str = "movie"):
+    """Fetch trending items from TMDB."""
+    if not config.TMDB_READ_ACCESS_TOKEN:
+        return {"data": {"results": []}, "error_code": 0, "error_msg": ""}
 
-def _headers():
-    return {
-        "Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}",
-        "accept": "application/json",
-    }
+    cache_key = f"trending_{media_type}"
+    cached = cache_manager.get_discovery("tmdb_recommended", cache_key, 1)
+    if cached: return {"data": cached, "error_code": 0, "error_msg": ""}
 
-def _fmt_tmdb(item: dict, media_type: str = None) -> dict:
-    mt = media_type or item.get("media_type", "movie")
-    poster = item.get("poster_path")
-    backdrop = item.get("backdrop_path")
-    return {
-        "tmdb_id": item.get("id"),
-        "slug": str(item.get("id")), # Use ID as slug for TMDB items
-        "media_type": mt,
-        "title": item.get("title") or item.get("name"),
-        "origin_name": item.get("original_title") or item.get("original_name"),
-        "overview": item.get("overview"),
-        "year": (item.get("release_date") or item.get("first_air_date") or "")[:4],
-        "rating": item.get("vote_average"),
-        "poster": f"{TMDB_IMG}/w500{poster}" if poster else None,
-        "backdrop": f"{TMDB_IMG}/original{backdrop}" if backdrop else None,
-        "popularity": item.get("popularity"),
-    }
-
-async def _tmdb_get(client, path: str, params: dict = None):
+    client = request.app.state.http_client
+    url = f"https://api.themoviedb.org/3/trending/{media_type}/day?language=vi-VN"
+    headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
+    
     try:
-        url = f"{TMDB_BASE}{path}"
-        resp = await client.get(url, headers=_headers(), params=params or {})
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        return {"error": str(e)}
-
-@router.get("/discovery")
-async def discovery_list(request: Request, category: str = "new", page: int = 1):
-    """Discovery from PhimAPI (KKPhim/OPhim)."""
-    http_client = request.app.state.http_client
-    cache_key = f"discovery_{category}_{page}"
-    cached = cache_manager.get_from_cache(config.KKPHIM_CACHE, cache_key, config.DISCOVERY_CACHE_EXPIRE)
-    if cached:
-        return {
-            "data": cached,
-            "error_code": 0,
-            "error_msg": ""
-        }
-
-    try:
-        url = f"https://phimapi.com/danh-sach/phim-moi-cap-nhat?page={page}" if category == "new" else f"https://phimapi.com/v1/api/danh-sach/{category}?page={page}"
-        resp = await http_client.get(url)
+        resp = await client.get(url, headers=headers)
         data = resp.json()
-        items = []
-        raw_items = data.get("items", []) or data.get("data", {}).get("items", [])
-        
-        for item in raw_items:
-            img_prefix = "https://phimimg.com/" if not item.get("poster_url", "").startswith("http") else ""
-            items.append({
-                "title": item.get("name"), "origin_name": item.get("origin_name"),
-                "slug": item.get("slug"), "year": item.get("year"),
-                "poster": img_prefix + item.get("poster_url") if item.get("poster_url") else None,
-                # Priority: explicit type field → category name → episode_current heuristic
-                "media_type": (
-                    "tv" if item.get("type") in ["series", "hoathinh"]
-                    else "movie" if item.get("type") == "single"
-                    else "tv" if category in ["phim-bo", "tv-shows", "hoat-hinh"]
-                    else "tv" if "Tập" in item.get("episode_current", "")
-                    else "movie"
-                )
+        raw_results = data.get("results", [])
+        results = []
+        for item in raw_results:
+            normalized_type = "tv" if media_type == "tv" else "movie"
+            results.append({
+                "title": item.get("title") or item.get("name"),
+                "origin_name": item.get("original_title") or item.get("original_name"),
+                "year": (item.get("release_date") or item.get("first_air_date", "0000-"))[:4],
+                "tmdb_id": item.get("id"),
+                "media_type": normalized_type,
+                "poster": f"https://image.tmdb.org/t/p/w500{item.get('poster_path')}" if item.get('poster_path') else None,
+                "overview": item.get("overview"),
+                "source": "tmdb"
             })
         
-        res_data = {
-            "results": items, 
-            "pagination": data.get("pagination") or data.get("data", {}).get("params", {}).get("pagination", {})
-        }
-        cache_manager.set_to_cache(config.KKPHIM_CACHE, cache_key, res_data)
-        return {
-            "data": res_data,
-            "error_code": 0,
-            "error_msg": ""
-        }
+        payload = {"results": results}
+        if results:
+            cache_manager.set_discovery("tmdb_recommended", cache_key, 1, payload)
+        return {"data": payload, "error_code": 0, "error_msg": ""}
     except Exception as e:
-        return {
-            "data": None,
-            "error_code": 500,
-            "error_msg": str(e)
-        }
-
-@router.get("/trending")
-async def tmdb_trending(request: Request, media_type: str = "all", time_window: str = "day", page: int = 1):
-    """TMDB Trending."""
-    client = request.app.state.http_client
-    data = await _tmdb_get(client, f"/trending/{media_type}/{time_window}", {"page": page, "language": "vi-VN"})
-    if "error" in data:
-        return {"data": None, "error_code": 500, "error_msg": data["error"]}
-    # /trending/all → TMDB includes "media_type" per item
-    # /trending/movie or /trending/tv → TMDB does NOT include "media_type" per item
-    # so we must fall back to the explicit param when not "all"
-    def resolve_type(item: dict) -> str:
-        if media_type != "all":
-            return media_type
-        return item.get("media_type", "movie")
-
-    return {
-        "data": {"results": [_fmt_tmdb(i, resolve_type(i)) for i in data.get("results", [])]},
-        "error_code": 0,
-        "error_msg": ""
-    }
-
-@router.get("/movies")
-async def tmdb_movies(request: Request, category: str = "popular", page: int = 1):
-    """TMDB Movies by category (popular, top_rated, now_playing, upcoming)."""
-    client = request.app.state.http_client
-    data = await _tmdb_get(client, f"/movie/{category}", {"page": page, "language": "vi-VN", "region": "VN"})
-    if "error" in data:
-        return {"data": None, "error_code": 500, "error_msg": data["error"]}
-    return {
-        "data": {"results": [_fmt_tmdb(i, "movie") for i in data.get("results", [])]},
-        "error_code": 0,
-        "error_msg": ""
-    }
-
-@router.get("/tvs")
-async def tmdb_tvs(request: Request, category: str = "popular", page: int = 1):
-    """TMDB TV Shows by category (popular, top_rated, on_the_air, airing_today)."""
-    client = request.app.state.http_client
-    data = await _tmdb_get(client, f"/tv/{category}", {"page": page, "language": "vi-VN"})
-    if "error" in data:
-        return {"data": None, "error_code": 500, "error_msg": data["error"]}
-    return {
-        "data": {"results": [_fmt_tmdb(i, "tv") for i in data.get("results", [])]},
-        "error_code": 0,
-        "error_msg": ""
-    }
-
-@router.get("/similar/{media_type}/{tmdb_id}")
-async def tmdb_similar(request: Request, media_type: str, tmdb_id: int, page: int = 1):
-    """Similar media from TMDB."""
-    client = request.app.state.http_client
-    data = await _tmdb_get(client, f"/{media_type}/{tmdb_id}/similar", {"page": page, "language": "vi-VN"})
-    if "error" in data:
-        return {"data": None, "error_code": 500, "error_msg": data["error"]}
-    return {
-        "data": {"results": [_fmt_tmdb(i, media_type) for i in data.get("results", [])]},
-        "error_code": 0,
-        "error_msg": ""
-    }
+        print(f"Trending fetch error: {e}")
+    return {"data": {"results": []}, "error_code": 0, "error_msg": ""}

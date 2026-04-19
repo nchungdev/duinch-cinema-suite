@@ -5,7 +5,7 @@ from app.core import config
 
 FSHARE_BASE = "https://www.fshare.vn/api/v3"
 
-class FshareService:
+class FshareClient:
     def __init__(self):
         self.headers = {
             "User-Agent": config.FSHARE_USER_AGENT,
@@ -48,10 +48,7 @@ class FshareService:
                 return None
 
     async def get_folder_list(self, folder_url: str, token: Optional[str] = None) -> List[Dict]:
-        """
-        List files in an Fshare folder using official API.
-        If no token provided, it acts as a guest (might be restricted).
-        """
+        """List files in an Fshare folder using official API."""
         folder_id = folder_url.strip('/').split('/')[-1]
         url = f"{FSHARE_BASE}/files/folder"
         params = {"linkcode": folder_id, "sort": "name"}
@@ -84,4 +81,5 @@ class FshareService:
                 print(f"[Fshare] API Folder Error: {e}")
                 return []
 
-fshare_service = FshareService()
+# Singleton instance
+fshare_client = FshareClient()

@@ -4,64 +4,71 @@ import os
 import sys
 import json
 import re
+from dotenv import load_dotenv
 from typing import List, Dict, Any
 
+# Load environment
+load_dotenv()
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.scrapers.kkphim_lookup import lookup_kkphim
-from app.services.scrapers.phimapi_base import tmdb_get_info
+from app.core import config
+from app.infrastructure.scrapers.kkphim_lookup import lookup_kkphim
+from app.infrastructure.scrapers.ophim_lookup import lookup_ophim
+from app.infrastructure.scrapers.phimapi_base import tmdb_get_info
+
+# Set token
+config.TMDB_READ_ACCESS_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")
 
 TEST_CASES = [
-    {"id": "37854",  "type": "tv",    "title": "One Piece",         "year": 1999, "note": "Anime"},
-    {"id": "111110", "type": "tv",    "title": "One Piece",         "year": 2023, "note": "Live Action"},
-    {"id": "76479",  "type": "tv",    "title": "The Boys",          "year": 2019},
-    {"id": "1399",   "type": "tv",    "title": "Game of Thrones",   "year": 2011},
+    {"id": "37854",  "type": "tv", "title": "One Piece",         "localize": "Đảo Hải Tặc",            "year": 1999, "note": "Anime"},
+    {"id": "111110", "type": "tv", "title": "One Piece",         "localize": "Đảo Hải Tặc Live Action","year": 2023, "note": "Live Action"},
+    {"id": "76479",  "type": "tv", "title": "The Boys",          "localize": "Siêu Anh Hùng Phá Hoại", "year": 2019, "note": "Series"},
 ]
 
-async def run_analysis():
-    async with httpx.AsyncClient(timeout=40.0) as client:
+async def run_focused_analysis(provider_name, lookup_func):
+    async with httpx.AsyncClient(timeout=60.0) as client:
         print(f"\n{'='*100}")
-        print(f"{'KKPHIM ACCURACY & COVERAGE ANALYSIS (UNIQUE EPS)':^100}")
+        print(f"{f'{provider_name.upper()} FOCUSED COVERAGE ANALYSIS':^100}")
         print(f"{'='*100}\n")
         
         for case in TEST_CASES:
-            tmdb_id, m_type, title, expected_year = case["id"], case["type"], case["title"], case["year"]
+            tmdb_id, m_type, title, localize, year = case["id"], case["type"], case["title"], case["localize"], case["year"]
             
-            # 1. Get chuẩn từ TMDB
+            # Fetch Real Metadata
             tmdb_info = await tmdb_get_info(client, m_type, tmdb_id)
-            tmdb_total = tmdb_info.get("total_episodes", 0)
-            if tmdb_total == 0: tmdb_total = 1100 if tmdb_id == "37854" else 40 # Fallback
-
-            print(f"🎬 {title:<15} ({expected_year}) | ID: {tmdb_id:<7} | TMDB Target: {tmdb_total:>4} eps")
+            target_eps = tmdb_info.total_episodes or 40
+            
+            print(f"🎬 {title:<12} ({year}) | ID: {tmdb_id:<7} | Target: {target_eps:>4} eps | {case['note']}")
 
             try:
-                # 2. Chạy Discovery
-                res = await lookup_kkphim(client, tmdb_id, title, None, m_type, 1, None, expected_year)
+                # lookup_func returns list of StreamingEpisode objects
+                res = await lookup_func(client, tmdb_id, title, localize, m_type, 1, None, year, tmdb_info=tmdb_info)
                 
-                # 3. Tính toán số tập DUY NHẤT (Unique Episodes)
-                # Key: (season, episode_name)
+                # Count Unique Episodes
                 unique_eps = {}
                 for ep in res:
-                    key = (ep.get('season', 1), ep.get('name', '').strip())
-                    if key not in unique_eps:
-                        unique_eps[key] = ep
+                    # ep is StreamingEpisode model
+                    key = (ep.season, ep.name.strip())
+                    if key not in unique_eps: unique_eps[key] = ep
                 
                 found_count = len(unique_eps)
-                coverage = (found_count / tmdb_total) * 100 if tmdb_total > 0 else 0
+                coverage = (found_count / target_eps) * 100 if target_eps > 0 else 0
                 
-                # Phân phối theo Season
-                season_stats = {}
-                for (s, name) in unique_eps.keys():
-                    season_stats[s] = season_stats.get(s, 0) + 1
+                # Distribution
+                stats = {}
+                for (s, _) in unique_eps.keys(): stats[s] = stats.get(s, 0) + 1
                 
                 print(f"   - Found: {found_count:>4} unique eps | Coverage: {coverage:>5.1f}%")
-                for s, count in sorted(season_stats.items()):
+                for s, count in sorted(stats.items()):
                     print(f"     * Season {s}: {count} eps")
 
             except Exception as e:
                 print(f"   - 🔴 Error: {e}")
-
             print("-" * 60)
 
+async def main():
+    await run_focused_analysis("kkphim", lookup_kkphim)
+    await run_focused_analysis("ophim", lookup_ophim)
+
 if __name__ == "__main__":
-    asyncio.run(run_analysis())
+    asyncio.run(main())
