@@ -20,7 +20,6 @@ const CATEGORIES = [
 ];
 
 function App() {
-  // ── Smart Initial State (Prevention of Flicker) ───────────────────────────
   const getInit = () => {
     const hash = window.location.hash || '#/new';
     const [fullPath, queryPart] = hash.split('?');
@@ -54,25 +53,29 @@ function App() {
 
   const lastSearchQuery = useRef<string | null>(null);
   const sentinelRef     = useRef<HTMLDivElement>(null);
+  const syncLock        = useRef(false);
 
   // --- SYNC MANAGER ---
   const performSync = useCallback(async () => {
     try {
       const progress = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
       const history  = JSON.parse(localStorage.getItem('omv_watch_history') || '{}');
-      const res = await api.post<any>('/user/sync', { progress, history });
-      if (res.data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(res.data.progress));
-      if (res.data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(res.data.history));
+      await api.post<any>('/user/sync', { progress, history }).then(res => {
+          if (res.data?.progress) localStorage.setItem('omv_watch_progress', JSON.stringify(res.data.progress));
+          if (res.data?.history)  localStorage.setItem('omv_watch_history', JSON.stringify(res.data.history));
+      });
     } catch (err) {
       console.error('[Sync] Background sync failed:', err);
     }
   }, []);
 
   useEffect(() => {
+    if (syncLock.current) return;
+    syncLock.current = true;
     performSync();
     const interval = setInterval(performSync, 15 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [performSync]);
 
   const executeSearch = useCallback(async (q: string, tab: SearchTab = 'all', page: number = 1, background = false) => {
     if (page === 1) {
@@ -141,7 +144,7 @@ function App() {
     };
 
     window.addEventListener('hashchange', handleUrlSync);
-    handleUrlSync();
+    // REMOVED: immediate handleUrlSync() call here to prevent double fetch on mount
     return () => window.removeEventListener('hashchange', handleUrlSync);
   }, [searchActive, executeSearch]);
 
@@ -271,6 +274,7 @@ function App() {
             </div>
          ) : slug ? (
             <MediaDetail 
+              key={slug}
               slug={slug} 
               mediaType={mediaType}
               category={category}

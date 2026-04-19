@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { BaseMedia } from '../../domain/models/Media';
 import type { StreamableSources, StreamingServer } from '../../api/config';
+import { api } from '../../api/config';
+import { GetMediaDetail } from '../../core/use-cases/GetMediaDetail';
 
 interface SeasonBoundary {
   name: string;
@@ -57,7 +59,6 @@ interface MediaDetailContextType {
   
   // Actions
   onBack: () => void;
-  handleFshareLogin: (e: React.FormEvent) => Promise<void>;
   
   // Metadata Shorthands
   slug: string;
@@ -69,6 +70,8 @@ interface MediaDetailContextType {
 const MediaDetailContext = createContext<MediaDetailContextType | undefined>(undefined);
 
 export const MediaDetailProvider = ({ children, initialValues }: { children: ReactNode, initialValues: any }) => {
+  const { slug, mediaType } = initialValues;
+
   const [media, setMedia] = useState<BaseMedia | null>(null);
   const [loading, setLoading] = useState(true);
   const [localExists, setLocalExists] = useState(false);
@@ -85,7 +88,9 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
-  // Derived: Season boundaries for UI navigation
+  const fetchLock = useRef<string | null>(null);
+
+  // Derived: Season boundaries
   const seasonBoundaries = useMemo(() => {
     if (!media || media.type !== 'tv') return [];
     const tv = media as any; 
@@ -102,24 +107,46 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     });
   }, [media]);
 
-  // Reset state on slug change
+  // Centralized Data Fetching with Single-Flight Lock
   useEffect(() => {
-    const reset = () => {
+    // If already fetching or fetched this slug, skip
+    if (fetchLock.current === slug) return;
+    fetchLock.current = slug;
+
+    let isMounted = true;
+    const fetchData = async () => {
+        if (!slug) return;
+        
+        // Reset old state immediately
         setMedia(null);
         setLoading(true);
         setStreamableSources({});
-        setActiveType('');
-        setActiveProvider('');
-        setActiveServerIdx(0);
-        setActiveEpisodeIdx(0);
-        setActiveSeasonIdx(0);
         setActiveEmbed(null);
         setStreamingLinks([]);
-        setIsPlayerReady(false);
-        setPlayerError(null);
+
+        try {
+            const useCase = new GetMediaDetail();
+            const mediaInstance = await useCase.execute(mediaType, slug);
+            
+            if (isMounted) {
+                setMedia(mediaInstance);
+                const rawData = (mediaInstance as any)._rawResponse; 
+                setLocalExists(rawData?.data?.local?.exists || false);
+            }
+
+            const sRes = await api.get('/user/settings');
+            if (isMounted) setUserSettings(sRes.data);
+
+        } catch (err) {
+            console.error('[DetailContext] Initial load failed:', err);
+        } finally {
+            if (isMounted) setLoading(false);
+        }
     };
-    reset();
-  }, [initialValues.slug]);
+
+    fetchData();
+    return () => { isMounted = false; fetchLock.current = null; };
+  }, [slug, mediaType]);
 
   const value = {
     media, setMedia,
@@ -137,10 +164,9 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     playerError, setPlayerError,
     userSettings, setUserSettings,
     seasonBoundaries,
-    handleFshareLogin: initialValues.handleFshareLogin,
     onBack: initialValues.onBack,
-    slug: initialValues.slug,
-    mediaType: initialValues.mediaType,
+    slug,
+    mediaType,
     initialSeason: initialValues.initialSeason,
     initialEpisode: initialValues.initialEpisode,
   };
