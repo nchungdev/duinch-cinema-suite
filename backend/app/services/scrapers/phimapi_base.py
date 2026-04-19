@@ -6,7 +6,6 @@ import unicodedata
 import asyncio
 from typing import List, Dict, Optional, Any
 from app.core import config
-from app.services import cache_manager
 
 def title_to_slug(title: str) -> str:
     """Convert a movie title to a phimapi-style URL slug."""
@@ -26,16 +25,11 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
     try:
         resp = await client.get(url, params=params)
         data = resp.json()
-        seasons = []
-        if tmdb_type == "tv":
-            for s in data.get("seasons", []):
-                if s.get("season_number", 0) == 0: continue
-                seasons.append({"season_number": s["season_number"], "episode_count": s.get("episode_count", 0)})
+        year_str = (data.get("release_date") or data.get("first_air_date") or "0")[:4]
         return {
-            "year": int((data.get("release_date") or data.get("first_air_date") or "0")[:4]),
+            "year": int(year_str) if year_str.isdigit() else 0,
             "total_episodes": data.get("number_of_episodes", 0),
-            "total_seasons": data.get("number_of_seasons", 0),
-            "tmdb_seasons": seasons
+            "total_seasons": data.get("number_of_seasons", 0)
         }
     except Exception: return {}
 
@@ -59,18 +53,24 @@ class PhimAPIBase:
 
     def _is_match(self, source_movie: Dict, tmdb_info: Dict, media_type: str) -> bool:
         """Strict validation of result against TMDB metadata."""
-        if not source_movie or not tmdb_info: return False
+        if not source_movie: return False
         
-        # 1. Year Check
-        s_year = int(source_movie.get("year") or 0)
-        t_year = tmdb_info.get("year")
-        if t_year and s_year != t_year: return False
-        
-        # 2. Type Check
-        s_type = source_movie.get("type", "")
-        is_tv = media_type == "tv"
+        # 1. Type Check (Essential)
+        s_type = source_movie.get("type", "").lower()
+        is_tv_req = media_type == "tv"
         s_is_tv = s_type in ["series", "tvshows", "hoathinh"]
-        if is_tv != s_is_tv: return False
+        if is_tv_req != s_is_tv: return False
+
+        # 2. Year Check (With fallback)
+        try:
+            s_year = int(source_movie.get("year") or 0)
+            t_year = int(tmdb_info.get("year") or 0)
+            
+            # If both have year, they must be close.
+            # CRITICAL: If source has NO year (0), we ALLOW it (Recall > Precision for old anime)
+            if s_year > 0 and t_year > 0:
+                if abs(s_year - t_year) > 1: return False
+        except Exception: pass
 
         return True
 
@@ -87,7 +87,15 @@ class PhimAPIBase:
         force: bool = False
     ) -> List[Dict[str, Any]]:
         
-        tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {"year": int(year) if year else None}
+        # Load TMDB info
+        tmdb_info = {}
+        if tmdb_id:
+            tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id))
+        
+        # Fallback to passed year if TMDB fails
+        if not tmdb_info.get("year") and year:
+            tmdb_info["year"] = int(year)
+
         all_results = []
         seen_urls = set()
 
@@ -104,29 +112,24 @@ class PhimAPIBase:
                         })
                         seen_urls.add(u)
 
-        # STEP 1: Direct Slug Lookup (No Year in Slug)
+        # STEP 1: Generate Slug Candidates
         slug_bases = []
         if title: slug_bases.append(title_to_slug(title))
         if localize_title: slug_bases.append(title_to_slug(localize_title))
         slug_bases = list(dict.fromkeys(slug_bases))
 
         for base in slug_bases:
-            # Try root slug
+            # 1. Try direct root slug
             details = await self.get_details(client, base)
             if details and self._is_match(details.get("movie"), tmdb_info, media_type):
                 _add_links(details)
-                # If it's a movie or an all-in-one TV show, we might be done
-                # But to be safe for TV show parts, we continue checking
 
-            # STEP 2: Part-based Lookup (phan-x)
-            # If it's a TV show, try appending -phan-2, -phan-3... if needed
+            # 2. Try Part-based variants for TV
             if media_type == "tv":
-                # We try up to 10 parts to be safe
                 for p in range(1, 11):
                     p_slug = f"{base}-phan-{p}"
                     p_details = await self.get_details(client, p_slug)
                     if p_details and self._is_match(p_details.get("movie"), tmdb_info, media_type):
                         _add_links(p_details)
 
-        # Deduplicate and return
         return all_results

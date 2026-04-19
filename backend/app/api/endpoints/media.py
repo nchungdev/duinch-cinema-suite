@@ -51,6 +51,7 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
             target_ep = None if media_type == "tv" else episode
             if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
             elif source == "ophim": results = await lookup_ophim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
+
         elif source_type == "torrent":
             results = await lookup_torrent(clean_title, tmdb_id, media_type, season if media_type != "tv" else None, episode if media_type != "tv" else None, year, tmdb_info=tmdb_info)
         elif source_type == "fshare":

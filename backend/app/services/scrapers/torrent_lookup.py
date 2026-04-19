@@ -30,13 +30,11 @@ def _strict_filter(items: List[Dict], year: Optional[str], media_type: str) -> L
         
         # 1. Year Check
         if year:
-            # Look for year in title (e.g. 1999 or (1999) or .1999.)
             year_match = re.search(r'(?:\D|^)(19\d{2}|20\d{2})(?:\D|$)', name)
             if year_match:
+                # Only reject if year exists in name AND it's wrong
                 if year_match.group(1) != str(year):
-                    continue # Mismatch year
-            # If no year found in name, we might still accept it if title match is strong, 
-            # but per rules: "phải khớp media type và year"
+                    continue
 
         # 2. Media Type Heuristics
         is_tv_link = any(x in name for x in ["s0", "s1", "s2", "season", "complete", "ep0", "ep1"])
