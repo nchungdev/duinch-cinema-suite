@@ -25,35 +25,25 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
     """Fetch metadata from TMDB with robust fallback and multi-language support."""
     token = config.TMDB_READ_ACCESS_TOKEN or os.getenv("TMDB_READ_ACCESS_TOKEN")
     if not token or not tmdb_id: return {}
-    
     tmdb_type = "movie" if media_type == "movie" else "tv"
     url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}"
     headers = {"Authorization": f"Bearer {token}", "accept": "application/json"}
-    
     try:
         resp = await client.get(url, params={"language": "vi-VN"}, headers=headers)
         data = resp.json()
         if resp.status_code != 200 or not data.get("id"):
             resp = await client.get(url, params={"language": "en-US"}, headers=headers)
             data = resp.json()
-            
         if resp.status_code != 200: return {}
-
         raw_date = data.get("release_date") or data.get("first_air_date") or ""
         series_year = raw_date[:4]
-        
         seasons = []
         if tmdb_type == "tv":
             for s in (data.get("seasons") or []):
                 s_num = s.get("season_number", 0)
                 if s_num == 0: continue
                 s_date = s.get("air_date") or ""
-                seasons.append({
-                    "season_number": s_num, 
-                    "episode_count": s.get("episode_count", 0), 
-                    "year": int(s_date[:4]) if s_date[:4].isdigit() else 0
-                })
-        
+                seasons.append({"season_number": s_num, "episode_count": s.get("episode_count", 0), "year": int(s_date[:4]) if s_date[:4].isdigit() else 0})
         return {
             "series_year": int(series_year) if series_year.isdigit() else 0,
             "season_years": {s["season_number"]: s["year"] for s in seasons},
@@ -96,6 +86,7 @@ class PhimAPIBase:
         return None
 
     def _detect_season(self, name: str, origin_name: str, year: int, tmdb_info: Dict) -> Optional[int]:
+        """Intelligently detect season from Title Regex OR Year matching."""
         full_name = f"{name} {origin_name}".lower()
         s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', full_name, re.IGNORECASE)
         if s_match: return int(s_match.group(2))
@@ -110,44 +101,44 @@ class PhimAPIBase:
         if not item: return -1000
         n_name, n_origin = str(item.get("name") or "").lower().strip(), str(item.get("origin_name") or "").lower().strip()
         s_type = str(item.get("type") or "").lower()
-        if (media_type == "tv") != (s_type in ["series", "tvshows", "hoathinh", "tv"]): return -3000
         
-        # 1. TMDB ID MATCH (Absolute pass/fail if available)
+        # 1. TYPE MATCH
+        if (media_type == "tv") != (s_type in ["series", "tvshows", "hoathinh", "tv"]): return -3000
+
+        # 2. TMDB ID MATCH (Strict Hard-Skip)
         src_tmdb = item.get("tmdb") or {}
         item_tmdb_id = str(src_tmdb.get("id")) if src_tmdb.get("id") else None
-        if tmdb_id and item_tmdb_id:
+        if tmdb_id and item_tmdb_id and item_tmdb_id not in ["0", "null", "None"]:
             if item_tmdb_id == str(tmdb_id): score += 3000
-            else: return -5000 # WRONG ID = REJECT (Ensures no spin-offs with different IDs)
+            else: return -5000 # DIFFERENT ID = REJECT IMMEDIATELY
 
-        # 2. SMART YEAR MATCH (Match only against REAL seasons)
+        # 3. SMART YEAR MATCH
         s_year = int(item.get("year") or 0)
         series_start = int(tmdb_info.get("series_year") or year or 0)
-        actual_season_years = [y for y in tmdb_info.get("season_years", {}).values() if y > 0]
-        
+        all_y = [series_start] + list(tmdb_info.get("season_years", {}).values())
         if s_year > 0 and series_start > 0:
             if media_type == "movie":
                 if abs(s_year - series_start) > 1: return -3000
                 score += 600
             else:
-                # TV: MUST match one of the actual season years OR series start year
-                is_valid_year = any(abs(s_year - y) <= 1 for y in ([series_start] + actual_season_years))
-                if is_valid_year: score += 500
-                else: return -3000 # Doesn't fit in the series timeline = REJECT
+                if any(abs(s_year - y) <= 1 for y in all_y if y > 0): score += 500
+                elif s_year >= series_start: score += 200
+                else: return -3000
 
-        # 3. TITLE MATCH (Strict)
-        n_query = query.lower().strip()
-        if n_query:
-            # Full match
-            if n_query == n_name or n_query == n_origin: score += 1000
-            # Partial match (must contain the full query title)
-            elif n_query in n_name or n_query in n_origin: score += 500
-            else: return -2000 # Title doesn't match = REJECT
-
-        # 4. SEASON DETECTION
+        # 4. SEASON NUMBER
         found_s = self._detect_season(item.get("name", ""), item.get("origin_name", ""), s_year, tmdb_info)
         if found_s:
             if found_s == requested_season: score += 500
             else: score += 100
+
+        # 5. TITLE MATCH
+        n_query = query.lower().strip()
+        if n_query:
+            if n_query == n_name or n_query == n_origin: score += 800
+            elif n_query in n_name or n_query in n_origin: score += 500
+            else: 
+                # If no ID was present to confirm, and title is totally different, reject
+                if not item_tmdb_id or item_tmdb_id == "0": return -2000
 
         return score
 
@@ -179,9 +170,9 @@ class PhimAPIBase:
                             ename = str(ep.get("name") or "")
                             epm = re.search(r'\d+', ename)
                             if epm:
-                                num = int(epm.group())
-                                if num > 50 or not current_s:
-                                    ms = self._get_season_from_episode(num, tmdb_seasons)
+                                ep_num = int(epm.group())
+                                if ep_num > 50 or not current_s:
+                                    ms = self._get_season_from_episode(ep_num, tmdb_seasons)
                                     if ms: rs = ms
                             
                             debug_ename = f"{ename} ({movie_name})"
@@ -199,7 +190,7 @@ class PhimAPIBase:
             search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 20})
             items = (search_data.get("data") or {}).get("items") or []
             for item in items:
-                # SEARCH PHASE REQUIREMENT: Score must be high enough (implies Title or ID match)
+                # SEARCH PHASE: Strict ID/Title/Year check
                 if self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) >= 500:
                     itmdb = item.get("tmdb") or {}
                     s_year = int(item.get("year") or 0)
