@@ -46,13 +46,18 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
 
     primary   = _build_query(clean_title)
     secondary = _build_query(clean_localize) if clean_localize else None
-    results = []
+    results = [] # Initialize as empty list
 
     try:
         if source_type == "m3u8":
             target_ep = None if media_type == "tv" else episode
-            if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
-            elif source == "ophim": results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
+            # USE primary/secondary instead of bare titles to include year/season in API search
+            if source == "kkphim":
+                res = await lookup_kkphim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
+                if res: results = res
+            elif source == "ophim":
+                res = await lookup_ophim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
+                if res: results = res
 
         elif source_type == "torrent":
             t_season = None if media_type == "tv" else season
@@ -85,6 +90,7 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
                 results.extend(sec)
 
         # Normalize & Deduplicate
+        if results is None: results = []
         for r in results:
             url = r.get("url") or r.get("m3u8") or r.get("embed") or r.get("magnet")
             s_type = "HLS"

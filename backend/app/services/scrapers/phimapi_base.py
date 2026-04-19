@@ -84,12 +84,12 @@ class PhimAPIBase:
         # 2. TMDB ID MATCH (Strongest indicator)
         if tmdb_id and item_tmdb_id:
             if item_tmdb_id == str(tmdb_id):
-                score += 500
+                score += 1000  # Doubled from 500
                 # CRITICAL: Check Season mismatch if site provides it
                 if item_season and season and int(item_season) != int(season):
-                    return -1000 # Absolute mismatch if ID matches but Season is wrong
+                    return -2000 # Absolute mismatch
             else:
-                score -= 300 # ID Mismatch
+                return -2000 # NEW: Immediate rejection on ID Mismatch if ID is present on source
 
         # 3. Name & Season Extraction from Text
         if n_query == n_name or n_query == n_origin: score += 200
@@ -99,25 +99,30 @@ class PhimAPIBase:
         s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', n_name + " " + n_origin, re.IGNORECASE)
         if s_match:
             found_s = int(s_match.group(2))
-            if season and found_s != season:
-                return -500 # Strong penalty for wrong season in name
+            if season and found_s == season:
+                score += 300 # NEW: Bonus for correct season in title
+            elif season and found_s != season:
+                return -1000 # Increased penalty: Strong mismatch for wrong season in name
 
         # 4. Year Match (Strict for TV shows when searching for specific seasons)
         item_year = int(item.get("year") or 0)
         if year and item_year > 0:
-            if item_year == year: score += 100
-            elif abs(item_year - year) <= 1: score += 40
+            if item_year == int(year): score += 500 # Strong year match
+            elif abs(item_year - int(year)) <= 1: score += 100
             else:
-                # If source year is in the future (e.g. 2026) but we want 2023, it's a mismatch
-                if item_year > (year or 2023): score -= 400
+                # If source year is very different, it's likely a different series/remake
+                score -= 800
 
         # 5. Episode Count Sanity Check (The "One Piece 230" problem)
-        nums = [int(n) for n in re.findall(r'\d+', name + " " + origin)]
-        potential_episodes = [n for n in nums if n > 30 and n < 1900]
+        # For One Piece Live Action (8 eps), if result has "Episode 1100", it's Anime.
         max_ep = tmdb_info.get("total_episodes", 0)
-        if media_type == "tv" and max_ep > 0 and potential_episodes:
-            if any(ep > max_ep * 1.5 + 5 for ep in potential_episodes):
-                return -800 # High probability of Anime (1000+ eps) vs Live Action (8 eps)
+        if media_type == "tv" and max_ep > 0:
+             # Extract episode number from item name
+             item_ep_match = re.search(r'(tập|episode|ep)\s*(\d+)', n_name + " " + n_origin, re.IGNORECASE)
+             if item_ep_match:
+                 item_ep = int(item_ep_match.group(2))
+                 if item_ep > max_ep * 1.2 + 5:
+                     return -1500 # Definitively the wrong show (e.g. Anime with 1000+ eps)
 
         # 6. Media Type Match
         is_tv_item = item.get("type") in {"series", "tv", "tvshows"}
@@ -145,20 +150,24 @@ class PhimAPIBase:
         return output
 
     async def lookup(self, client: httpx.AsyncClient, tmdb_id: Optional[Any] = None, title: str = None, localize_title: str = None, media_type: str = "movie", season: int = 1, episode: int = None, year: int = None, anchor_slug: str = None, force: bool = False) -> List[Dict[str, Any]]:
-        tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
+        # Ensure tmdb_id is handled safely
+        safe_tmdb_id = str(tmdb_id) if tmdb_id is not None else None
+        tmdb_info = await tmdb_get_info(client, media_type, safe_tmdb_id) if safe_tmdb_id else {}
+        
         cache_dir = config.KKPHIM_CACHE if self.provider_name == "kkphim" else config.OPHIM_CACHE
-        cache_key = f"macro_{tmdb_id or ''}|{title or ''}|{media_type}|{season or ''}"
+        cache_key = f"macro_{safe_tmdb_id or ''}|{title or ''}|{media_type}|{season or ''}"
         
         if not force:
             cached = cache_manager.get_from_cache(cache_dir, cache_key, 604800)
-            if cached: return self._filter_results_for_episode(cached, media_type, episode)
+            if cached is not None: return self._filter_results_for_episode(cached, media_type, episode)
 
         queries = list(dict.fromkeys([q for q in [title, localize_title] if q]))
         candidates = []
         for q in queries:
             items = await self.search(client, q)
+            if not items: continue
             for item in items:
-                score = self._score_search_item(item, q, tmdb_id=tmdb_id, year=year, media_type=media_type, season=season, tmdb_info=tmdb_info)
+                score = self._score_search_item(item, q, tmdb_id=safe_tmdb_id, year=year, media_type=media_type, season=season, tmdb_info=tmdb_info)
                 if score > 0: candidates.append({"slug": item["slug"], "score": score})
         
         candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -167,9 +176,9 @@ class PhimAPIBase:
         for c in candidates[:5]:
             if c["slug"] in seen_slugs: continue
             d = await self.get_formatted_details(client, c["slug"])
-            if "error" not in d:
+            if d and "error" not in d:
                 # Re-verify TMDB ID at detail level if present
-                if tmdb_id and d.get("tmdb_id") and str(d["tmdb_id"]) != str(tmdb_id): continue
+                if safe_tmdb_id and d.get("tmdb_id") and str(d["tmdb_id"]) != safe_tmdb_id: continue
                 for server in d.get("links", []):
                     for ep in server.get("server_data", []):
                         macro_results.append({
