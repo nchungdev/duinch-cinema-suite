@@ -4,6 +4,7 @@ import asyncio
 import re
 import json
 from typing import List, Dict, Any, Optional
+from app.services import tmdb_service
 from app.services.scrapers.kkphim_lookup import lookup_kkphim
 from app.services.scrapers.ophim_lookup import lookup_ophim
 from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
@@ -53,7 +54,8 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
             elif source == "ophim": results = await lookup_ophim(client, tmdb_id, primary, secondary, media_type, season, target_ep, year, force=force)
 
         elif source_type == "torrent":
-            results = await lookup_torrent(clean_title, tmdb_id, media_type, season if media_type != "tv" else None, episode if media_type != "tv" else None, year, tmdb_info=tmdb_info)
+            results = await lookup_torrent(clean_title, tmdb_id, media_type, None, None, year, tmdb_info=tmdb_info)
+
         elif source_type == "fshare":
             if source == "timfshare":
                 results = await lookup_timfshare(primary, year=year, filter_title=clean_title, media_type=media_type, tmdb_info=tmdb_info)
@@ -66,16 +68,23 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
                     sec = await lookup_thuviencine(secondary)
                     results.extend(sec)
             elif source == "web":
-                results = await lookup_google_fshare(clean_title, year, None if media_type == "tv" else season, None if media_type == "tv" else episode)
+                results = await lookup_google_fshare(clean_title, year, None, None)
                 if clean_localize:
-                    sec = await lookup_google_fshare(clean_localize, year, None if media_type == "tv" else season, None if media_type == "tv" else episode)
+                    sec = await lookup_google_fshare(clean_localize, year, None, None)
                     results.extend(sec)
+
         elif source_type == "gdrive":
             results = await lookup_gdrive(primary)
             if secondary:
                 sec = await lookup_gdrive(secondary)
                 results.extend(sec)
 
+        # [LOG] Server console output
+        raw_count = len(results) if results else 0
+        status_icon = "🟢" if raw_count > 0 else "⚪"
+        print(f"[Discovery] {status_icon} {source_type.upper():<7} | {source:<12} | Found: {raw_count:<3} | Query: '{primary}'")
+
+        # Normalize & Deduplicate
         if results is None: results = []
         seen_urls = set()
         deduped = []
@@ -93,17 +102,28 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
             for r in deduped:
                 srv = r.get("server") or "Server"
                 if srv not in server_map: server_map[srv] = []
-                server_map[srv].append(r)
+                # Keep ALL relevant fields for the episode
+                ep_data = {
+                    "type": r["type"],
+                    "provider": r["provider"],
+                    "server": srv,
+                    "name": r.get("name"),
+                    "m3u8": r.get("m3u8"),
+                    "embed": r.get("embed"),
+                    "season": r.get("season", 1) # CRITICAL: Keep season info
+                }
+                server_map[srv].append(ep_data)
             final_results = [{"server": srv, "episodes": eps} for srv, eps in server_map.items()]
         else:
             final_results = deduped
 
         return {"source_type": source_type, "source": source, "results": final_results, "error": None}
     except Exception as e:
+        print(f"[Discovery] 🔴 ERROR in {source_type}/{source}: {e}")
         return {"source_type": source_type, "source": source, "results": [], "error": str(e)}
 
 @router.get("/stream")
-async def discovery_stream_sse(
+async def discovery_stream(
     request: Request,
     tmdb_id: int = Query(None),
     media_type: str = Query("movie"),
@@ -117,6 +137,8 @@ async def discovery_stream_sse(
     """Discovery via SSE — Path: /api/media/stream"""
     client = request.app.state.http_client
     tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else {}
+    
+    print(f"\n[SSE] 🚀 Starting Discovery Stream for: {title} ({year}) | ID: {tmdb_id}")
 
     async def event_generator():
         tasks = [asyncio.create_task(_run_scraper_task(client, tmdb_id, media_type, title, localize_title, year, season, episode, src["source_type"], src["source"], force, tmdb_info)) for src in DISCOVERY_SOURCES]
@@ -124,6 +146,7 @@ async def discovery_stream_sse(
         for completed_task in asyncio.as_completed(tasks):
             result = await completed_task
             yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
+        print(f"[SSE] ✅ Discovery Stream Finished\n")
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

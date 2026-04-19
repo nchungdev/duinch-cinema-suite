@@ -16,10 +16,8 @@ def title_to_slug(title: str) -> str:
     return slug
 
 def is_supported_lang(text: str) -> bool:
-    """Check if the text is primarily English or Vietnamese (ignores CJK, Arabic, etc)."""
+    """Check if the text is primarily English or Vietnamese."""
     if not text: return False
-    # Regex to allow English + Vietnamese accented characters
-    # Matches: Latin letters, numbers, spaces, common punctuation, and Vietnamese specific vowels/marks
     vi_pattern = r'^[a-zA-Z0-9\s.,!?:;\-\(\)àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]+$'
     return bool(re.match(vi_pattern, text))
 
@@ -33,14 +31,16 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
         resp = await client.get(url, params=params)
         data = resp.json()
         series_year = (data.get("release_date") or data.get("first_air_date") or "0")[:4]
-        seasons = []
+        season_years = {}
         if tmdb_type == "tv":
             for s in data.get("seasons", []):
-                if s.get("season_number", 0) == 0: continue
-                seasons.append({"season_number": s["season_number"], "episode_count": s.get("episode_count", 0), "year": int(s.get("air_date", "0")[:4] or 0)})
+                s_num = s.get("season_number")
+                s_date = s.get("air_date")
+                if s_num is not None and s_date:
+                    season_years[int(s_num)] = int(s_date[:4])
         return {
             "series_year": int(series_year) if series_year.isdigit() else 0,
-            "tmdb_seasons": seasons,
+            "season_years": season_years,
             "total_episodes": data.get("number_of_episodes", 0),
             "total_seasons": data.get("number_of_seasons", 0)
         }
@@ -83,28 +83,42 @@ class PhimAPIBase:
         n_name = item.get("name", "").lower().strip()
         n_origin = item.get("origin_name", "").lower().strip()
         
+        # 1. TYPE MATCH
         s_type = item.get("type", "").lower()
         is_tv_req = media_type == "tv"
         s_is_tv = s_type in ["series", "tvshows", "hoathinh", "tv"]
         if is_tv_req != s_is_tv: return -2000
 
+        # 2. TMDB ID MATCH
         src_tmdb = item.get("tmdb", {})
         item_tmdb_id = str(src_tmdb.get("id")) if src_tmdb.get("id") else None
         if tmdb_id and item_tmdb_id:
-            if item_tmdb_id == str(tmdb_id): score += 1000
+            if item_tmdb_id == str(tmdb_id): score += 2000 # Boost heavily
             else: return -2000
 
+        # 3. YEAR LOGIC
         s_year = int(item.get("year") or 0)
         series_start = int(tmdb_info.get("series_year") or year or 0)
+        target_season_year = tmdb_info.get("season_years", {}).get(requested_season, 0)
         
         if s_year > 0 and series_start > 0:
             if media_type == "movie":
                 if abs(s_year - series_start) <= 1: score += 600
                 else: return -1000
             else:
-                if s_year >= series_start: score += 500
+                if target_season_year > 0 and abs(s_year - target_season_year) <= 1: score += 700
+                elif series_start > 0 and abs(s_year - series_start) <= 1: score += 400
+                elif s_year >= series_start: score += 200
                 else: score -= 500
 
+        # 4. SEASON IN NAME MATCH
+        s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', n_name + " " + n_origin, re.IGNORECASE)
+        if s_match:
+            found_s = int(s_match.group(2))
+            if found_s == requested_season: score += 500
+            else: score -= 400
+
+        # 5. TITLE MATCH
         n_query = query.lower().strip()
         if n_query and (n_query == n_name or n_query == n_origin): score += 300
         elif n_query and (n_query in n_name or n_query in n_origin): score += 100
@@ -132,20 +146,21 @@ class PhimAPIBase:
         seen_urls = set()
         seen_slugs = set()
 
-        async def _process_slug(slug: str, assigned_season: Optional[int] = None):
+        async def _process_slug(slug: str, current_s: int):
             if not slug or slug in seen_slugs: return
             seen_slugs.add(slug)
             details = await self.get_details(client, slug)
             if not details: return
             
             movie = details.get("movie", {})
-            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, assigned_season or 1, tmdb_info) >= 0:
+            # RELAXED VALIDATION for direct slug processing
+            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s, tmdb_info) >= -100:
                 for server in details.get("episodes", []):
                     sname = server.get("server_name", "Server")
                     for ep in server.get("server_data", []):
                         u = ep.get("link_m3u8") or ep.get("link_embed")
                         if u and u not in seen_urls:
-                            real_season = assigned_season
+                            real_season = current_s
                             ep_name = ep.get("name", "")
                             ep_match = re.search(r'\d+', ep_name)
                             if ep_match:
@@ -156,15 +171,15 @@ class PhimAPIBase:
                             all_results.append({
                                 "type": "streamable", "provider": self.provider_name, "server": sname,
                                 "name": ep_name, "m3u8": ep.get("link_m3u8"), "embed": ep.get("link_embed"),
-                                "season": real_season or assigned_season or 1
+                                "season": real_season
                             })
                             seen_urls.add(u)
 
-        # PHASE 1: TMDB ID Search (Highest Precision)
+        # PHASE 1: TMDB ID Search (Highest Priority)
         if tmdb_id:
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
-            if res and res.get("status") is True and res.get("movie"):
-                await _process_slug(res.get("movie", {}).get("slug"))
+            if res and res.get("status") is True:
+                await _process_slug(res.get("movie", {}).get("slug"), req_season)
                 if all_results: return all_results
 
         # PHASE 2: Lang-aware Slug & Search
@@ -172,7 +187,6 @@ class PhimAPIBase:
             if not t: return ""
             return re.sub(r'\s+\d{4}|\s+Season\s+\d+|\s+S\d+E\d+', '', t, flags=re.IGNORECASE).strip()
 
-        # Prioritize titles based on language support (VI first, then EN)
         raw_titles = list(dict.fromkeys([q for q in [localize_title, title] if q]))
         supported_titles = [t for t in raw_titles if is_supported_lang(t)]
 
@@ -180,25 +194,23 @@ class PhimAPIBase:
             clean_t = clean_for_slug(t)
             base_slug = title_to_slug(clean_t)
             
-            # 1. Try Direct Slugs
-            await _process_slug(base_slug)
+            # Direct Slugs
+            await _process_slug(base_slug, req_season)
             if media_type == "tv":
                 total_s = tmdb_info.get("total_seasons", 1)
-                for p in range(1, total_s + 1): await _process_slug(f"{base_slug}-phan-{p}", assigned_season=p)
+                for p in range(1, total_s + 1): await _process_slug(f"{base_slug}-phan-{p}", p)
             
-            # 2. Try Search API for this title if slug not found
+            # Search API
             if not all_results:
-                search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": t, "limit": 5})
+                search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": t, "limit": 10})
                 items = search_data.get("data", {}).get("items", [])
                 for item in items:
-                    score = self._score_search_item(item, t, str(tmdb_id) if tmdb_id else None, year, media_type, 1, tmdb_info)
-                    if score > 0:
-                        await _process_slug(item["slug"])
+                    if self._score_search_item(item, t, str(tmdb_id) if tmdb_id else None, year, media_type, req_season, tmdb_info) > 0:
+                        await _process_slug(item["slug"], req_season)
                         if media_type == "tv":
                             total_s = tmdb_info.get("total_seasons", 1)
-                            for p in range(1, total_s + 1): await _process_slug(f"{item['slug']}-phan-{p}", assigned_season=p)
+                            for p in range(1, total_s + 1): await _process_slug(f"{item['slug']}-phan-{p}", p)
 
-            # EARLY BREAK: If results found for current title, don't try next title
             if all_results: return all_results
 
         return all_results
