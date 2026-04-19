@@ -25,26 +25,25 @@ def extract_season_from_name(name: str) -> int:
     return 1
 
 def is_series_file(name: str) -> bool:
-    """Check if filename looks like a TV series episode."""
     series_patterns = [r'[Ee]\d+', r'[Tt]ập\s*\d+', r'[Ee]p\s*\d+', r'S\d{2}E\d{2}']
     return any(re.search(p, name) for p in series_patterns)
 
 async def lookup_timfshare(query: str, year: int = None, filter_title: str = None, localize_title: str = None, media_type: str = "movie", tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-    """Discovery via timfshare.com with explicit Media Type and Year filtering."""
+    """Discovery via timfshare.com with strict series identity filtering."""
     base_url = "https://timfshare.com/api/v1/string-query-search"
     
-    # 1. Prepare clean search terms
+    # 1. Identity Setup
+    tmdb_title = tmdb_info.title if tmdb_info and tmdb_info.title else (filter_title or query)
+    norm_tmdb_title = normalize_for_match(tmdb_title)
+    
+    # search_terms for API call
     search_terms = list(dict.fromkeys([str(q) for q in [filter_title, localize_title, query] if q and str(q).lower() != 'none']))
     
     all_links = []
     seen_urls = set()
     
-    # 2. Get Metadata for filtering
-    if not tmdb_info:
-        tmdb_info = TMDBInfo(series_year=int(year) if year else 0)
-    
-    series_start = tmdb_info.series_year or (int(year) if year else 0)
-    actual_season_years = [y for y in tmdb_info.season_years.values() if y > 0]
+    series_start = tmdb_info.series_year if tmdb_info else (int(year) if year else 0)
+    actual_season_years = [y for y in tmdb_info.season_years.values() if y > 0] if tmdb_info else []
     valid_years = [series_start] + actual_season_years
 
     headers = {
@@ -66,17 +65,24 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                     link = item.get("url", "")
                     if not name or not link or link in seen_urls: continue
                     
-                    # --- A. FILE TYPE & EXTENSION FILTER ---
+                    # --- A. PRE-FILTER: FILE TYPE ---
                     is_folder = "/folder/" in link or item.get("file_type") == 2
                     ext = os.path.splitext(name.lower())[1]
                     size_bytes = item.get("size", 0)
-                    
                     if not is_folder:
                         if ext not in VIDEO_EXTENSIONS: continue
                         if size_bytes < 50 * 1024 * 1024: continue
 
-                    # --- B. TITLE MATCH (Strict Word Boundary) ---
+                    # --- B. STRICT IDENTITY MATCH ---
                     norm_name = normalize_for_match(name)
+                    
+                    # Special Rule for Naruto vs Naruto Shippuden
+                    # If we search for Naruto (1999) but file says "shippuden" -> Reject
+                    # If we search for Naruto Shippuden but file says "boruto" -> Reject
+                    if "shippuden" in norm_name and "shippuden" not in norm_tmdb_title: continue
+                    if "boruto" in norm_name and "boruto" not in norm_tmdb_title: continue
+                    
+                    # Main Title Match (Word Boundary)
                     is_match = False
                     for st in search_terms:
                         norm_st = normalize_for_match(st)
@@ -84,32 +90,20 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                             is_match = True; break
                     if not is_match: continue
 
-                    # --- C. YEAR FILTER (STRICT) ---
-                    if series_start > 0:
-                        found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
-                        if found_years:
-                            if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
-                                continue
-                        elif not is_folder:
-                            # If file has NO year but we have a target year, be careful
-                            # For movies, usually we want the year. For series, sometimes it's missing.
-                            pass
+                    # --- C. YEAR FILTER (HARSH) ---
+                    found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
+                    if found_years:
+                        match_y = any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0)
+                        if not match_y: continue
+                    else:
+                        # CRITICAL: If no year in filename, we MUST check keywords
+                        # Naruto (1999) vs Shippuden (2007)
+                        if series_start == 1999 and "shippuden" in norm_name: continue
+                        if series_start == 2007 and "shippuden" not in norm_name and not is_folder: continue
 
-                    # --- D. MEDIA TYPE FILTER (CRITICAL) ---
-                    looks_like_series = is_series_file(name)
-                    if media_type == "movie":
-                        # If searching for Movie but file looks like TV Series (has EpXX), skip it
-                        if looks_like_series and not is_folder: continue
-                    elif media_type == "tv":
-                        # If searching for TV but file looks like a single movie (no EpXX, no Season info)
-                        # and it's not a folder, be skeptical. 
-                        # However, some series files are just named "Naruto 001.mp4"
-                        # We'll allow them if the title match is strong.
-                        pass
-
-                    # --- E. GAME/TRASH KEYWORD FILTER ---
-                    if any(x in norm_name for x in ['storm', 'ninja storm', 'connections', 'striker', 'repack', 'crack']):
-                        if media_type == 'tv' or media_type == 'movie': continue
+                    # --- D. MEDIA TYPE & TRASH FILTER ---
+                    if media_type == "movie" and is_series_file(name) and not is_folder: continue
+                    if any(x in norm_name for x in ['storm', 'ninja storm', 'connections', 'striker', 'repack', 'crack']): continue
 
                     season_num = extract_season_from_name(name)
                     all_links.append(DownloadableLink(
