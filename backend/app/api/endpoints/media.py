@@ -7,8 +7,6 @@ from fastapi.responses import StreamingResponse
 
 from app.services.scrapers.kkphim_lookup import lookup_kkphim
 from app.services.scrapers.ophim_lookup import lookup_ophim
-from app.services.scrapers.thuviencine_lookup import lookup_thuviencine
-from app.services.scrapers.google_search_lookup import lookup_google_fshare
 from app.services.scrapers.fshare_lookup import resolve_fshare_url, lookup_timfshare
 from app.services.scrapers.gdrive_lookup import lookup_gdrive
 from app.services.scrapers.torrent_lookup import lookup_torrent
@@ -16,12 +14,11 @@ from app.services.scrapers.phimapi_base import tmdb_get_info
 
 router = APIRouter()
 
+# CLEAN PIPELINE: Focus on centralized high-quality indexes
 DISCOVERY_SOURCES = [
     {"source_type": "m3u8",        "source": "kkphim"},
     {"source_type": "m3u8",        "source": "ophim"},
     {"source_type": "fshare",      "source": "timfshare"},
-    {"source_type": "fshare",      "source": "thuviencine"},
-    {"source_type": "fshare",      "source": "web"},
     {"source_type": "torrent",     "source": "default"},
     {"source_type": "gdrive",      "source": "googlesearch"}
 ]
@@ -30,15 +27,6 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
     clean_title    = re.sub(r'\(.*?\)', '', title).strip()
     clean_localize = re.sub(r'\(.*?\)', '', localize_title).strip() if localize_title else None
 
-    def _build_refined_query(base: str) -> str:
-        parts = [base]
-        if media_type == "movie" and year: parts.append(str(year))
-        if season and episode: parts.append(f"S{season:02d}E{episode:02d}")
-        elif season: parts.append(f"Season {season}")
-        elif media_type == "tv" and year: parts.append(str(year))
-        return " ".join(parts)
-
-    primary_refined = _build_refined_query(clean_title)
     results = []
 
     try:
@@ -52,11 +40,11 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
 
         elif source_type == "fshare":
             if source == "timfshare":
-                results = await lookup_timfshare(primary_refined, year=year, filter_title=clean_title, media_type=media_type, tmdb_info=tmdb_info)
-            elif source == "thuviencine": results = await lookup_thuviencine(primary_refined)
-            elif source == "web": results = await lookup_google_fshare(clean_title, year, None, None)
+                # Primary FShare Index
+                results = await lookup_timfshare(clean_title, year=year, filter_title=clean_title, localize_title=clean_localize, media_type=media_type, tmdb_info=tmdb_info)
 
-        elif source_type == "gdrive": results = await lookup_gdrive(primary_refined)
+        elif source_type == "gdrive":
+            results = await lookup_gdrive(clean_title)
 
         raw_count = len(results) if results else 0
         status_icon = "🟢" if raw_count > 0 else "⚪"
@@ -65,9 +53,6 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
         if results is None: results = []
         
         if source_type == "m3u8":
-            # ── INTERNAL GROUPING (Ensures no link contamination) ──
-            # We group by Movie+Server+CDN to keep DIFFERENT uploads separate,
-            # but we keep the DISPLAY NAME simple for the UI.
             internal_groups = {}
             for r in results:
                 m_name = r.get("movie_name") or "Movie"
@@ -75,23 +60,14 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
                 m3u8 = r.get("m3u8") or ""
                 domain_match = re.search(r'https?://([^/]+)', m3u8)
                 domain = domain_match.group(1) if domain_match else "unknown"
-                
-                # Internal key for separation
                 group_key = f"{source}:{m_name}:{srv}:{domain}"
-                
                 if group_key not in internal_groups: internal_groups[group_key] = []
                 internal_groups[group_key].append({
                     "type": "streamable", "provider": source.upper(), "server": srv,
                     "name": r.get("name"), "m3u8": r.get("m3u8"), "embed": r.get("embed"),
                     "season": r.get("season", 1)
                 })
-            
-            # Map back to simple server names for display, keeping the groups distinct
-            final_results = []
-            for eps in internal_groups.values():
-                # Display name: [PROVIDER] Server Name (e.g. [OPHIM] Vietsub #1)
-                display_name = f"[{eps[0]['provider']}] {eps[0]['server']}"
-                final_results.append({"server": display_name, "episodes": eps})
+            final_results = [{"server": f"[{eps[0]['provider']}] {eps[0]['server']}", "episodes": eps} for eps in internal_groups.values()]
         else:
             final_results = results
 
