@@ -13,6 +13,15 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 ]
 
+def normalize_for_match(text: str) -> str:
+    if not text: return ""
+    t = ''.join(c for c in unicodedata.normalize('NFD', str(text)) if unicodedata.category(c) != 'Mn')
+    t = t.replace('đ', 'd').replace('Đ', 'D')
+    t = re.sub(r'[^a-z0-9]+', ' ', t.lower()).strip()
+    return t
+
+import unicodedata
+
 class ForumScraperBase:
     def __init__(self, domain: str, name: str):
         self.domain = domain.rstrip('/')
@@ -29,99 +38,70 @@ class ForumScraperBase:
         }
 
     async def _fetch_token_and_cookie(self, session: requests.AsyncSession) -> Optional[str]:
-        """Visit search page to get session cookies and _xfToken."""
         search_init_url = f"{self.base_url}/search/"
         try:
             resp = await session.get(search_init_url, headers=self._get_headers(), timeout=15, impersonate="chrome110")
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, 'html.parser')
-                # Extract _xfToken from input or data attribute
                 token_input = soup.find('input', {'name': '_xfToken'})
                 token = token_input.get('value') if token_input else None
                 if not token:
-                    # Fallback: look in script tags or data-csrf
                     match = re.search(r'csrf":\s*"([^"]+)"', resp.text)
                     if match: token = match.group(1)
                 return token
-        except Exception as e:
-            print(f"[{self.name}] Token Fetch Error: {e}")
+        except Exception: pass
         return None
 
-    async def _native_search(self, query: str) -> List[str]:
-        """Perform direct search with dynamic token bypass."""
+    async def _native_search(self, query: str) -> List[Dict[str, str]]:
+        """Perform direct search and return list of thread info (url and title)."""
         search_url = f"{self.base_url}/search/search"
-        thread_urls = []
+        thread_data = []
         
         try:
             async with requests.AsyncSession() as session:
-                # 1. Get Token and establish Session
                 token = await self._fetch_token_and_cookie(session)
-                if not token:
-                    # If forum requires login for search, token might be missing
-                    # Some XenForo forums use a default guest token like '12345678,abcdef...'
-                    token = "" 
-
-                # 2. Post search request with Token
                 payload = {
-                    "keywords": query,
-                    "c[users]": "",
-                    "c[nodes][]": "",
-                    "c[child_nodes]": "1",
-                    "o": "date",
-                    "_xfToken": token
+                    "keywords": query, "c[users]": "", "c[nodes][]": "", 
+                    "c[child_nodes]": "1", "o": "date", "_xfToken": token or ""
                 }
-                
                 resp = await session.post(search_url, data=payload, headers=self._get_headers(), timeout=20, impersonate="chrome110")
                 
-                # Check for redirect to results
-                final_url = str(resp.url)
-                if "search/" not in final_url:
-                    print(f"[{self.name}] Search failed or restricted for '{query}'. URL: {final_url}")
-                    return []
+                if "search/" not in str(resp.url): return []
                 
-                # 3. Parse search results
                 soup = BeautifulSoup(resp.text, 'html.parser')
-                links = soup.select('h3.contentRow-title a[href*="/threads/"]') or \
-                        soup.select('a[href*="/threads/"][data-tp-primary]') or \
-                        soup.select('.structItem-title a[href*="/threads/"]')
+                # XenForo 2 patterns
+                items = soup.select('h3.contentRow-title') or soup.select('.structItem-title')
                 
-                for a in links:
-                    href = a.get('href')
-                    if href:
-                        # Clean up URL (remove page suffix if any)
-                        clean_href = href.split('?')[0].split('#')[0]
-                        full_url = urllib.parse.urljoin(self.base_url, clean_href)
-                        thread_urls.append(full_url)
-                
-                print(f"[{self.name}] Native search found {len(thread_urls)} threads for '{query}'")
-        except Exception as e:
-            print(f"[{self.name}] Native Search Error: {e}")
-            
-        return list(dict.fromkeys(thread_urls))[:5]
+                for item in items:
+                    a = item.find('a', href=re.compile(r'/threads/'))
+                    if a:
+                        href = a.get('href')
+                        title = a.get_text().strip()
+                        full_url = urllib.parse.urljoin(self.base_url, href.split('?')[0])
+                        thread_data.append({"url": full_url, "title": title})
+        except Exception: pass
+        return thread_data
 
-    async def _mine_thread(self, thread_url: str) -> List[DownloadableLink]:
-        """Mine FShare links from thread content."""
+    async def _mine_thread(self, thread_url: str, thread_title: str) -> List[DownloadableLink]:
+        """Mine FShare links from thread, using thread title for validation."""
         links = []
         try:
             async with requests.AsyncSession() as session:
                 resp = await session.get(thread_url, headers=self._get_headers(), timeout=15, impersonate="chrome110")
                 if resp.status_code != 200: return []
                 
-                html = resp.text
-                # Find both folder and file links
-                matches = re.findall(r'https?://(?:www\.)?fshare\.vn/(?:file|folder)/[a-zA-Z0-9]+', html)
+                # Regex for FShare links
+                matches = re.findall(r'https?://(?:www\.)?fshare\.vn/(?:file|folder)/[a-zA-Z0-9]+', resp.text)
                 
-                soup = BeautifulSoup(html, 'html.parser')
-                # Improved title extraction: split common suffixes
-                page_title = soup.title.string if soup.title else "Forum Post"
-                for sep in ['|', '-', '—']:
-                    page_title = page_title.split(sep)[0]
-                page_title = page_title.strip()
+                # Clean up title for display
+                display_title = thread_title
+                for sep in ['|', '-', '—']: display_title = display_title.split(sep)[0]
+                display_title = display_title.strip()
 
                 for url in list(dict.fromkeys(matches)):
                     is_folder = "/folder/" in url
                     links.append(DownloadableLink(
-                        name=f"[{'FOLDER' if is_folder else 'FILE'}] {page_title}",
+                        name=f"[{self.name}] {display_title}",
                         url=url,
                         size=0,
                         source=self.name.lower(),
@@ -132,22 +112,45 @@ class ForumScraperBase:
         return links
 
     async def lookup(self, query: str, tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
-        """Discovery Lifecycle with Token Bypass."""
         all_found = []
-        search_terms = [query]
-        if tmdb_info and tmdb_info.title and tmdb_info.title != query:
-            search_terms.append(tmdb_info.title)
+        
+        # 1. Identity Guard Prep
+        target_title = tmdb_info.title if tmdb_info and tmdb_info.title else query
+        norm_target = normalize_for_match(target_title)
+        search_terms = list(dict.fromkeys([str(q) for q in [target_title, query] if q and str(q).lower() != 'none']))
 
-        for q in list(dict.fromkeys(search_terms)):
-            thread_urls = await self._native_search(q)
-            if not thread_urls: continue
+        for q in search_terms:
+            threads = await self._native_search(q)
+            if not threads: continue
             
-            for url in thread_urls:
-                r_list = await self._mine_thread(url)
+            for t in threads[:5]:
+                # --- STRICT FILTERING ---
+                norm_thread_title = normalize_for_match(t['title'])
+                
+                # A. Identity Match (Word Boundary)
+                is_match = False
+                for st in search_terms:
+                    norm_st = normalize_for_match(st)
+                    if re.search(rf'\b{re.escape(norm_st)}\b', norm_thread_title):
+                        is_match = True; break
+                if not is_match: continue
+                
+                # B. Franchise Exclusion (Naruto vs Shippuden)
+                if re.search(r'shippu?den', norm_thread_title) and "shippuden" not in norm_target: continue
+                if "boruto" in norm_thread_title and "boruto" not in norm_target: continue
+                
+                # C. Year Guard (if thread has year)
+                if tmdb_info and tmdb_info.series_year > 0:
+                    found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', t['title'])
+                    if found_years:
+                        if not any(abs(int(fy) - tmdb_info.series_year) <= 1 for fy in found_years):
+                            continue
+
+                # Mine validated thread
+                r_list = await self._mine_thread(t['url'], t['title'])
                 all_found.extend(r_list)
-                await asyncio.sleep(random.uniform(0.5, 1.0))
+                await asyncio.sleep(random.uniform(0.3, 0.7))
             
-        # Prioritize Folders and Deduplicate
         unique_links, seen = [], set()
         for link in all_found:
             if link.url not in seen:
