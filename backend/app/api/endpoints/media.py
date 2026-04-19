@@ -40,17 +40,12 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
         elif media_type == "tv" and year: parts.append(str(year))
         return " ".join(parts)
 
-    # For streaming sites (KK/OPhim), search with BARE titles to get candidates
-    # For search engines (FShare/Torrent), search with REFINED query to reduce noise
     primary_refined = _build_refined_query(clean_title)
-    secondary_refined = _build_refined_query(clean_localize) if clean_localize else None
-
     results = []
 
     try:
         if source_type == "m3u8":
             target_ep = None if media_type == "tv" else episode
-            # IMPORTANT: Use clean_title/clean_localize (bare) for streaming sites
             if source == "kkphim": results = await lookup_kkphim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
             elif source == "ophim": results = await lookup_ophim(client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force)
 
@@ -85,16 +80,21 @@ async def _run_scraper_task(client, tmdb_id, media_type, title, localize_title, 
                 seen_urls.add(url)
 
         if source_type == "m3u8":
+            # Group by server and keep them distinct
             server_map = {}
             for r in deduped:
+                # Add Provider prefix to server name to keep them separate on UI
+                provider_prefix = (r.get("provider") or source).upper()
                 srv = r.get("server") or "Server"
-                if srv not in server_map: server_map[srv] = []
+                full_srv_name = f"[{provider_prefix}] {srv}"
+                
+                if full_srv_name not in server_map: server_map[full_srv_name] = []
                 ep_data = {
-                    "type": r["type"], "provider": r["provider"], "server": srv,
+                    "type": r["type"], "provider": provider_prefix, "server": srv,
                     "name": r.get("name"), "m3u8": r.get("m3u8"), "embed": r.get("embed"),
                     "season": r.get("season", 1)
                 }
-                server_map[srv].append(ep_data)
+                server_map[full_srv_name].append(ep_data)
             final_results = [{"server": srv, "episodes": eps} for srv, eps in server_map.items()]
         else:
             final_results = deduped
