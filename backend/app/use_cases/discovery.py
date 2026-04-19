@@ -18,7 +18,7 @@ class DiscoveryUseCase:
         self.client = http_client
 
     async def execute_task(self, tmdb_id, media_type, title, localize_title, year, season, episode, source_type, source, force, tmdb_info: TMDBInfo) -> DiscoveryTaskResult:
-        """Run a single scraper and return standardized, grouped results."""
+        """Run a single scraper and return standardized results."""
         
         # 1. Check Cache
         cache_key_season = season if season else 1
@@ -34,7 +34,7 @@ class DiscoveryUseCase:
         
         results = []
         try:
-            # 2. Execution
+            # 2. Execution logic based on source and media type
             if source_type == "m3u8":
                 target_ep = None if media_type == "tv" else episode
                 if source == "kkphim":
@@ -43,8 +43,13 @@ class DiscoveryUseCase:
                     results = await lookup_ophim(self.client, tmdb_id, clean_title, clean_localize, media_type, season, target_ep, year, force=force, tmdb_info=tmdb_info)
 
             elif source_type == "fshare":
-                if source == "timfshare":
+                if source == "timfshare" and media_type == "movie":
+                    # TimFShare API is only used for Movies (individual files)
                     results = await lookup_timfshare(clean_title, year=year, filter_title=clean_title, localize_title=clean_localize, media_type=media_type, tmdb_info=tmdb_info)
+                
+                # Placeholder for Forum Discovery (TV Series Folders)
+                # elif source == "forum" and media_type == "tv":
+                #     results = await forum_scraper.lookup(clean_title, media_type="tv")
 
             elif source_type == "torrent":
                 results = await lookup_torrent(clean_title, tmdb_id, media_type, None, None, str(year) if year else None, tmdb_info=tmdb_info)
@@ -54,9 +59,7 @@ class DiscoveryUseCase:
 
             # 3. Post-process (Grouping)
             final_results = []
-            
             if source_type == "m3u8":
-                # Group M3U8 by CDN/Server
                 internal_groups = {}
                 for r in results:
                     m_name, srv = r.movie_name or "Movie", r.server or "Server"
@@ -70,29 +73,11 @@ class DiscoveryUseCase:
                 for eps in internal_groups.values():
                     display_name = f"[{eps[0].provider}] {eps[0].server}"
                     final_results.append(StreamingServerGroup(server=display_name, episodes=eps))
-
-            elif source_type == "fshare" and media_type == "tv":
-                # --- NEW: Group FShare by Season ---
-                season_groups = {}
-                for r in results:
-                    # r is DownloadableLink
-                    # source_page now contains "Season X" from fshare_lookup
-                    s_label = r.source_page if r.source_page else "Season 01"
-                    if s_label not in season_groups: season_groups[s_label] = []
-                    season_groups[s_label].append(r)
-                
-                for s_label, links in sorted(season_groups.items()):
-                    # Sort links by name within season
-                    links.sort(key=lambda x: x.name)
-                    # We can't use StreamingServerGroup here because it expects StreamingEpisode models.
-                    # We will return a special dictionary structure that the UI can handle or 
-                    # we keep DownloadableLink list but the UI should know how to group.
-                    # For now, let's keep it as a flat list but SORTED by season to help UI.
-                    final_results.extend(links)
             else:
+                # Flat list for downloadable links
                 final_results = results
 
-            # 4. Cache
+            # 4. Cache and Return
             if final_results:
                 cache_manager.set_discovery(source, tmdb_id, cache_key_season, [r.dict(exclude_none=True) for r in (final_results if isinstance(final_results, list) else [])], ttl=3600 * 6)
 
