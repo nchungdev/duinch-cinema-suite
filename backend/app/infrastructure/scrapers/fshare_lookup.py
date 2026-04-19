@@ -2,6 +2,7 @@ import httpx
 import re
 import asyncio
 import unicodedata
+import os
 from typing import List, Dict, Any, Optional
 from app.core import config
 from app.domain.models.media import DownloadableLink
@@ -33,14 +34,18 @@ def extract_season_from_name(name: str) -> int:
 async def lookup_timfshare(query: str, year: int = None, filter_title: str = None, localize_title: str = None, media_type: str = "movie", tmdb_info: Optional[TMDBInfo] = None) -> List[DownloadableLink]:
     """Discovery via timfshare.com with smart video filtering and season grouping."""
     base_url = "https://timfshare.com/api/v1/string-query-search"
-    search_terms = list(dict.fromkeys([filter_title, localize_title] if filter_title or localize_title else [query]))
+    search_terms = list(dict.fromkeys([q for q in [filter_title, localize_title] if q]))
+    if not search_terms: search_terms = [query]
     
     all_links = []
     seen_urls = set()
     
     if not tmdb_info:
         tmdb_info = TMDBInfo(series_year=int(year) if year else 0)
-    valid_years = [tmdb_info.series_year] + list(tmdb_info.season_years.values())
+    
+    series_start = tmdb_info.series_year
+    actual_season_years = [y for y in tmdb_info.season_years.values() if y > 0]
+    valid_years = [series_start] + actual_season_years
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -66,24 +71,29 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                     ext = os.path.splitext(name.lower())[1]
                     size_bytes = item.get("size", 0)
                     
-                    # Only accept video extensions, folders, or very large files (rar/zip parts)
                     if not is_folder:
-                        if ext not in VIDEO_EXTENSIONS and size_bytes < 500 * 1024 * 1024:
+                        # Skip small non-video files
+                        if ext not in VIDEO_EXTENSIONS and size_bytes < 300 * 1024 * 1024:
                             continue
-                        if size_bytes < 50 * 1024 * 1024: # Absolute minimum 50MB
+                        if size_bytes < 50 * 1024 * 1024:
                             continue
 
                     # 2. TITLE MATCH
                     norm_name = normalize_for_match(name)
-                    if not any(normalize_for_match(st) in norm_name for st in search_terms): continue
+                    match_t = False
+                    for st in search_terms:
+                        if normalize_for_match(st) in norm_name:
+                            match_t = True; break
+                    if not match_t: continue
                     
                     # 3. YEAR MATCH
-                    found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
-                    if found_years and tmdb_info.series_year > 0:
-                        if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
-                            continue
+                    if series_start > 0:
+                        found_years = re.findall(r'\b(20\d{2}|19\d{2})\b', name)
+                        if found_years:
+                            if not any(abs(int(fy) - vy) <= 1 for fy in found_years for vy in valid_years if vy > 0):
+                                continue
                     
-                    # 4. SMART TAGGING (Season & Quality)
+                    # 4. SEASON DETECTION
                     season_num = extract_season_from_name(name)
                     
                     all_links.append(DownloadableLink(
@@ -92,13 +102,12 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
                         size=size_bytes,
                         source="timfshare",
                         is_folder=is_folder,
-                        # Pass metadata for frontend grouping/badges
                         source_page=f"Season {season_num}" if media_type == "tv" else None
                     ))
                     seen_urls.add(link)
-                
-                await asyncio.sleep(0.1)
-            except Exception: continue
+            except Exception as e:
+                print(f"[TimFShare] Error: {e}")
+                continue
             
     return all_links
 
