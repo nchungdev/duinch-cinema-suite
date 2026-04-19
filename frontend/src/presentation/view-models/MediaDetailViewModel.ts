@@ -1,7 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { api } from '../../api/config';
 import { useMediaDetail } from '../context/MediaDetailContext';
-import { GetMediaDetail } from '../../core/use-cases/GetMediaDetail';
 import { SelectBestStream } from '../../core/use-cases/SelectBestStream';
 import { StreamLink, type StreamType, type RawLinkData } from '../../domain/models/StreamLink';
 import type { StreamingEpisode, StreamingServer } from '../../api/config';
@@ -9,15 +8,15 @@ import type { StreamingEpisode, StreamingServer } from '../../api/config';
 /**
  * ViewModel: MediaDetailViewModel
  * Người đại diện (Presenter) duy nhất cho View chi tiết phim.
- * Gom tất cả logic dữ liệu, điều hướng và đăng ký luồng phát.
+ * Gom tất cả logic điều hướng và đăng ký luồng phát.
+ * Dữ liệu (Metadata/Settings) được quản lý tập trung bởi MediaDetailContext.
  */
 export const useMediaDetailViewModel = () => {
   const context = useMediaDetail();
   
   const { 
-    slug, mediaType, media, setMedia, 
+    slug, mediaType, media, 
     loading, setLoading, 
-    setLocalExists,
     userSettings, setUserSettings,
     streamableSources, setStreamableSources,
     activeType, setActiveType,
@@ -33,50 +32,7 @@ export const useMediaDetailViewModel = () => {
     initialSeason, initialEpisode
   } = context;
 
-  // 1. Logic: Tải dữ liệu Metadata
-  useEffect(() => {
-    let isMounted = true;
-    const fetchData = async () => {
-      if (!slug) return;
-      
-      // Tránh fetch lại nếu slug không đổi (trừ khi đang loading)
-      setLoading(true);
-      try {
-        const useCase = new GetMediaDetail();
-        const mediaInstance = await useCase.execute(mediaType, slug);
-        
-        if (isMounted) {
-          setMedia(mediaInstance);
-          // Metadata API đã trả về thông tin local trong data.local.exists
-          // Không cần gọi thêm một request /tv/{id} riêng biệt nữa
-          const rawData = (mediaInstance as any)._rawResponse; 
-          setLocalExists(rawData?.data?.local?.exists || false);
-        }
-      } catch (err) {
-        console.error(`[ViewModel] Failed to fetch ${mediaType} details:`, err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-    fetchData();
-    return () => { isMounted = false; };
-  }, [slug, mediaType]); // CHỈ phụ thuộc vào slug và mediaType
-
-  // 2. Logic: Tải Cài đặt người dùng
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const res = await api.get('/user/settings');
-        setUserSettings(res.data);
-      } catch (err) {
-        console.warn('[ViewModel] Failed to load settings:', err);
-        setUserSettings({ preferred_source: 'auto' });
-      }
-    };
-    loadSettings();
-  }, [setUserSettings]);
-
-  // 3. Logic: Đăng ký luồng phát (Registry)
+  // Logic: Đăng ký luồng phát (Registry)
   const handleStreamingReady = useCallback((links: RawLinkData[], sourceId: string) => {
     setStreamableSources(prev => {
         const next = { ...prev };
@@ -133,7 +89,7 @@ export const useMediaDetailViewModel = () => {
     });
   }, [setStreamableSources]);
 
-  // 4. Logic: Điều hướng luồng phát (Navigation & Link Selection)
+  // Logic: Điều hướng luồng phát (Navigation & Link Selection)
   useEffect(() => {
     const selector = new SelectBestStream();
     const result = selector.execute(
@@ -183,12 +139,11 @@ export const useMediaDetailViewModel = () => {
     }
   }, [streamableSources, userSettings, activeType, activeProvider, activeServerIdx, activeEpisodeIdx, seasonBoundaries, setActiveType, setActiveProvider, setStreamingLinks, setActiveServerIdx, setActiveEmbed, activeEmbed, streamingLinks.length]);
 
-  // 5. Logic: Xử lý Resolvers (Fshare Login...)
   const handleFshareLogin = async (email: string, password: string) => {
     try {
         await api.post('/stream/fshare/login', { email, password });
         const res = await api.get('/user/settings');
-        setUserSettings(res.data);
+        if (setUserSettings) setUserSettings(res.data);
         return true;
     } catch {
         return false;
