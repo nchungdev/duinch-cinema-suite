@@ -52,6 +52,40 @@ class ForumScraperBase:
         except Exception: pass
         return None
 
+    async def _list_threads(self, node_url: str, page: int = 1) -> List[Dict[str, str]]:
+        """List threads from a specific forum node/category."""
+        url = node_url
+        if page > 1:
+            url = f"{node_url.rstrip('/')}/page-{page}"
+            
+        thread_data = []
+        try:
+            async with requests.AsyncSession() as session:
+                resp = await session.get(url, headers=self._get_headers(), timeout=20, impersonate="chrome110")
+                if resp.status_code != 200: 
+                    print(f"[!] {self.name} list failed: Status {resp.status_code}")
+                    return []
+                
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                # XenForo 2 patterns for thread list
+                items = soup.select('.structItem-title')
+                if not items:
+                    # Fallback for older themes or different structures
+                    items = soup.select('h3.contentRow-title')
+                
+                print(f"[*] {self.name} found {len(items)} items on page {page}")
+                
+                for item in items:
+                    a = item.find('a', href=re.compile(r'/threads/'))
+                    if a:
+                        href = a.get('href')
+                        title = a.get_text().strip()
+                        # Ignore sticky threads if needed, but for now take all
+                        full_url = urllib.parse.urljoin(self.base_url, href.split('?')[0])
+                        thread_data.append({"url": full_url, "title": title})
+        except Exception: pass
+        return thread_data
+
     async def _native_search(self, query: str) -> List[Dict[str, str]]:
         """Perform direct search and return list of thread info (url and title)."""
         search_url = f"{self.base_url}/search/search"

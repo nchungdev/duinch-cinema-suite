@@ -1,4 +1,17 @@
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: omv-jd-dashboard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres-data:/var/lib/postgresql/data
+
   redis:
     image: redis:alpine
     container_name: omv-jd-dashboard-redis
@@ -12,6 +25,7 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+      - postgres
     ports:
       - "8086:8086"
     environment:
@@ -22,6 +36,7 @@ services:
       - JD_DOWNLOAD_BASE=/storage
       - JD_INTERNAL_PATH=/downloads
       - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus}@postgres:5432/${POSTGRES_DB:-nexus_db}
     volumes:
       - ${HOST_STORAGE_PATH}:/storage
 

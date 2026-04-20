@@ -11,6 +11,7 @@ from app.domain.models.media import DiscoveryTaskResult, DownloadableLink
 router = APIRouter()
 
 DISCOVERY_SOURCES = [
+    {"source_type": "fshare",      "source": "indexed"}, # Pre-crawled/indexed FShare links
     {"source_type": "m3u8",        "source": "kkphim"},
     {"source_type": "m3u8",        "source": "ophim"},
     {"source_type": "fshare",      "source": "timfshare"},

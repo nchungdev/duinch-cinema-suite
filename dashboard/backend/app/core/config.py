@@ -19,9 +19,9 @@ FSHARE_FOLDER_TTL = int(os.getenv("FSHARE_FOLDER_TTL", 24 * 3600))
 IMAGE_CACHE_TTL = int(os.getenv("IMAGE_CACHE_TTL", 3600))
 
 # Data Root Structure
-# Default to the project root (parent of backend/app/core) / data
+# Default to the project root (parent of dashboard/backend/app/core) / data
 _current_dir = os.path.dirname(os.path.abspath(__file__))
-_project_root = os.path.dirname(os.path.dirname(os.path.dirname(_current_dir)))
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(_current_dir))))
 DATA_ROOT = os.getenv("DATA_ROOT", os.path.join(_project_root, "data"))
 
 # 1. Cache (Transient - can be deleted)
@@ -44,6 +44,5 @@ USER_SETTINGS = os.path.join(USER_DIR, "settings.json")
 USER_PROGRESS = os.path.join(USER_DIR, "progress.json")
 USER_HISTORY = os.path.join(USER_DIR, "history.json")
 
-# 3. Sensitive Content (Config/Secrets)
-SECRETS_DIR = os.path.join(DATA_ROOT, "secrets")
-# (Reserved for future encrypted tokens or private keys)
+# Database
+DATABASE_URL = os.getenv("DATABASE_URL")

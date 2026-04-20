@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline HQ | NexusStream</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #e2e8f0; overflow: hidden; }
+        .card { background: rgba(30, 41, 59, 0.4); backdrop-filter: blur(10px); border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); }
+        .status-running { color: #38bdf8; animation: pulse 2s infinite; }
+        .status-idle { color: #94a3b8; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .nav-item-active { background: rgba(37, 99, 235, 0.1); border-left: 4px solid #2563eb; color: white; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .progress-bar { transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1); }
+        .modal-overlay {
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(8px);
+        }
+        .modal-card {
+            background: #0a0a0a;
+            border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body class="h-screen flex text-slate-300">
+    <!-- SIDEBAR -->
+    <aside class="w-72 flex-shrink-0 border-r border-white/5 bg-black/40 flex flex-col p-6 z-50">
+        <div class="mb-8">
+            <h1 class="text-xl font-black text-white tracking-tighter italic uppercase">Pipeline HQ</h1>
+            <p class="text-slate-500 text-[8px] font-black uppercase tracking-[0.3em]">OMV Network Node</p>
+        </div>
+
+        <nav class="flex-1 space-y-1">
+            <button onclick="switchMainTab('miner')" id="nav-miner" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all nav-item-active group">
+                <span class="text-base group-hover:scale-110 transition-transform">⛏️</span>
+                <span>Data Miner</span>
+            </button>
+            <button onclick="switchMainTab('cooker')" id="nav-cooker" class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all text-slate-500 hover:bg-white/5 hover:text-white group">
+                <span class="text-base group-hover:scale-110 transition-transform">🍳</span>
+                <span>Data Cooker</span>
+            </button>
+        </nav>
+
+        <div class="mt-auto space-y-4">
+            <div id="sync-pill" class="bg-white/5 border border-white/10 rounded-xl p-3">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-[7px] font-black uppercase tracking-widest text-slate-500">Node Sync</span>
+                    <div id="sync-dot" class="w-1 h-1 rounded-full bg-green-500"></div>
+                </div>
+                <div id="last-update" class="text-[9px] font-mono text-slate-400">SYNCING...</div>
+            </div>
+            
+            <div class="flex items-center gap-2 px-1">
+                <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-black text-white italic text-xs">A</div>
+                <div class="flex flex-col">
+                    <span class="text-[9px] font-black uppercase text-white tracking-tighter">Admin</span>
+                    <span class="text-[7px] font-bold text-slate-600 uppercase tracking-widest">v4.2</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col bg-[#050505] overflow-hidden">
+        <!-- HEADER STATS -->
+        <div class="px-8 py-4 bg-black/20 border-b border-white/5 grid grid-cols-4 gap-8">
+            <div class="flex flex-col">
+                <span class="text-[8px] font-black uppercase text-slate-500 tracking-widest">Total Scraped</span>
+                <span id="stat-raw" class="text-2xl font-black text-blue-500 font-mono italic">0</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[8px] font-black uppercase text-slate-500 tracking-widest">Total Processed</span>
+                <span id="stat-cooked" class="text-2xl font-black text-emerald-500 font-mono italic">0</span>
+            </div>
+            <div class="col-span-2 flex justify-end items-center">
+                <div class="flex flex-col items-end">
+                    <span class="text-[8px] font-black uppercase text-slate-500 tracking-widest">System Load</span>
+                    <span class="text-sm font-black text-white/30 font-mono">2.4%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- WORKSPACE AREA -->
+        <div class="flex-1 p-6 overflow-y-auto custom-scrollbar">
+            <!-- MINER WORKSPACE -->
+            <div id="workspace-miner" class="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div class="flex gap-4 border-b border-white/5 pb-1">
+                    <button class="px-4 py-1 text-[8px] font-black uppercase tracking-widest text-blue-500 border-b-2 border-blue-500">Fshare Networks</button>
+                    <button class="px-4 py-1 text-[8px] font-black uppercase tracking-widest text-slate-600 hover:text-slate-400 cursor-not-allowed">Torrents</button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    <div class="lg:col-span-2 card p-3 bg-gradient-to-br from-blue-500/10 to-transparent flex flex-col justify-between">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <h2 class="text-[10px] font-black text-white uppercase italic tracking-tighter">Miner Execution</h2>
+                                <span id="miner-status" class="text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 status-idle">Ready</span>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span id="miner-item" class="text-[8px] font-bold uppercase text-slate-600 truncate max-w-[200px] italic">Operational Standby</span>
+                                <span id="miner-percent" class="text-xs font-black text-blue-500/50 font-mono italic">0%</span>
+                            </div>
+                        </div>
+                        
+                        <div class="w-full bg-white/5 h-[1px] my-3">
+                            <div id="miner-bar" class="progress-bar h-full bg-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.8)]" style="width: 0%"></div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2 flex-1">
+                                <div class="relative w-24">
+                                    <input type="number" id="miner-pages" value="1" class="w-full bg-black/40 border border-white/5 rounded-lg pl-3 pr-8 py-1.5 text-[10px] font-black focus:outline-none focus:border-blue-500 text-white">
+                                    <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[7px] font-black uppercase text-slate-700">PG</span>
+                                </div>
+                                <span id="miner-success" class="text-[7px] font-black uppercase tracking-widest text-blue-500/60">0 Found</span>
+                            </div>
+                            <button onclick="startTask('miner')" id="btn-miner" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-black text-[9px] uppercase tracking-widest rounded-lg transition-all shadow-lg shadow-blue-500/20 active:scale-95">Launch</button>
+                        </div>
+
+                        <!-- LOG CONSOLE -->
+                        <div id="miner-console-box" class="mt-3 hidden animate-in slide-in-from-top-2 duration-300">
+                            <div class="bg-black/60 rounded-lg p-2 font-mono text-[7px] text-blue-400/80 h-24 overflow-y-auto custom-scrollbar border border-white/5 whitespace-pre-wrap leading-relaxed" id="miner-console">
+                                Initializing miner telemetry...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card p-3 border border-white/5 flex flex-col justify-between">
+                        <h2 class="text-[10px] font-black text-slate-500 uppercase italic tracking-tighter mb-2">Schedule</h2>
+                        <div class="flex items-center justify-between gap-4 bg-black/40 px-3 py-2 rounded-lg border border-white/5">
+                            <div class="flex-1">
+                                <input type="time" id="miner-sched-time" class="w-full bg-transparent border-none text-base font-black text-white focus:outline-none" onchange="saveSchedule('miner')">
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="miner-sched-enable" class="sr-only peer" onchange="saveSchedule('miner')">
+                                <div class="w-8 h-4.5 bg-white/5 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:top-[2px] after:left-[2px] after:bg-slate-600 after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white after:content-[''] after:absolute"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border border-white/5 overflow-hidden">
+                    <div class="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
+                        <h3 class="text-[10px] font-black uppercase tracking-widest text-white/50">Raw Entity Stream</h3>
+                        <div class="flex items-center gap-3">
+                            <span id="miner-success" class="text-[8px] font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-500/20">0 Found</span>
+                            <div class="flex items-center gap-1.5 bg-black/40 rounded-lg p-1 border border-white/5">
+                                <button onclick="changePage('miner', -1)" class="p-1.5 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                                </button>
+                                <span id="miner-page-label" class="text-[9px] font-black font-mono px-1.5 text-slate-500">P.1</span>
+                                <button onclick="changePage('miner', 1)" class="p-1.5 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-left">
+                            <thead class="bg-black/40 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                                <tr>
+                                    <th class="px-4 py-3">Time</th>
+                                    <th class="px-4 py-3">Source</th>
+                                    <th class="px-4 py-3">Context</th>
+                                    <th class="px-4 py-3">Links Discovery</th>
+                                </tr>
+                            </thead>
+                            <tbody id="body-miner" class="divide-y divide-white/[0.02]"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COOKER WORKSPACE -->
+            <div id="workspace-cooker" class="hidden space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    <div class="lg:col-span-2 card p-3 bg-gradient-to-br from-emerald-500/10 to-transparent flex flex-col justify-between">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <h2 class="text-[10px] font-black text-white uppercase italic tracking-tighter">Cooker Intelligence</h2>
+                                <span id="cooker-status" class="text-[7px] font-black uppercase tracking-widest px-2 py-0.5 rounded bg-white/5 status-idle">Ready</span>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <span id="cooker-item" class="text-[8px] font-bold uppercase text-slate-600 truncate max-w-[200px] italic">Standby</span>
+                                <span id="cooker-percent" class="text-xs font-black text-emerald-500/50 font-mono italic">0%</span>
+                            </div>
+                        </div>
+
+                        <div class="w-full bg-white/5 h-[1px] my-3">
+                            <div id="cooker-bar" class="progress-bar h-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" style="width: 0%"></div>
+                        </div>
+
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2 flex-1">
+                                <div class="relative w-24">
+                                    <input type="number" id="cooker-limit" value="100" class="w-full bg-black/40 border border-white/5 rounded-lg pl-3 pr-10 py-1.5 text-[10px] font-black focus:outline-none focus:border-emerald-500 text-white">
+                                    <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[7px] font-black uppercase text-slate-700">LIMIT</span>
+                                </div>
+                                <span id="cooker-success" class="text-[7px] font-black uppercase tracking-widest text-emerald-500/60">0 Mapped</span>
+                            </div>
+                            <button onclick="startTask('cooker')" id="btn-cooker" class="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase tracking-widest rounded-lg transition-all shadow-lg shadow-emerald-500/20 active:scale-95">Process</button>
+                        </div>
+
+                        <!-- LOG CONSOLE -->
+                        <div id="cooker-console-box" class="mt-3 hidden animate-in slide-in-from-top-2 duration-300">
+                            <div class="bg-black/60 rounded-lg p-2 font-mono text-[7px] text-emerald-400/80 h-24 overflow-y-auto custom-scrollbar border border-white/5 whitespace-pre-wrap leading-relaxed" id="cooker-console">
+                                Synching cognitive modules...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card p-3 border border-white/5 flex flex-col justify-between">
+                        <h2 class="text-[10px] font-black text-slate-500 uppercase italic tracking-tighter mb-2">Auto-Curation</h2>
+                        <div class="flex items-center justify-between gap-4 bg-black/40 px-3 py-2 rounded-lg border border-white/5">
+                            <div class="flex-1">
+                                <input type="time" id="cooker-sched-time" class="w-full bg-transparent border-none text-base font-black text-white focus:outline-none" onchange="saveSchedule('cooker')">
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="cooker-sched-enable" class="sr-only peer" onchange="saveSchedule('cooker')">
+                                <div class="w-10 h-6 bg-white/5 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:top-[3px] after:left-[3px] after:bg-slate-600 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 peer-checked:after:bg-white after:content-[''] after:absolute"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border border-white/5 overflow-hidden">
+                    <div class="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
+                        <h3 class="text-[10px] font-black uppercase tracking-widest text-white/50">Cooked Entity Stream</h3>
+                        <div class="flex items-center gap-3">
+                            <span id="cooker-success" class="text-[8px] font-black uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20">0 Cooked</span>
+                            
+                            <!-- FILTERS -->
+                            <div class="flex items-center gap-2 bg-black/40 rounded-lg p-1 border border-white/5">
+                                <select onchange="updateFilters('method', this.value)" class="bg-transparent border-none text-[8px] font-black uppercase tracking-widest text-slate-500 focus:ring-0 cursor-pointer">
+                                    <option value="">METHOD: ALL</option>
+                                    <option value="auto">AUTO</option>
+                                    <option value="manual">MANUAL</option>
+                                </select>
+                                <div class="w-px h-3 bg-white/5"></div>
+                                <select onchange="updateFilters('status', this.value)" class="bg-transparent border-none text-[8px] font-black uppercase tracking-widest text-slate-500 focus:ring-0 cursor-pointer">
+                                    <option value="">STATUS: ALL</option>
+                                    <option value="1">VERIFIED</option>
+                                    <option value="0">PENDING</option>
+                                </select>
+                                <div class="w-px h-3 bg-white/5"></div>
+                                <select onchange="updateFilters('sort', this.value)" class="bg-transparent border-none text-[8px] font-black uppercase tracking-widest text-slate-500 focus:ring-0 cursor-pointer">
+                                    <option value="newest">SORT: NEWEST</option>
+                                    <option value="oldest">OLDEST</option>
+                                    <option value="title">TITLE</option>
+                                </select>
+                            </div>
+
+                            <button onclick="approveAllOnPage()" class="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all">Verify All</button>
+                            <div class="flex items-center gap-1.5 bg-black/40 rounded-lg p-1 border border-white/5">
+                                <button onclick="changePage('cooker', -1)" class="p-1.5 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                                </button>
+                                <span id="cooker-page-label" class="text-[9px] font-black font-mono px-1.5 text-slate-500">P.1</span>
+                                <button onclick="changePage('cooker', 1)" class="p-1.5 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-left">
+                            <thead class="bg-black/40 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                                <tr>
+                                    <th class="px-4 py-2.5">Time</th>
+                                    <th class="px-4 py-2.5">TMDB ID</th>
+                                    <th class="px-4 py-2.5">Poster</th>
+                                    <th class="px-4 py-2.5">Type</th>
+                                    <th class="px-4 py-2.5">S</th>
+                                    <th class="px-4 py-2.5">E</th>
+                                    <th class="px-4 py-2.5">Official Title</th>
+                                    <th class="px-4 py-3 text-[9px] font-black uppercase text-slate-600 tracking-widest">Source Entity</th>
+                                    <th class="px-4 py-2.5 text-right">Verify</th>
+                                </tr>
+                            </thead>
+                            <tbody id="body-cooker" class="divide-y divide-white/[0.02]"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentSection = 'miner';
+        let minerPage = 1;
+        let cookerPage = 1;
+        const PAGE_SIZE = 20;
+        let currentCookedUrls = [];
+        
+        let cookerMethod = "";
+        let cookerStatus = "";
+        let cookerSort = "newest";
+
+        async function init() {
+            await fetchSchedule();
+            await fetchStatus();
+            await refreshWorkspaceData();
+            
+            setInterval(refreshWorkspaceData, 10000);
+        }
+
+        function updateFilters(type, val) {
+            if (type === 'method') cookerMethod = val;
+            if (type === 'status') cookerStatus = val;
+            if (type === 'sort') cookerSort = val;
+            cookerPage = 1; // Reset to page 1
+            refreshWorkspaceData();
+        }
+
+        async function approveLink(url) {
+            try {
+                await fetch(`/api/monitor/approve?url=${encodeURIComponent(url)}`, { method: 'POST' });
+                refreshWorkspaceData();
+            } catch (e) { }
+        }
+
+        function changePage(section, delta) {
+            if (section === 'miner') {
+                minerPage = Math.max(1, minerPage + delta);
+                document.getElementById('miner-page-label').innerText = `P${minerPage}`;
+            } else {
+                cookerPage = Math.max(1, cookerPage + delta);
+                document.getElementById('cooker-page-label').innerText = `P${cookerPage}`;
+            }
+            refreshWorkspaceData();
+        }
+
+        async function approveAllOnPage() {
+            if (currentCookedUrls.length === 0) return;
+            try {
+                await fetch('/api/monitor/approve-bulk', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(currentCookedUrls)
+                });
+                refreshWorkspaceData();
+            } catch (e) { }
+        }
+
+        function switchMainTab(section) {
+            currentSection = section;
+            document.getElementById('workspace-miner').classList.toggle('hidden', section !== 'miner');
+            document.getElementById('workspace-cooker').classList.toggle('hidden', section !== 'cooker');
+            
+            document.getElementById('nav-miner').className = `w-full flex items-center gap-4 px-6 py-4 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all group ${section === 'miner' ? 'nav-item-active text-white' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`;
+            document.getElementById('nav-cooker').className = `w-full flex items-center gap-4 px-6 py-4 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all group ${section === 'cooker' ? 'nav-item-active text-white' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`;
+            
+            refreshWorkspaceData();
+        }
+
+        async function fetchSchedule() {
+            try {
+                const res = await fetch('/api/monitor/schedule');
+                const data = await res.json();
+                data.forEach(s => {
+                    const prefix = s.task_name;
+                    const enableEl = document.getElementById(`${prefix}-sched-enable`);
+                    const timeEl = document.getElementById(`${prefix}-sched-time`);
+                    if (enableEl) enableEl.checked = (s.enabled === 1 || s.enabled === true);
+                    if (timeEl) timeEl.value = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
+                });
+            } catch (e) { }
+        }
+
+        async function saveSchedule(task) {
+            const enabled = document.getElementById(`${task}-sched-enable`).checked;
+            const timeVal = document.getElementById(`${task}-sched-time`).value || "00:00";
+            const [hour, minute] = timeVal.split(':');
+            try {
+                await fetch(`/api/monitor/schedule/${task}?enabled=${enabled}&hour=${hour}&minute=${minute}`, { method: 'POST' });
+            } catch (e) { }
+        }
+
+        async function startTask(task) {
+            const btn = document.getElementById(`btn-${task}`);
+            const originalText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = 'Launching...';
+
+            const params = task === 'miner' 
+                ? `pages=${document.getElementById('miner-pages').value}`
+                : `limit=${document.getElementById('cooker-limit').value}`;
+            try {
+                await fetch(`/api/monitor/trigger/${task}?${params}`, { method: 'POST' });
+                // Immediately update status to show 'running'
+                setTimeout(fetchStatus, 500);
+            } catch (e) { 
+                btn.disabled = false;
+                btn.innerText = originalText;
+            }
+        }
+
+        let statusTimer = null;
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/monitor/status');
+                const json = await res.json();
+                
+                const stats = json.stats || {};
+                document.getElementById('stat-raw').innerText = stats.total_raw ?? 0;
+                document.getElementById('stat-cooked').innerText = stats.total_cooked ?? 0;
+                
+                let anyTaskRunning = false;
+                const taskData = json.data || [];
+                taskData.forEach(task => {
+                    const prefix = task.task_name;
+                    const statusEl = document.getElementById(`${prefix}-status`);
+                    const barEl = document.getElementById(`${prefix}-bar`);
+                    if (!statusEl) return;
+                    
+                    const isRunning = task.status === 'running';
+                    if (isRunning) anyTaskRunning = true;
+
+                    statusEl.innerText = task.status || 'READY';
+                    statusEl.className = `text-[9px] font-black uppercase mt-1 tracking-widest status-${task.status || 'idle'}`;
+                    document.getElementById(`${prefix}-percent`).innerText = task.progress || '0%';
+                    if (barEl) barEl.style.width = task.progress || '0%';
+                    document.getElementById(`${prefix}-item`).innerText = task.current_item || 'STANDBY FOR SIGNAL';
+                    document.getElementById(`${prefix}-success`).innerText = `${task.success_count ?? 0} ENTITIES ${prefix === 'miner' ? 'FOUND' : 'COOKED'}`;
+                    document.getElementById(`btn-${prefix}`).disabled = isRunning;
+
+                    // Log Console Update
+                    const consoleBox = document.getElementById(`${prefix}-console-box`);
+                    const consoleEl = document.getElementById(`${prefix}-console`);
+                    if (isRunning) {
+                        consoleBox.classList.remove('hidden');
+                        fetch(`/api/monitor/logs/${prefix}`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.logs) {
+                                    consoleEl.innerText = d.logs;
+                                    consoleEl.scrollTop = consoleEl.scrollHeight;
+                                }
+                            });
+                    }
+                });
+                
+                document.getElementById('last-update').innerText = `SYNC: ${new Date().toLocaleTimeString()}`;
+
+                // Adaptive polling: 1s if running, 5s if idle
+                clearTimeout(statusTimer);
+                statusTimer = setTimeout(fetchStatus, anyTaskRunning ? 1000 : 5000);
+            } catch (e) { 
+                statusTimer = setTimeout(fetchStatus, 5000);
+            }
+        }
+
+        async function refreshWorkspaceData() {
+            const page = (currentSection === 'miner') ? minerPage : cookerPage;
+            let endpoint = '';
+            
+            if (currentSection === 'miner') {
+                endpoint = `/api/monitor/recent-raw?page=${page}&page_size=${PAGE_SIZE}`;
+            } else {
+                endpoint = `/api/monitor/recent-cooked?page=${page}&page_size=${PAGE_SIZE}&sort=${cookerSort}`;
+                if (cookerMethod) endpoint += `&method=${cookerMethod}`;
+                if (cookerStatus !== "") endpoint += `&approved=${cookerStatus}`;
+            }
+            
+            try {
+                const res = await fetch(endpoint);
+                const data = await res.json();
+                const tbody = document.getElementById(`body-${currentSection}`);
+                tbody.innerHTML = '';
+                
+                if (data.length === 0 && page > 1) {
+                    changePage(currentSection, -1);
+                    return;
+                }
+
+                if (currentSection === 'cooker') currentCookedUrls = data.filter(i => !i.approved).map(i => i.url);
+
+                data.forEach(item => {
+                    const date = new Date(item.scraped_at * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second: '2-digit'});
+                    if (currentSection === 'miner') {
+                        const links = item.raw_links ? JSON.parse(item.raw_links) : [];
+                        const nodeName = item.node_url ? (item.node_url.split('/forums/')[1]?.split('/')[0] || 'FORUM') : 'SOURCE';
+                        
+                        tbody.innerHTML += `
+                            <tr class="hover:bg-white/[0.01] transition-colors group">
+                                <td class="px-4 py-2.5 text-slate-600 font-mono text-[9px] tabular-nums">${date}</td>
+                                <td class="px-4 py-2.5">
+                                    <div class="flex flex-col">
+                                        <span class="text-blue-500/60 text-[8px] font-black uppercase tracking-widest">${item.source}</span>
+                                        <span class="text-[7px] text-slate-700 font-bold uppercase tracking-widest">${nodeName}</span>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-2.5">
+                                    <div class="flex flex-col max-w-md">
+                                        <span class="font-bold text-slate-300 text-[10px] uppercase italic tracking-tight group-hover:text-blue-500 transition-colors truncate" title="${item.title}">${item.title}</span>
+                                        <a href="${item.thread_url}" target="_blank" class="text-[7px] text-slate-800 hover:text-blue-600 font-mono truncate mt-0.5">${item.thread_url}</a>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-2.5">
+                                    <div class="max-h-20 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 pr-2">
+                                        ${links.length > 0 ? links.map(l => `
+                                            <div class="flex items-center justify-between gap-1.5 group/link">
+                                                <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                                                    <div class="w-0.5 h-0.5 rounded-full bg-blue-500/20 group-hover/link:bg-blue-500"></div>
+                                                    <a href="${l}" target="_blank" class="text-[8px] font-mono text-slate-600 hover:text-blue-500 truncate">${l}</a>
+                                                </div>
+                                                <button onclick="manualCook('${l}', '${item.title.replace(/'/g, "\\'")}')" class="opacity-0 group-hover/link:opacity-100 px-2 py-0.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded text-[7px] font-black uppercase transition-all">Cook</button>
+                                            </div>
+                                        `).join('') : '<span class="text-[8px] text-slate-800 italic font-bold tracking-widest">NULL STEAM</span>'}
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    } else {
+                        const meta = item.metadata ? JSON.parse(item.metadata) : {};
+                        const poster = meta.poster_path ? `https://image.tmdb.org/t/p/w92${meta.poster_path}` : 'https://via.placeholder.com/40x60?text=?';
+                        const isTV = meta.media_type === 'tv';
+                        const season = isTV ? (meta.season || '01') : '--';
+                        let episode = '--';
+                        if (isTV) {
+                            if (meta.is_folder) {
+                                episode = meta.episode_range || (meta.episode ? `01-${meta.episode}` : 'FULL');
+                            } else {
+                                episode = meta.episode || '01';
+                            }
+                        }
+                        
+                        tbody.innerHTML += `
+                            <tr class="hover:bg-white/[0.01] transition-colors group" data-url="${item.url}">
+                                <td class="px-4 py-2.5 text-slate-600 font-mono text-[9px] tabular-nums">${date}</td>
+                                <td class="px-4 py-2.5 font-mono">
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" value="${item.tmdb_id}" 
+                                            class="bg-transparent border-none p-0 text-[8px] font-black text-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 rounded w-16 edit-id" 
+                                            onchange="updateLocalMeta(this, 'id')">
+                                    </div>
+                                </td>
+                                <td class="px-4 py-2.5">
+                                    <img src="${poster}" class="w-6 h-9 rounded object-cover border border-white/5 shadow-md" alt="p">
+                                </td>
+                                <td class="px-4 py-2.5">
+                                    <button onclick="toggleMediaType(this)" class="px-1.5 py-0.5 rounded bg-white/5 text-[7px] font-black uppercase tracking-widest transition-all edit-type ${meta.media_type === 'movie' ? 'text-amber-500 hover:bg-amber-500/10' : 'text-purple-500 hover:bg-purple-500/10'}" data-type="${meta.media_type || 'movie'}">
+                                        ${meta.media_type === 'movie' ? 'MOVIE' : 'TV'}
+                                    </button>
+                                </td>
+                                <td class="px-4 py-2.5 text-[9px] font-black text-slate-300 font-mono">${season}</td>
+                                <td class="px-4 py-2.5 text-[9px] font-black text-emerald-500 font-mono">${episode}</td>
+                                <td class="px-4 py-2.5">
+                                    <span class="text-[9px] font-black text-white uppercase italic tracking-tight truncate max-w-[150px] block" title="${meta.title || 'UNKNOWN'}">${meta.title || 'UNKNOWN'}</span>
+                                </td>
+                                <td class="px-4 py-2.5">
+                                    <div class="flex flex-col max-w-[200px]">
+                                        <div class="flex items-center gap-1.5 mb-0.5">
+                                            <span class="px-1 py-0.5 rounded-[4px] text-[6px] font-black uppercase tracking-[0.1em] ${item.cook_method === 'manual' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 'bg-white/5 text-slate-500'}">${item.cook_method || 'auto'}</span>
+                                            <a href="${item.url}" target="_blank" class="text-[8px] font-mono text-slate-500 hover:text-emerald-400 truncate flex-1">${item.url}</a>
+                                        </div>
+                                        <span class="text-[7px] text-slate-700 font-bold uppercase truncate">${item.title}</span>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-2.5 text-right">
+                                    <div class="flex items-center justify-end gap-2">
+                                        <button onclick="checkTMDB(this)" class="p-1 hover:bg-white/5 rounded text-slate-600 hover:text-blue-400 transition-colors btn-check" title="Fetch Metadata Preview">
+                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                        </button>
+                                        ${item.approved ? `
+                                            <div class="flex items-center gap-1 text-emerald-500">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                                <span class="text-[7px] font-black uppercase tracking-widest">VERIFIED</span>
+                                            </div>
+                                        ` : `
+                                            <button onclick="approveLink('${item.url}', this)" class="px-3 py-1 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-black border border-emerald-500/20 rounded-md text-[7px] font-black uppercase tracking-widest transition-all">Verify</button>
+                                        `}
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }
+                });
+            } catch (e) { }
+        }
+
+        init();
+        async function approveLink(url, btn) {
+            const row = btn?.closest('tr');
+            let params = `url=${url}`;
+            if (row) {
+                const id = row.querySelector('.edit-id').value;
+                const type = row.querySelector('.edit-type').dataset.type;
+                params += `&tmdb_id=${id}&media_type=${type}`;
+            }
+
+            try {
+                const resp = await fetch(`/api/monitor/approve?${params}`, { method: 'POST' });
+                if (resp.ok) fetchStatus();
+            } catch (e) { }
+        }
+
+        async function checkTMDB(btn) {
+            const row = btn.closest('tr');
+            const id = row.querySelector('.edit-id').value;
+            const type = row.querySelector('.edit-type').dataset.type;
+            const img = row.querySelector('img');
+            
+            btn.classList.add('animate-spin', 'text-blue-500');
+            try {
+                const resp = await fetch(`/api/monitor/preview-tmdb?tmdb_id=${id}&media_type=${type}`);
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    if (data.poster_path) {
+                        img.src = `https://image.tmdb.org/t/p/w92${data.poster_path}`;
+                    }
+                    // Update title in UI
+                    const titleSpan = row.querySelector('.truncate.text-[7px]');
+                    if (titleSpan) titleSpan.innerText = data.title;
+                }
+            } catch (e) { }
+            btn.classList.remove('animate-spin', 'text-blue-500');
+        }
+
+        function toggleMediaType(btn) {
+            const current = btn.dataset.type;
+            const next = current === 'movie' ? 'tv' : 'movie';
+            btn.dataset.type = next;
+            btn.innerText = next.toUpperCase();
+            btn.className = `px-1.5 py-0.5 rounded bg-white/5 text-[7px] font-black uppercase tracking-widest transition-all edit-type ${next === 'movie' ? 'text-amber-500 hover:bg-amber-500/10' : 'text-purple-500 hover:bg-purple-500/10'}`;
+        }
+
+        function updateLocalMeta(input, type) {
+            // Placeholder for now
+        }
+        // --- MANUAL COOK LOGIC ---
+        let currentCookingUrl = '';
+        let currentCookingTitle = '';
+
+        async function manualCook(url, title) {
+            currentCookingUrl = url;
+            currentCookingTitle = title;
+            
+            try {
+                const resp = await fetch(`/api/monitor/manual-cook?url=${encodeURIComponent(url)}&title=${encodeURIComponent(title)}`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Entity promoted to Cooker!', 'emerald');
+                } else if (data.status === 'require_manual') {
+                    openCookModal();
+                }
+            } catch (e) { showToast('Execution failed', 'red'); }
+        }
+
+        function cleanTitle(raw) {
+            if (!raw) return "";
+            let t = raw;
+            // Remove quality and technical tags
+            const noise = [
+                /\d{3,4}p/gi, /bluray/gi, /remux/gi, /web-dl/gi, /hdtv/gi, /mhd/gi, /x264/gi, /x265/gi, /hevc/gi,
+                /h\.264/gi, /h\.265/gi, /aac/gi, /dts/gi, /ac3/gi, /dd5\.1/gi,
+                /dsnp/gi, / nf/gi, /amzn/gi, / hbo /gi, /atvp/gi, /hmax/gi,
+                /internal/gi, /encoded/gi, /subtitle/gi, / thuyết minh/gi, / vietsub/gi, / lồng tiếng/gi,
+                /\[.*?\]/g, /\(.*?\)/g, /\|/g
+            ];
+            noise.forEach(r => t = t.replace(r, ""));
+            
+            // Handle "Title - Title" cases - prioritize English (no tone marks)
+            if (t.includes(' - ')) {
+                const parts = t.split(' - ').map(p => p.trim());
+                const vnRegex = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i;
+                
+                // If one part has NO Vietnamese marks, it's likely English, pick it.
+                const englishPart = parts.find(p => !vnRegex.test(p));
+                t = englishPart || parts[0]; 
+            }
+            
+            return t.trim().replace(/\s+/g, ' ');
+        }
+
+        function openCookModal() {
+            document.getElementById('modal-title').innerText = `Cooking: ${currentCookingTitle}`;
+            const idInput = document.getElementById('manual-id');
+            idInput.value = cleanTitle(currentCookingTitle); // Pre-fill with CLEAN name
+            
+            document.getElementById('cook-modal').classList.remove('hidden');
+            document.getElementById('cook-modal').classList.add('flex');
+            
+            updateManualPreview(); // Initial search
+        }
+
+        function closeCookModal() {
+            document.getElementById('cook-modal').classList.add('hidden');
+            document.getElementById('cook-modal').classList.remove('flex');
+        }
+
+        function selectMatch(id, type) {
+            const idInput = document.getElementById('manual-id');
+            idInput.value = `https://www.themoviedb.org/${type}/${id}`;
+            updateManualPreview();
+        }
+
+        async function updateManualPreview() {
+            let id = document.getElementById('manual-id').value.trim();
+            const previewEl = document.getElementById('manual-preview');
+            
+            let type = 'movie';
+            let parsedId = id;
+            let isSearch = false;
+
+            if (id.includes('themoviedb.org')) {
+                const movieMatch = id.match(/\/movie\/(\d+)/);
+                const tvMatch = id.match(/\/tv\/(\d+)/);
+                if (movieMatch) { parsedId = movieMatch[1]; type = 'movie'; }
+                else if (tvMatch) { parsedId = tvMatch[1]; type = 'tv'; }
+            } else if (!/^\d+$/.test(id)) {
+                isSearch = true;
+            }
+
+            if (!id || id.length < 2) {
+                previewEl.classList.add('hidden');
+                return;
+            }
+
+            if (isSearch) {
+                try {
+                    const resp = await fetch(`/api/monitor/search-tmdb?q=${encodeURIComponent(id)}`);
+                    const data = await resp.json();
+                    if (data.status === 'success' && data.results.length > 0) {
+                        previewEl.innerHTML = `
+                            <div class="flex flex-col gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                                ${data.results.map(r => `
+                                    <div onclick="selectMatch('${r.id}', '${r.type}')" class="flex items-center gap-3 p-2 bg-white/5 hover:bg-blue-500/10 rounded-xl border border-white/5 hover:border-blue-500/30 cursor-pointer transition-all group">
+                                        <img src="https://image.tmdb.org/t/p/w92${r.poster}" class="w-8 h-11 rounded object-cover shadow-lg">
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-[9px] font-black text-white uppercase italic group-hover:text-blue-400 truncate">${r.title}</p>
+                                            <p class="text-[7px] font-bold text-slate-500 uppercase tracking-widest">${r.type} • ${r.date || 'Unknown'}</p>
+                                        </div>
+                                        <div class="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7"/></svg>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                        previewEl.classList.remove('hidden');
+                    } else {
+                        previewEl.innerHTML = '<p class="text-[8px] text-slate-600 uppercase font-black tracking-widest p-2">No matching results found</p>';
+                        previewEl.classList.remove('hidden');
+                    }
+                } catch (e) { previewEl.classList.add('hidden'); }
+                return;
+            }
+
+            try {
+                const resp = await fetch(`/api/monitor/preview-tmdb?tmdb_id=${parsedId}&media_type=${type}`);
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    previewEl.innerHTML = `
+                        <div class="flex items-center gap-3 p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 animate-in fade-in zoom-in-95">
+                            <img src="https://image.tmdb.org/t/p/w92${data.poster_path}" class="w-10 h-14 rounded object-cover shadow-lg">
+                            <div>
+                                <p class="text-[10px] font-black text-white uppercase italic">${data.title}</p>
+                                <p class="text-[7px] font-bold text-slate-500 uppercase tracking-widest">${type} • ${data.release_date}</p>
+                            </div>
+                            <div class="ml-auto bg-emerald-500/20 p-1.5 rounded-full">
+                                <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            </div>
+                        </div>
+                    `;
+                    previewEl.classList.remove('hidden');
+                } else {
+                    previewEl.classList.add('hidden');
+                }
+            } catch (e) { previewEl.classList.add('hidden'); }
+        }
+
+        async function submitManualCook() {
+            const idEl = document.getElementById('manual-id');
+            const sEl = document.getElementById('manual-s');
+            const eEl = document.getElementById('manual-e');
+
+            if (!idEl) {
+                console.error("[ERROR] Missing manual-id element!");
+                return showToast("UI Error: Manual ID input not found", "red");
+            }
+
+            let id = idEl.value.trim();
+            let type = 'movie'; 
+            const s = sEl ? sEl.value : '';
+            const e = eEl ? eEl.value : '';
+
+            // URL Parsing
+            if (id.includes('themoviedb.org')) {
+                const movieMatch = id.match(/\/movie\/(\d+)/);
+                const tvMatch = id.match(/\/tv\/(\d+)/);
+                if (movieMatch) {
+                    id = movieMatch[1];
+                    type = 'movie';
+                } else if (tvMatch) {
+                    id = tvMatch[1];
+                    type = 'tv';
+                }
+            }
+
+            if (!id) return showToast('TMDB ID or URL is required', 'amber');
+
+            try {
+                const resp = await fetch(`/api/monitor/manual-cook?url=${encodeURIComponent(currentCookingUrl)}&title=${encodeURIComponent(currentCookingTitle)}&tmdb_id=${id}&media_type=${type}&season=${s}&episode=${e}`, { method: 'POST' });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast('Successfully promoted!', 'emerald');
+                    closeCookModal();
+                    fetchStatus();
+                    refreshWorkspaceData();
+                } else {
+                    showToast(data.message || 'Cooking failed', 'red');
+                }
+            } catch (err) { 
+                console.error("[FATAL]", err);
+                showToast('Fatal processing error', 'red'); 
+            }
+        }
+
+        function showToast(msg, color) {
+            // Simple notification logic if needed, or just console
+            console.log(`[LOG] ${msg}`);
+        }
+    </script>
+
+    <!-- MANUAL COOK MODAL -->
+    <div id="cook-modal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4 modal-overlay">
+        <div class="modal-card w-full max-w-md rounded-2xl p-6 animate-in zoom-in-95 duration-200">
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <h3 class="text-white font-black uppercase italic tracking-tighter text-lg leading-tight">Manual Ingestion</h3>
+                    <p id="modal-title" class="text-[9px] font-bold text-slate-500 uppercase mt-1 truncate max-w-[300px]">Promoting Raw Discovery</p>
+                </div>
+                <button onclick="closeCookModal()" class="text-slate-600 hover:text-white transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div class="space-y-1.5">
+                    <label class="text-[8px] font-black uppercase text-slate-600 tracking-widest">TheMovieDB URL or ID</label>
+                    <input type="text" id="manual-id" oninput="updateManualPreview()" placeholder="Paste link (e.g., https://www.themoviedb.org/movie/...) or ID" class="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-blue-500 placeholder:text-slate-800">
+                </div>
+
+                <!-- PREVIEW SLOT -->
+                <div id="manual-preview" class="hidden"></div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-1.5">
+                        <label class="text-[8px] font-black uppercase text-slate-600 tracking-widest text-slate-500">Season (Optional)</label>
+                        <input type="text" id="manual-s" placeholder="01" class="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div class="space-y-1.5">
+                        <label class="text-[8px] font-black uppercase text-slate-600 tracking-widest text-slate-500">Episode (Optional)</label>
+                        <input type="text" id="manual-e" placeholder="01" class="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs font-bold text-white focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="pt-4 flex gap-3 text-[10px] font-black uppercase tracking-widest">
+                    <button onclick="closeCookModal()" class="flex-1 px-6 py-4 bg-white/5 hover:bg-white/10 text-slate-400 rounded-2xl transition-all">Cancel</button>
+                    <button onclick="submitManualCook()" class="flex-1 px-6 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl transition-all shadow-xl shadow-blue-500/20">Ingest to Cooker</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
