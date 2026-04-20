@@ -96,19 +96,55 @@ async def get_recent_cooked(page: int = 1, page_size: int = 20, method: str = No
             
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         
-        order_sql = "ORDER BY scraped_at DESC"
-        if sort == "oldest": order_sql = "ORDER BY scraped_at ASC"
+        order_sql = "ORDER BY max_scraped_at DESC"
+        if sort == "oldest": order_sql = "ORDER BY max_scraped_at ASC"
         elif sort == "title": order_sql = "ORDER BY title ASC"
 
+        # Group by TMDB ID but keep NULLs separate
+        query = f"""
+            SELECT 
+                tmdb_id,
+                GROUP_CONCAT(url, '|') as urls,
+                GROUP_CONCAT(title, '|') as titles,
+                metadata,
+                approved,
+                cook_method,
+                MAX(scraped_at) as max_scraped_at
+            FROM fshare_links
+            {where_sql}
+            GROUP BY COALESCE(tmdb_id, url)
+            {order_sql}
+            LIMIT ? OFFSET ?
+        """
+        
         cursor_factory = {"cursor_factory": DictCursor} if not isinstance(conn, sqlite3.Connection) else {}
         with conn:
             cursor = conn.cursor(**cursor_factory)
-            query = f"SELECT * FROM fshare_links {where_sql} {order_sql} LIMIT ? OFFSET ?"
-            q_params = params + [page_size, offset]
-            
-            # Adjust placeholder for non-sqlite if needed (but currently we use sqlite)
-            cursor.execute(query, q_params)
-            return [dict(r) for r in cursor.fetchall()]
+            cursor.execute(query, params + [page_size, offset])
+            results = []
+            for r in cursor.fetchall():
+                item = dict(r)
+                # Parse concatenated fields
+                item['urls'] = item['urls'].split('|')
+                # Use the first title
+                item['title'] = item['titles'].split('|')[0]
+                item['scraped_at'] = item['max_scraped_at']
+                results.append(item)
+            return results
+    except Exception as e: 
+        print(f"[ERR] {e}")
+        return []
+    finally: conn.close()
+
+@router.get("/cooked-urls")
+async def get_all_cooked_urls():
+    conn = get_db_conn()
+    if not conn: return []
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT url FROM fshare_links")
+            return [r[0] for r in cursor.fetchall()]
     except Exception: return []
     finally: conn.close()
             
@@ -197,15 +233,18 @@ async def preview_tmdb(tmdb_id: str, media_type: str):
         except Exception as e: return {"status": "error", "message": str(e)}
 
 @router.get("/search-tmdb")
-async def search_tmdb(q: str):
+async def search_tmdb(q: str, y: str = None):
     import httpx
     TMDB_API_KEY = os.getenv("TMDB_KEY", "1c821e175c07645a12d003cc8d42d454")
     
     results = []
     async with httpx.AsyncClient() as client:
         try:
+            year_query = f"&primary_release_year={y}" if y and y.isdigit() else ""
+            tv_year_query = f"&first_air_date_year={y}" if y and y.isdigit() else ""
+            
             # Search Movie
-            m_resp = await client.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={q}&language=vi")
+            m_resp = await client.get(f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={q}&language=vi{year_query}")
             if m_resp.status_code == 200:
                 for r in m_resp.json().get("results", [])[:5]:
                     results.append({
@@ -214,7 +253,7 @@ async def search_tmdb(q: str):
                     })
             
             # Search TV
-            t_resp = await client.get(f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={q}&language=vi")
+            t_resp = await client.get(f"https://api.themoviedb.org/3/search/tv?api_key={TMDB_API_KEY}&query={q}&language=vi{tv_year_query}")
             if t_resp.status_code == 200:
                 for r in t_resp.json().get("results", [])[:5]:
                     results.append({
@@ -241,17 +280,11 @@ async def manual_cook(title: str, url: str, tmdb_id: str = None, media_type: str
                     "poster_path": info["poster_path"], "release_date": info["release_date"],
                     "season": season or "01", "episode": episode or "01"
                 }
-                # Upsert into cooked table with cook_method='manual'
+                # Insert or ignore to avoid duplicates for the same link
                 cursor.execute("""
-                    INSERT INTO fshare_links 
+                    INSERT OR IGNORE INTO fshare_links 
                     (url, title, tmdb_id, metadata, approved, cook_method) 
                     VALUES (?,?,?,?,?,?)
-                    ON CONFLICT(url) DO UPDATE SET
-                        title=excluded.title,
-                        tmdb_id=excluded.tmdb_id,
-                        metadata=excluded.metadata,
-                        approved=excluded.approved,
-                        cook_method=excluded.cook_method
                 """, (url, info["title"], tmdb_id, json.dumps(meta), 0, 'manual'))
                 conn.commit()
                 return {"status": "success", "mode": "manual"}
