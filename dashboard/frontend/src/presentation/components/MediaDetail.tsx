@@ -109,25 +109,41 @@ const DetailContent = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
             <div className="lg:col-span-8 space-y-6">
               <MediaStreamer ref={playerRef} />
+              {mediaType === 'tv' && <TVGallery />}
               <MediaInfo />
-              <DiscoveryPipeline
-                key={slug}
-                tmdbId={Number(media?.id || 0)}
-                title={media?.title || ''}
-                localizeTitle={media?.originTitle}
-                year={media?.year}
-                mediaType={mediaType}
-                initialSeason={mediaType === 'tv' ? initialSeason : undefined}
-                initialEpisode={mediaType === 'tv' ? initialEpisode : undefined}
-                onStreamingReady={handleStreamingReady}
-              />
+              {mediaType !== 'tv' && (
+                <DiscoveryPipeline
+                  key={slug}
+                  tmdbId={Number(media?.id || 0)}
+                  title={media?.title || ''}
+                  localizeTitle={media?.originTitle}
+                  year={media?.year}
+                  mediaType={mediaType}
+                  onStreamingReady={handleStreamingReady}
+                />
+              )}
             </div>
 
             <div className="lg:col-span-4 sticky top-24 self-start min-h-0" style={playerHeight ? { height: playerHeight, minHeight: playerHeight, maxHeight: playerHeight } : undefined}>
               <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-3xl shadow-3xl flex flex-col h-full min-h-0 overflow-hidden">
                 <NowPlayingHeader />
-                <div className="flex-1 min-h-0 overflow-hidden rounded-b-3xl">
-                  {mediaType === 'tv' ? <TVGallery /> : <MovieGallery />}
+                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar rounded-b-3xl">
+                  {mediaType === 'tv' ? (
+                    <div className="p-4">
+                      <DiscoveryPipeline
+                        key={slug}
+                        tmdbId={Number(media?.id || 0)}
+                        title={media?.title || ''}
+                        localizeTitle={media?.originTitle}
+                        year={media?.year}
+                        mediaType={mediaType}
+                        initialSeason={initialSeason}
+                        initialEpisode={initialEpisode}
+                        onStreamingReady={handleStreamingReady}
+                        compact={true}
+                      />
+                    </div>
+                  ) : <MovieGallery />}
                 </div>
               </div>
             </div>

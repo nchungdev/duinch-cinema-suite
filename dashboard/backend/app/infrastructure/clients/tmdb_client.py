@@ -97,6 +97,38 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
         print(f"TMDB detail fetch error: {e}")
         return None
 
+async def fetch_tmdb_season(client: httpx.AsyncClient, tmdb_id: int, season_number: int) -> Optional[Dict[str, Any]]:
+    """Fetch detail for a specific season including episodes."""
+    headers = {"Authorization": f"Bearer {config.TMDB_READ_ACCESS_TOKEN}", "accept": "application/json"}
+    try:
+        url = f"https://api.themoviedb.org/3/tv/{tmdb_id}/season/{season_number}?language=vi-VN"
+        resp = await client.get(url, headers=headers)
+        if resp.status_code != 200: return None
+        data = resp.json()
+        
+        episodes = []
+        for ep in data.get("episodes", []):
+            episodes.append({
+                "id": ep.get("id"),
+                "episode_number": ep.get("episode_number"),
+                "name": ep.get("name"),
+                "overview": ep.get("overview"),
+                "still_path": f"https://image.tmdb.org/t/p/w300{ep.get('still_path')}" if ep.get("still_path") else None,
+                "air_date": ep.get("air_date"),
+                "vote_average": ep.get("vote_average")
+            })
+            
+        return {
+            "season_number": data.get("season_number"),
+            "name": data.get("name"),
+            "overview": data.get("overview"),
+            "poster_path": f"https://image.tmdb.org/t/p/w500{data.get('poster_path')}" if data.get('poster_path') else None,
+            "episodes": episodes
+        }
+    except Exception as e:
+        print(f"TMDB season fetch error: {e}")
+        return None
+
 async def get_tmdb_alternative_titles(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> List[str]:
     """Fetch all alternative titles for a movie or TV show from TMDB."""
     if not config.TMDB_READ_ACCESS_TOKEN: return []

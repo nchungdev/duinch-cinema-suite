@@ -37,3 +37,11 @@ async def tv_detail(request: Request, tmdb_id: str):
     if not data:
         raise HTTPException(status_code=404, detail="TV show not found")
     return {"data": {"metadata": data, "local": {"exists": False}}, "error_code": 0, "error_msg": ""}
+@router.get("/tv/{tmdb_id}/season/{season_number}")
+async def tv_season_detail(request: Request, tmdb_id: int, season_number: int):
+    """Fetch season details from TMDB."""
+    client = request.app.state.http_client
+    data = await tmdb_client.fetch_tmdb_season(client, tmdb_id, season_number)
+    if not data:
+        raise HTTPException(status_code=404, detail="Season not found")
+    return {"data": data, "error_code": 0, "error_msg": ""}

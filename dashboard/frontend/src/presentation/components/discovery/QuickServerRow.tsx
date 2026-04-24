@@ -9,10 +9,11 @@ interface QuickServerRowProps {
   color?: string; 
   cloudTargets: CloudTarget[];
   sourceBadge?: string | null;
+  compact?: boolean;
 }
 
 export const QuickServerRow: React.FC<QuickServerRowProps> = ({ 
-  serverName, episodes, color = 'text-orange-400', cloudTargets, sourceBadge 
+  serverName, episodes, color = 'text-orange-400', cloudTargets, sourceBadge, compact 
 }) => {
   const [open,     setOpen]     = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -153,6 +154,7 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
           <CloudButtons 
             targets={cloudTargets}
             count={selectMode ? selected.size : undefined}
+            compact={compact}
             onDeviceAction={() => {}}
             onCloudAction={(target) => {
                 alert(`Gửi ${selected.size || 1} tập tới ${target.label}`);
@@ -182,7 +184,7 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
                 ref={gridRef}
                 tabIndex={0}
                 onKeyDown={handleGridKeyDown}
-                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 outline-none"
+                className={`grid ${compact ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4'} gap-1.5 outline-none`}
               >
                 {group.items.map(({ ep, index }) => {
                   const isSelected = selected.has(index);
