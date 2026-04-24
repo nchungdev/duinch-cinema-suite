@@ -26,7 +26,7 @@ scheduler = BackgroundScheduler()
 
 def run_worker_task(script_name, args):
     """Run miner/cooker script from scheduler."""
-    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), script_name)
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), script_name)
     print(f"[SCHEDULER] 🚀 Auto-starting task: {script_name} with args {args}")
     subprocess.Popen(["bash", script_path] + args, start_new_session=True)
 

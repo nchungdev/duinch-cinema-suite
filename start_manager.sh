@@ -5,7 +5,7 @@
 
 # Lấy đường dẫn tuyệt đối của project root
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-MANAGER_DIR="$PROJECT_ROOT/manager"
+MANAGER_DIR="$PROJECT_ROOT/crawler/manager"
 VENV_DIR="$MANAGER_DIR/venv"
 
 # Luôn cd vào đúng thư mục manager

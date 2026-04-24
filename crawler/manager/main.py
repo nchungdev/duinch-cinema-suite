@@ -5,7 +5,7 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 from stats import get_pipeline_stats
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def run_miner(pages=1):
     print(f"\n[MANAGER] ⛏️ Starting Miner...")

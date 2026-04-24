@@ -152,7 +152,7 @@ async def get_all_cooked_urls():
 async def trigger_task(task: str, pages: int = 1, limit: int = 100):
     script = "start_miner.sh" if task == "miner" else "start_cooker.sh"
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(current_dir, "../../../.."))
+    project_root = os.path.abspath(os.path.join(current_dir, "../../../../.."))
     
     script_path = os.path.join(project_root, script)
     
@@ -173,7 +173,7 @@ async def trigger_task(task: str, pages: int = 1, limit: int = 100):
 @router.get("/logs/{task}")
 async def get_task_logs(task: str):
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(current_dir, "../../../.."))
+    project_root = os.path.abspath(os.path.join(current_dir, "../../../../.."))
     log_file = os.path.join(project_root, "data", "logs", f"{task}.log")
     
     if not os.path.exists(log_file):
