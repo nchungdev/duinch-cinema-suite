@@ -123,7 +123,6 @@ export const DiscoveryPipeline = ({
               for (const group of items) {
                 const srv = group.server || source;
                 if (!existing[srv]) existing[srv] = [];
-                // Combine and deduplicate episodes
                 const mergedEps = [...existing[srv], ...(group.episodes ?? []).map((ep: any) => ({ ...ep, source }))];
                 const seenEps = new Set();
                 existing[srv] = mergedEps.filter(e => {
@@ -137,17 +136,24 @@ export const DiscoveryPipeline = ({
               return next;
             });
 
-            if (!streamingNotifiedRef.current.has(source)) {
-              streamingNotifiedRef.current.add(source);
-              const flat = items.flatMap((g: any) =>
+            // LOG: Discovery Engine Raw Output
+            items.forEach((group: any) => {
+                group.episodes?.forEach((ep: any) => {
+                    console.log(`%c[1. Discovery Engine] Found Ep: ${ep.name} | Server: ${group.server} | Link: ${ep.link_m3u8 || ep.link_embed}`, "color: #ec4899");
+                });
+            });
+
+            const flat = items.flatMap((g: any) =>
                 (g.episodes ?? []).map((ep: StreamingEpisode) => ({ 
-                  ...ep, 
-                  server: g.server, 
-                  source_type, 
-                  source 
+                    ...ep, 
+                    server: g.server, 
+                    source_type: 'm3u8', 
+                    source 
                 }))
-              );
-              onStreamingReady?.(flat, source);
+            );
+            
+            if (flat.length > 0) {
+                onStreamingReady?.(flat, source);
             }
           } else {
             setDownloadableByType(prev => {

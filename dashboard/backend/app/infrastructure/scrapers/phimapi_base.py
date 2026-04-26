@@ -128,16 +128,46 @@ class PhimAPIBase:
         s_year = int(item.get("year") or 0)
         series_start = tmdb_info.series_year or year or 0
         all_y = [series_start] + list(tmdb_info.season_years.values())
+
         if s_year > 0 and series_start > 0:
             if media_type == "movie":
                 if abs(s_year - series_start) > 1: return -3000
                 score += 600
             else:
-                if any(abs(s_year - y) <= 1 for y in all_y if y > 0): score += 500
-                elif s_year >= series_start: score += 200
-                else: return -3000
+                diff_to_start = abs(s_year - series_start)
 
-        # 3. SEASON NUMBER
+                # Strict season-year check: if TMDB tells us the exact year for the
+                # requested season, enforce it — even if TMDB IDs matched (providers
+                # sometimes mis-tag Live Action with the anime's TMDB ID).
+                season_year_for_req = tmdb_info.season_years.get(requested_season, 0)
+                if season_year_for_req > 0:
+                    if abs(s_year - season_year_for_req) > 2:
+                        return -4000  # Year doesn't match this season → hard reject
+                    score += 600
+                else:
+                    # Fallback: loose year heuristics when season year is unknown
+                    if requested_season == 1 and diff_to_start > 2:
+                        matches_any_season = any(abs(s_year - y) <= 1 for y in all_y if y > 0)
+                        if not matches_any_season:
+                            return -4000
+                        else:
+                            score -= 1000
+
+                    if any(abs(s_year - y) <= 1 for y in all_y if y > 0):
+                        score += 500
+                    elif s_year >= series_start:
+                        score += 100
+                    else:
+                        return -3000
+
+        # 3. IDENTITY GUARD (Keyword exclusion)
+        is_live_action_result = "live action" in n_name or "live action" in n_origin
+        is_searching_live_action = "live action" in query.lower()
+        
+        if is_live_action_result and not is_searching_live_action:
+            return -5000 # Hard reject: Live action link in Anime search
+            
+        # 4. SEASON NUMBER
         found_s = self._detect_season(item.get("name", ""), item.get("origin_name", ""), s_year, tmdb_info)
         if found_s:
             if found_s == requested_season: score += 500

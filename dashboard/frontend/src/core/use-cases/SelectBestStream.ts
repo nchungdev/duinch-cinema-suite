@@ -19,7 +19,8 @@ export class SelectBestStream {
   execute(
     streamableSources: Record<string, Record<string, any[]>>,
     preferredSource: string = 'auto',
-    currentType?: string
+    currentType?: string,
+    currentProvider?: string
   ): StreamSelectionResult | null {
     if (Object.keys(streamableSources).length === 0) return null;
 
@@ -34,7 +35,12 @@ export class SelectBestStream {
       }
     }
 
-    // 2. Nếu đã có type đang chọn, ưu tiên tìm provider trong type đó
+    // 2. ƯU TIÊN: Nếu đang có type và provider đang chọn, hãy giữ nguyên nó
+    if (currentType && currentProvider && streamableSources[currentType]?.[currentProvider]) {
+        return { type: currentType, provider: currentProvider };
+    }
+
+    // 3. Nếu đã có type đang chọn, ưu tiên tìm provider trong type đó
     if (currentType && streamableSources[currentType]) {
       const providers = Object.keys(streamableSources[currentType]);
       if (providers.length > 0) {

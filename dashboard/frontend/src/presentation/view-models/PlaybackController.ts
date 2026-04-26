@@ -64,15 +64,19 @@ export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('error', onError);
 
+    // Route the m3u8 through the backend proxy to strip ads / tracker tags
+    const proxiedUrl = `/api/proxy/m3u8?url=${encodeURIComponent(activeEmbed)}`;
+
     // Initialize HLS or Native Player
     if (Hls.isSupported()) {
       if (hlsRef.current) hlsRef.current.destroy();
-      const hls = new Hls();
+      const hls = new Hls({ enableWorker: true });
       hls.on(Hls.Events.MANIFEST_PARSED, () => attemptAutoplay(video));
-      hls.loadSource(activeEmbed);
+      hls.loadSource(proxiedUrl);
       hls.attachMedia(video);
       hlsRef.current = hls;
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS — proxy via fetch is not feasible; fall back to direct URL
       video.src = activeEmbed;
       video.load();
       attemptAutoplay(video);

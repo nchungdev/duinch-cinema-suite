@@ -65,8 +65,21 @@ class DiscoveryUseCase:
             final_results = []
             if source_type == "m3u8":
                 internal_groups = {}
+                series_start = tmdb_info.series_year if tmdb_info else (int(year) if year else 0)
+                is_anime_search = series_start > 0 and series_start < 2010
+
                 for r in results:
-                    m_name, srv = r.movie_name or "Movie", r.server or "Server"
+                    m_name, srv = (r.movie_name or "Movie").lower(), (r.server or "Server")
+                    
+                    # 1. Year Guard: Prevent 2023 matching 1999
+                    r_year = int(getattr(r, 'year', 0) or 0)
+                    if r_year > 0 and series_start > 0 and abs(r_year - series_start) > 2:
+                        continue
+                    
+                    # 2. Keyword Guard: Prevent 'Live Action' leaking into Anime search
+                    if is_anime_search and "live action" in m_name:
+                        continue
+
                     m3u8 = r.m3u8 or ""
                     domain_match = re.search(r'https?://([^/]+)', m3u8)
                     domain = domain_match.group(1) if domain_match else "unknown"

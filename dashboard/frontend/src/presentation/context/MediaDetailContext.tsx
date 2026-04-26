@@ -101,7 +101,9 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     const fetchData = async () => {
         setMedia(null);
         setLoading(true);
-        setStreamableSources({});
+        setStreamableSources({}); // Clear discovery data
+        setActiveType('');        // Clear selection
+        setActiveProvider('');    // Clear selection
         setActiveEmbed(null);
         setStreamingLinks([]);
         setPlaybackState('stopped');
