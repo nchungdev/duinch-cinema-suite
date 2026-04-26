@@ -8,23 +8,41 @@ export const api = axios.create({
 const getDeviceId = () => {
   let id = localStorage.getItem('omv_device_id');
   if (!id) {
-    id = crypto.randomUUID();
+    id = Math.random().toString(36).substring(2, 15);
     localStorage.setItem('omv_device_id', id);
   }
   return id;
 };
 
+// Request Interceptor
 api.interceptors.request.use((config) => {
   config.headers['X-Device-ID'] = getDeviceId();
   return config;
 });
 
+// Response Interceptor - Crucial for backward compatibility with standardized API
+api.interceptors.response.use(
+  (response) => {
+    const { data } = response;
+    // Handle standardized wrapper: { error_code, error_message, server_time, data }
+    if (data && typeof data === 'object' && 'error_code' in data && 'data' in data) {
+      if (data.error_code !== 0) {
+        return Promise.reject(new Error(data.error_message || 'API Error'));
+      }
+      // Unwrap the actual payload
+      return { ...response, data: data.data };
+    }
+    return response;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export const getProxiedImageUrl = (url?: string) => {
   if (!url) return '';
-  if (url.startsWith('http')) {
-    return `${api.defaults.baseURL}/proxy/image?url=${encodeURIComponent(url)}`;
-  }
-  return url;
+  // Always proxy to handle relative TMDB paths and bypass CORS
+  return `${api.defaults.baseURL}/proxy/image?url=${encodeURIComponent(url)}`;
 };
 
 export interface MediaLink {
@@ -32,59 +50,20 @@ export interface MediaLink {
   name?: string;
   quality?: string;
   size?: number;
-  seeders?: number;
-  leechers?: number;
   source?: string;
-  is_folder?: boolean;
-  updated_at?: string | number;
-}
-
-export interface StreamingEpisode {
-  name: string;
-  m3u8?: string;
-  link_m3u8?: string;
-  link_hls?: string;
-  embed?: string;
-  link_embed?: string;
-  magnet?: string;
-  url?: string;
-  link?: string;
-  source_type?: string;
-  stream_type?: string;
   provider?: string;
-  server?: string;
-  season?: number | string;
-  episode?: number | string;
-  isTorrent?: boolean;
-  scraper?: string;
+  stream_type?: string;
 }
 
 export interface StreamingServer {
   server_name: string;
-  server_data: StreamingEpisode[];
+  server_data: any[];
 }
 
-export type StreamableSources = Record<string, Record<string, StreamingServer[]>>;
-
-export interface MovieMetadata {
-  title: string;
-  origin_name?: string;
-  year: string;
-  tmdb_id?: number;
-  poster: string;
-  thumb_url?: string;
-  content?: string;
-  quality?: string;
-  lang?: string;
-  time?: string;
-  category: { name: string }[];
-  actor: string[];
-  director: string[];
-  tmdb_seasons?: any[];
-  poster_url?: string;
-  overview?: string;
-  id?: string | number;
-  media_type?: string;
+export interface StreamableSources {
+  [type: string]: {
+    [provider: string]: StreamingServer[];
+  };
 }
 
 export interface MediaItem {

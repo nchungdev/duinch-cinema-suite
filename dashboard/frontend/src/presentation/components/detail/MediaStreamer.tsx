@@ -10,28 +10,10 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     
     const { 
         activeEmbed, activeType, activeProvider,
-        isPlayerReady, playerError, slug, mediaType, activeEpisodeIdx,
-        setActiveEmbed, setActiveType
+        isPlayerReady, playerError, slug, mediaType, activeEpisodeIdx
     } = useMediaDetail();
     
     usePlaybackController(videoRef);
-
-    // Auto-detect direct m3u8 inside embed links (e.g. Phimapi/KKPhim player)
-    useEffect(() => {
-        if (activeEmbed && activeType === 'EMBED') {
-            try {
-                const url = new URL(activeEmbed);
-                const directUrl = url.searchParams.get('url');
-                if (directUrl && (directUrl.includes('.m3u8') || directUrl.includes('.mp4'))) {
-                    console.log("[Streamer] ⚡ Direct stream detected inside embed, upgrading to HLS mode.");
-                    setActiveEmbed(directUrl);
-                    setActiveType('HLS');
-                }
-            } catch (e) {
-                // Not a valid URL or other error, ignore and stay in embed mode
-            }
-        }
-    }, [activeEmbed, activeType, setActiveEmbed, setActiveType]);
 
     // Definite Switch based on stream type
     const isEmbedMode = activeType !== 'HLS';

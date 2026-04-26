@@ -18,7 +18,6 @@ interface DiscoveryPipelineProps {
   initialSeason?: number;
   initialEpisode?: number;
   onStreamingReady?: (links: any[], source: string) => void;
-  compact?: boolean;
 }
 
 const DISCOVERY_SOURCES = [
@@ -55,7 +54,7 @@ const toKey = (st: string, src: string): LoadingKey => `${st}:${src}` as Loading
 const ALL_KEYS: LoadingKey[] = DISCOVERY_SOURCES.map(d => toKey(d.source_type, d.source));
 
 export const DiscoveryPipeline = ({
-  tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady, compact
+  tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady,
 }: DiscoveryPipelineProps) => {
   const cloudTargets = useCloudViewModel();
 
@@ -215,11 +214,11 @@ export const DiscoveryPipeline = ({
   }
 
   return (
-    <div className={`${compact ? 'p-4 rounded-2xl' : 'p-6 rounded-[2.5rem]'} glass-dark border border-blue-500/10 space-y-4 relative overflow-hidden shadow-xl`}>
-      <div className={`flex items-center justify-between border-b border-white/5 pb-4 px-2 ${compact ? 'flex-col gap-3 items-start' : ''}`}>
+    <div className="glass-dark p-6 rounded-[2.5rem] border border-blue-500/10 space-y-4 relative overflow-hidden shadow-xl">
+      <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
         <div className="flex items-center gap-3">
           <Activity className={`w-4 h-4 ${loadingKeys.size > 0 ? 'text-blue-500 animate-pulse' : 'text-blue-500/60'}`} />
-          <h3 className={`${compact ? 'text-[10px]' : 'text-xs'} font-black uppercase italic tracking-wider font-outfit text-gray-300`}>Discovery Engine</h3>
+          <h3 className="text-xs font-black uppercase italic tracking-wider font-outfit text-gray-300">Discovery Engine</h3>
           
           <button 
             onClick={() => fetchSources(true)}
@@ -230,30 +229,28 @@ export const DiscoveryPipeline = ({
             <RefreshCw className={`w-3 h-3 text-gray-500 group-hover:text-blue-400 transition-colors ${isForceRefreshing ? 'animate-spin text-blue-500' : ''}`} />
           </button>
         </div>
-        {!compact && (
-          <div className="flex items-center gap-1 flex-wrap justify-end max-w-[120px]">
-            {ALL_KEYS.map(key => (
-              <div key={key} title={key} className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${
-                doneKeys.has(key)    ? 'bg-green-500 shadow-[0_0_4px_#22c55e]' :
-                loadingKeys.has(key) ? 'bg-blue-500 animate-pulse shadow-[0_0_4px_#3b82f6]' : 'bg-white/5'
-              }`} />
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-1 flex-wrap justify-end max-w-[120px]">
+          {ALL_KEYS.map(key => (
+            <div key={key} title={key} className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${
+              doneKeys.has(key)    ? 'bg-green-500 shadow-[0_0_4px_#22c55e]' :
+              loadingKeys.has(key) ? 'bg-blue-500 animate-pulse shadow-[0_0_4px_#3b82f6]' : 'bg-white/5'
+            }`} />
+          ))}
+        </div>
       </div>
 
-      <div className={`flex items-center gap-2 flex-wrap min-h-[36px] ${compact ? 'justify-start' : ''}`}>
+      <div className="flex items-center gap-2 flex-wrap min-h-[36px]">
         {tabs.map(tab => {
           const isActive = activeTab === tab.id;
           return (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                 isActive
                   ? `bg-white/10 border-white/20 ${tab.color}`
                   : 'bg-white/5 text-gray-500 border-transparent hover:bg-white/8 hover:text-gray-300'
               }`}>
               <span className={isActive ? tab.color : 'text-gray-600'}>{tab.icon}</span>
-              {compact ? null : tab.label}
+              {tab.label}
               <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[7px] font-black ${
                 isActive ? 'bg-white/15 text-white' : 'bg-white/8 text-gray-500'
               }`}>
@@ -282,7 +279,7 @@ export const DiscoveryPipeline = ({
                   {entries.map(([serverName, eps]) => (
                     <QuickServerRow key={serverName} serverName={serverName} episodes={eps}
                       color={src === 'kkphim' ? 'text-blue-400' : 'text-pink-400'} cloudTargets={cloudTargets}
-                      sourceBadge={SOURCE_BADGE[eps[0]?.source]} compact={compact} />
+                      sourceBadge={SOURCE_BADGE[eps[0]?.source]} />
                   ))}
                 </div>
             ))}
@@ -293,13 +290,12 @@ export const DiscoveryPipeline = ({
           <div className="space-y-1">
             {downloadableByType[activeTab].map((l, i) => (
               activeTab === 'torrent'
-                ? <TorrentRow key={i} link={l as any} sourceBadge={SOURCE_BADGE[(l as any).source]} compact={compact} />
+                ? <TorrentRow key={i} link={l as any} sourceBadge={SOURCE_BADGE[(l as any).source]} />
                 : <DeepRow key={i} link={l}
                     actionLabel={activeTab === 'gdrive' ? 'Drive' : 'FShare'}
                     color={SOURCE_TYPE_META[activeTab]?.color || 'text-sky-400'}
                     sourceBadge={SOURCE_BADGE[(l as any).source]}
                     onAction={(url) => window.open(url, '_blank')}
-                    compact={compact}
                   />
             ))}
           </div>

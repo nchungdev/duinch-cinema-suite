@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
-import { Play, Loader2, Download, Tv, ChevronDown, Activity, Zap, Globe, HardDrive, Layout, ChevronRight } from 'lucide-react';
+import { Play, Loader2, Download, Tv, ChevronDown, Activity, Zap, Globe, HardDrive, Layout, ChevronRight, Box, Magnet } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useSWR from 'swr';
 import { api, getProxiedImageUrl } from '../../../api/config';
@@ -28,7 +28,7 @@ export const TVGallery = () => {
         media, streamingLinks, activeServerIdx, activeEpisodeIdx, setActiveEpisodeIdx,
         initialSeason, initialEpisode,
         seasonBoundaries, setActiveSeasonIdx, activeType, streamableSources,
-        setActiveType, setActiveProvider
+        setActiveType, setActiveProvider, playbackState, setActiveEmbed
     } = useMediaDetail();
 
     const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
@@ -38,9 +38,10 @@ export const TVGallery = () => {
     const activeSeasonIdx = seasonBoundaries.findIndex(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
     const activeSeason = seasonBoundaries[activeSeasonIdx];
 
-    const { data: tmdbSeason, isLoading: loadingSeason } = useSWR(
+    const { data: tmdbSeason } = useSWR(
         media && activeSeason ? `/tv/${media.id}/season/${activeSeason.season_number}` : null,
-        fetcher
+        fetcher,
+        { revalidateOnFocus: false }
     );
 
     useEffect(() => {
@@ -69,7 +70,6 @@ export const TVGallery = () => {
                 setFocusedIdx(prev);
                 document.getElementById(`ep-${prev}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
             } else if (e.key === 'Enter') {
-                e.preventDefault();
                 setActiveEpisodeIdx(focusedIdx);
             }
         };
@@ -85,27 +85,33 @@ export const TVGallery = () => {
     
     const focusedGlobalIdx = focusedIdx ?? activeEpisodeIdx;
     const focusedEpNum = focusedGlobalIdx - (activeSeason?.start || 0) + 1;
-    const focusedEpData = tmdbSeason?.data?.episodes?.find((e: any) => e.episode_number === focusedEpNum) || 
-                         tmdbSeason?.episodes?.find((e: any) => e.episode_number === focusedEpNum);
-
+    
     const groupedNodes = useMemo(() => {
         const groups: Record<string, any[]> = {};
-        Object.entries(streamableSources).forEach(([type, providers]) => {
-            Object.entries(providers).forEach(([provider, srvList]) => {
-                srvList.forEach((srv: any) => {
-                    const ep = srv.server_data.find((e: any) => {
-                        const n = e.name?.match(/\d+/);
-                        return n && parseInt(n[0]) === focusedEpNum;
+        const sources = streamableSources || {};
+        Object.entries(sources).forEach(([type, providers]) => {
+            Object.entries(providers as any).forEach(([provider, srvList]) => {
+                (srvList as any[]).forEach((srv: any) => {
+                    const ep = srv.server_data?.find((e: any) => {
+                        const cleanName = e.name?.toString().replace(/\D/g, '');
+                        return cleanName === focusedEpNum.toString();
                     });
-                    if (ep) {
+                    const isSingleFile = srv.server_data?.length === 1 && !srv.server_data[0].name?.match(/\d+/);
+                    const targetEp = ep || (isSingleFile ? srv.server_data[0] : null);
+                    if (targetEp) {
                         if (!groups[type]) groups[type] = [];
-                        groups[type].push({ type, provider, server: srv, episode: ep });
+                        groups[type].push({ type, provider, server: srv, episode: targetEp });
                     }
                 });
             });
         });
         return groups;
     }, [streamableSources, focusedEpNum]);
+
+    const focusedEpData = useMemo(() => {
+        const episodes = tmdbSeason?.data?.episodes || tmdbSeason?.episodes || [];
+        return episodes.find((e: any) => e.episode_number === focusedEpNum);
+    }, [tmdbSeason, focusedEpNum]);
 
     const toggleGroup = (type: string) => {
         setExpandedGroups(prev => ({ ...prev, [type]: !prev[type] }));
@@ -149,10 +155,7 @@ export const TVGallery = () => {
                         const isPlaying = activeEpisodeIdx === globalIdx;
                         const isFocused = focusedGlobalIdx === globalIdx;
                         const epNum = globalIdx - (activeSeason?.start || 0) + 1;
-                        
-                        const tmdbEp = tmdbSeason?.data?.episodes?.find((e: any) => e.episode_number === epNum) || 
-                                      tmdbSeason?.episodes?.find((e: any) => e.episode_number === epNum);
-                        
+                        const tmdbEp = (tmdbSeason?.data?.episodes || tmdbSeason?.episodes || [])[epNum - 1];
                         const rawThumb = tmdbEp?.still_path || (media as any)?.thumb_url || media?.poster;
                         const epThumb = getProxiedImageUrl(rawThumb);
 
@@ -162,6 +165,7 @@ export const TVGallery = () => {
                                 key={globalIdx}
                                 onMouseEnter={() => setFocusedIdx(globalIdx)}
                                 onClick={() => setActiveEpisodeIdx(globalIdx)}
+                                style={{ contentVisibility: 'auto', containIntrinsicSize: '208px 117px' }}
                                 className={`relative shrink-0 w-52 aspect-video rounded-2xl overflow-hidden cursor-pointer transition-all duration-500 border-2 ${
                                     isFocused 
                                     ? 'border-blue-500 scale-110 z-20 shadow-[0_30px_60px_rgba(37,99,235,0.4)]' 
@@ -180,7 +184,6 @@ export const TVGallery = () => {
                                         <Tv className="w-8 h-8 text-gray-800" />
                                     </div>
                                 )}
-                                
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-transparent z-10" />
                                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-20">
                                     <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border transition-colors ${
@@ -189,11 +192,11 @@ export const TVGallery = () => {
                                         EP {epNum}
                                     </span>
                                     {isPlaying && (
-                                        <div className="flex items-end gap-[2px] h-3 px-2 py-1 bg-blue-500/90 backdrop-blur-md rounded-lg shadow-[0_0_20px_rgba(59,130,246,0.6)]">
-                                            <div className="w-[2px] bg-white animate-[wave_0.8s_ease-in-out_infinite] h-full" />
-                                            <div className="w-[2px] bg-white animate-[wave_0.5s_ease-in-out_infinite] h-1/2" />
-                                            <div className="w-[2px] bg-white animate-[wave_1.1s_ease-in-out_infinite] h-3/4" />
-                                            <div className="w-[2px] bg-white animate-[wave_0.7s_ease-in-out_infinite] h-[90%]" />
+                                        <div className={`flex items-end gap-[2px] h-3 px-2 py-1 bg-blue-500/90 backdrop-blur-md rounded-lg shadow-[0_0_20px_rgba(59,130,246,0.6)] transition-all duration-300 ${playbackState === 'buffering' ? 'animate-pulse opacity-50' : 'opacity-100'}`}>
+                                            <div className="w-[2px] bg-white animate-[wave_0.8s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '100%' : '30%' }} />
+                                            <div className="w-[2px] bg-white animate-[wave_0.5s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '50%' : '20%' }} />
+                                            <div className="w-[2px] bg-white animate-[wave_1.1s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '75%' : '40%' }} />
+                                            <div className="w-[2px] bg-white animate-[wave_0.7s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '90%' : '25%' }} />
                                         </div>
                                     )}
                                 </div>
@@ -208,112 +211,94 @@ export const TVGallery = () => {
                 <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[#0a0a0c] via-[#0a0a0c]/20 to-transparent pointer-events-none z-30" />
             </div>
 
-            <div className="flex-1 min-h-0 bg-white/[0.02] border-t border-white/5 p-6 overflow-y-auto no-scrollbar">
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        key={focusedGlobalIdx}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -5 }}
-                        className="space-y-8"
-                    >
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <h4 className="text-lg font-black text-white uppercase tracking-wide truncate pr-4">
-                                    {focusedEpData?.name || `Episode ${focusedEpNum}`}
-                                </h4>
-                                <span className="shrink-0 text-[10px] font-black text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 tracking-tighter italic">
-                                    S{String(activeSeason?.season_number).padStart(2, '0')}E{String(focusedEpNum).padStart(2, '0')}
-                                </span>
+            <div className="flex-1 min-h-[350px] bg-white/[0.02] border-t border-white/5 p-8 overflow-y-auto no-scrollbar">
+                <div className="relative">
+                    <AnimatePresence mode="popLayout" initial={false}>
+                        <motion.div
+                            key={focusedGlobalIdx}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="space-y-8"
+                        >
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-xl font-black text-white uppercase tracking-wide truncate pr-4">
+                                        {focusedEpData?.name || `Episode ${focusedEpNum}`}
+                                    </h4>
+                                    <span className="shrink-0 text-[10px] font-black text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 tracking-tighter italic">
+                                        S{String(activeSeason?.season_number).padStart(2, '0')}E{String(focusedEpNum).padStart(2, '0')}
+                                    </span>
+                                </div>
+                                <p className="text-[12px] text-gray-500 font-medium leading-relaxed italic border-l-2 border-blue-500/20 pl-4 min-h-[3em]">
+                                    {focusedEpData?.overview || "No transmission log for this sector."}
+                                </p>
                             </div>
-                            <p className="text-[11px] text-gray-500 font-medium leading-relaxed line-clamp-2 italic">
-                                {focusedEpData?.overview || "No transmission log for this sector."}
-                            </p>
-                        </div>
 
-                        {/* Grouped Transmission Nodes */}
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 block">Available Transmission Nodes</span>
-                                <span className="text-[7px] font-black text-blue-500/40 uppercase tracking-widest italic">Total Groups: {Object.keys(groupedNodes).length}</span>
-                            </div>
-                            
-                            <div className="space-y-3">
-                                {Object.keys(groupedNodes).length === 0 ? (
-                                    <div className="py-4 text-center opacity-20 text-[9px] font-black uppercase italic tracking-widest">No nodes found in this sector</div>
-                                ) : (
-                                    Object.entries(groupedNodes).map(([type, nodes]) => (
-                                        <div key={type} className="space-y-2">
-                                            {/* Group Header */}
-                                            <button 
-                                                onClick={() => toggleGroup(type)}
-                                                className="w-full flex items-center justify-between px-2 py-1 hover:bg-white/5 rounded-lg transition-colors group/header"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <div className={`w-1.5 h-1.5 rounded-full ${expandedGroups[type] ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-gray-700'}`} />
-                                                    <span className={`text-[10px] font-black uppercase tracking-widest ${expandedGroups[type] ? 'text-blue-400' : 'text-gray-500'}`}>
-                                                        {TYPE_LABELS[type] || type}
-                                                    </span>
-                                                    <span className="text-[8px] px-1.5 py-0.5 bg-white/5 rounded-md text-gray-600 font-black">{nodes.length}</span>
-                                                </div>
-                                                <ChevronRight className={`w-3 h-3 text-gray-700 transition-transform duration-300 ${expandedGroups[type] ? 'rotate-90 text-blue-500' : ''}`} />
-                                            </button>
-
-                                            {/* Group Content */}
-                                            <AnimatePresence>
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 block">Available Transmission Nodes</span>
+                                    <span className="text-[7px] font-black text-blue-500/40 uppercase tracking-widest italic">Groups: {Object.keys(groupedNodes).length}</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {Object.keys(groupedNodes).length === 0 ? (
+                                        <div className="py-4 text-center opacity-20 text-[9px] font-black uppercase italic tracking-widest">No nodes found in this sector</div>
+                                    ) : (
+                                        Object.entries(groupedNodes).map(([type, nodes]) => (
+                                            <div key={type} className="space-y-2">
+                                                <button onClick={() => toggleGroup(type)} className="w-full flex items-center justify-between px-2 py-1 hover:bg-white/5 rounded-lg transition-colors group/header">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-1.5 h-1.5 rounded-full ${expandedGroups[type] ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-gray-700'}`} />
+                                                        <span className={`text-[10px] font-black uppercase tracking-widest ${expandedGroups[type] ? 'text-blue-400' : 'text-gray-500'}`}>{TYPE_LABELS[type] || type}</span>
+                                                        <span className="text-[8px] px-1.5 py-0.5 bg-white/5 rounded-md text-gray-600 font-black">{nodes.length}</span>
+                                                    </div>
+                                                    <ChevronRight className={`w-3 h-3 text-gray-700 transition-transform duration-300 ${expandedGroups[type] ? 'rotate-90 text-blue-500' : ''}`} />
+                                                </button>
                                                 {expandedGroups[type] && (
-                                                    <motion.div 
-                                                        initial={{ height: 0, opacity: 0 }}
-                                                        animate={{ height: 'auto', opacity: 1 }}
-                                                        exit={{ height: 0, opacity: 0 }}
-                                                        className="grid grid-cols-1 gap-2 overflow-hidden pl-4"
-                                                    >
+                                                    <div className="grid grid-cols-1 gap-2 pl-4">
                                                         {nodes.map((node, idx) => (
-                                                            <div 
-                                                                key={idx}
-                                                                className="group flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/[0.08] hover:border-blue-500/30 transition-all"
+                                                            <div key={idx} className="group flex items-center justify-between p-3 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/[0.08] hover:border-blue-500/30 transition-all"
                                                             >
                                                                 <div className="flex items-center gap-3 min-w-0">
-                                                                    <div className="w-8 h-8 rounded-xl bg-black/40 flex items-center justify-center text-blue-500 group-hover:text-white transition-colors">
-                                                                        {PROVIDER_ICONS[node.provider] || <HardDrive className="w-3.5 h-3.5" />}
+                                                                    <div className={`w-8 h-8 rounded-xl bg-black/40 flex items-center justify-center text-blue-500 group-hover:text-white transition-colors`}>
+                                                                        {node.type === 'HLS' ? <Zap className="w-3.5 h-3.5" /> : 
+                                                                         node.type === 'P2P' ? <Magnet className="w-3.5 h-3.5" /> :
+                                                                         node.type === 'DIRECT' ? <Box className="w-3.5 h-3.5" /> : <Layout className="w-3.5 h-3.5" />}
                                                                     </div>
                                                                     <div className="flex flex-col min-w-0">
-                                                                        <span className="text-[10px] font-black text-white uppercase tracking-widest truncate">
-                                                                            {node.server.server_name}
-                                                                        </span>
-                                                                        <span className="text-[7px] font-bold text-gray-600 uppercase tracking-[0.2em]">
-                                                                            {node.provider} • Node ID: {node.episode.id || 'N/A'}
-                                                                        </span>
+                                                                        <span className="text-[10px] font-black text-white uppercase tracking-widest truncate">{node.server.server_name}</span>
+                                                                        <span className="text-[7px] font-bold text-gray-600 uppercase tracking-[0.2em]">{node.provider} • Node ID: {node.episode.id || 'N/A'}</span>
                                                                     </div>
                                                                 </div>
-
                                                                 <div className="flex items-center gap-2">
                                                                     <button 
-                                                                        onClick={() => {
-                                                                            setActiveType(node.type);
-                                                                            setActiveProvider(node.provider);
-                                                                            setActiveEpisodeIdx(focusedGlobalIdx);
-                                                                        }}
+                                                                        onClick={() => { 
+                                                                            setActiveType(node.type); 
+                                                                            setActiveProvider(node.provider); 
+                                                                            setActiveEpisodeIdx(focusedGlobalIdx); 
+                                                                            if (node.episode.m3u8 || node.episode.link_m3u8 || node.episode.embed) {
+                                                                                setActiveEmbed(node.episode.m3u8 || node.episode.link_m3u8 || node.episode.embed);
+                                                                            }
+                                                                        }} 
                                                                         className="p-2.5 rounded-xl bg-blue-600/10 hover:bg-blue-600 text-blue-400 hover:text-white transition-all shadow-lg"
                                                                     >
                                                                         <Play className="w-3.5 h-3.5 fill-current" />
                                                                     </button>
-                                                                    <button className="p-2.5 rounded-xl bg-white/5 hover:bg-white/20 text-gray-500 hover:text-white transition-all">
-                                                                        <Download className="w-3.5 h-3.5" />
-                                                                    </button>
+                                                                    <button className="p-2.5 rounded-xl bg-white/5 hover:bg-white/20 text-gray-500 hover:text-white transition-all"><Download className="w-3.5 h-3.5" /></button>
                                                                 </div>
                                                             </div>
                                                         ))}
-                                                    </motion.div>
+                                                    </div>
                                                 )}
-                                            </AnimatePresence>
-                                        </div>
-                                    ))
-                                )}
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    </motion.div>
-                </AnimatePresence>
+                        </motion.div>
+                    </AnimatePresence>
+                </div>
             </div>
         </div>
     );

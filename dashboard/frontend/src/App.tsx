@@ -4,9 +4,8 @@ import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
 import { MediaDetail } from './presentation/components/MediaDetail';
 import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2 } from 'lucide-react';
 
-type SearchTab = 'all' | 'movie' | 'tv';
+type SearchTab = 'movie' | 'tv';
 const SEARCH_TABS: { id: SearchTab; label: string }[] = [
-  { id: 'all',   label: 'All'    },
   { id: 'movie', label: 'Movies' },
   { id: 'tv',    label: 'TV'     },
 ];
@@ -42,7 +41,7 @@ function App() {
   
   const [scrolled, setScrolled] = useState(false);
   const [searchActive,  setSearchActive]  = useState(!!init.searchQuery && init.category === 'search');
-  const [searchTab,     setSearchTab]     = useState<SearchTab>('all');
+  const [searchTab,     setSearchTab]     = useState<SearchTab>('movie');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchPage,    setSearchPage]    = useState(1);
   const [searchTotal,   setSearchTotal]   = useState(0);
@@ -77,7 +76,7 @@ function App() {
     return () => clearInterval(interval);
   }, [performSync]);
 
-  const executeSearch = useCallback(async (q: string, tab: SearchTab = 'all', page: number = 1, background = false) => {
+  const executeSearch = useCallback(async (q: string, tab: SearchTab = 'movie', page: number = 1, background = false) => {
     if (page === 1) {
       setSearchResults([]);
       setSearchPage(1);
@@ -126,25 +125,24 @@ function App() {
         setMediaType(parts[1]);
         setSlug(parts[2]);
         setView('detail');
-        if (parts[0] === 'search' && q && !searchActive) executeSearch(q, 'all', 1, true);
+        if (parts[0] === 'search' && q && !searchActive) executeSearch(q, 'movie', 1, true);
       } else if (parts.length >= 1) {
         setCategory(parts[0]);
         setView('discovery');
         setSlug(null);
         if (parts[0] === 'search') {
             setSearchActive(true);
-            if (q && lastSearchQuery.current !== q) executeSearch(q, 'all', 1);
+            if (q && lastSearchQuery.current !== q) executeSearch(q, 'movie', 1);
         } else {
             setSearchActive(false);
             setSearchResults([]);
-            setSearchTab('all');
+            setSearchTab('movie');
             lastSearchQuery.current = null;
         }
       }
     };
 
     window.addEventListener('hashchange', handleUrlSync);
-    // REMOVED: immediate handleUrlSync() call here to prevent double fetch on mount
     return () => window.removeEventListener('hashchange', handleUrlSync);
   }, [searchActive, executeSearch]);
 
@@ -242,17 +240,20 @@ function App() {
                      </h2>
                    </div>
                    <div className="flex items-center gap-4">
-                     {(['all', 'movie', 'tv'] as const).map((tab) => (
+                     {(['movie', 'tv'] as const).map((tab) => (
                        <button
                          key={tab}
-                         onClick={() => setSearchTab(tab)}
+                         onClick={() => {
+                           setSearchTab(tab);
+                           executeSearch(searchQuery, tab, 1);
+                         }}
                          className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-lg transition-all ${
                            searchTab === tab 
                              ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]' 
                              : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                          }`}
                        >
-                         {tab === 'all' ? 'Everything' : tab === 'movie' ? 'Movies' : 'TV Shows'}
+                         {tab === 'movie' ? 'Movies' : 'TV Shows'}
                        </button>
                      ))}
                    </div>

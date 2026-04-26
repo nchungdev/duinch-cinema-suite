@@ -41,31 +41,39 @@ export function DiscoveryGrid({
     abortControllerRef.current = new AbortController();
     
     try {
-      let newItems: DiscoveryItem[] = [];
+      let newItems: any[] = [];
       const currentPage = isInitial ? 1 : page;
 
       if (category === 'phim-le') {
-        const { data } = await api.get(`/movies?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
-        newItems = data.results || [];
+        const res = await api.get(`/movies?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        newItems = res.data?.results || [];
       } else if (category === 'phim-bo') {
-        const { data } = await api.get(`/tvs?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
-        newItems = data.results || [];
+        const res = await api.get(`/tvs?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        newItems = res.data?.results || [];
       } else if (category === 'search' && searchQuery) {
-        const { data } = await api.get(`/search?q=${encodeURIComponent(searchQuery)}&media_type=${mediaType}&page=${currentPage}`, { signal: abortControllerRef.current.signal });
-        newItems = data.results || [];
+        const res = await api.get(`/search?q=${encodeURIComponent(searchQuery)}&media_type=${mediaType}&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        newItems = res.data?.results || [];
       } else {
         newItems = await MediaRepository.getTrending(mediaType, currentPage);
       }
       
-      setItems(prev => isInitial ? newItems : [...prev, ...newItems]);
-      setHasMore(newItems.length >= 10);
+      // Normalize items: Ensure slug and tmdb_id exist
+      const normalizedItems = newItems.map(item => ({
+        ...item,
+        tmdb_id: item.tmdb_id || item.id,
+        slug: item.slug || item.tmdb_id?.toString() || item.id?.toString(),
+        media_type: item.media_type || (category === 'phim-bo' ? 'tv' : 'movie')
+      }));
+
+      setItems(prev => isInitial ? normalizedItems : [...prev, ...normalizedItems]);
+      setHasMore(newItems.length >= 8);
 
     } catch (err: any) {
       if (err.name !== 'CanceledError') console.error('Discovery fetch failed:', err);
     } finally {
       setLoading(false);
     }
-  }, [category, mediaType, page, hasMore, searchQuery]); // Cố định deps
+  }, [category, mediaType, page, hasMore, searchQuery]);
 
   // RESET logic
   useEffect(() => {
@@ -73,7 +81,7 @@ export function DiscoveryGrid({
     setPage(1);
     setHasMore(true);
     fetchItems(true);
-  }, [category, mediaType, searchQuery]); // Luôn 3 deps
+  }, [category, mediaType, searchQuery]);
 
   // Infinite scroll
   useEffect(() => {
@@ -96,7 +104,7 @@ export function DiscoveryGrid({
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 md:gap-8">
         {items.map((item, idx) => (
           <div
-            key={`${item.id || item.slug}-${idx}`}
+            key={`${item.slug}-${idx}`}
             onClick={() => onItemClick(item)}
             className="group relative cursor-pointer"
           >

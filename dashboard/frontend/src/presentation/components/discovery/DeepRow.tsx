@@ -14,11 +14,10 @@ interface DeepRowProps {
   onAction?: (url: string, name: string) => void;
   depth?: number;
   sourceBadge?: string | null;
-  compact?: boolean;
 }
 
 export const DeepRow: React.FC<DeepRowProps> = ({ 
-  link, actionLabel, color, onAction, depth = 0, sourceBadge, compact 
+  link, actionLabel, color, onAction, depth = 0, sourceBadge 
 }) => {
   const cloudTargets = useCloudViewModel();
   const [expanded, setExpanded] = useState(false);
@@ -108,7 +107,6 @@ export const DeepRow: React.FC<DeepRowProps> = ({
             <CloudButtons 
               targets={cloudTargets}
               isFolder={isFolder}
-              compact={compact}
               onDeviceAction={() => {
                 if (isFolder) toggleFolder();
                 else if (onAction) onAction(link.url!, link.name || '');

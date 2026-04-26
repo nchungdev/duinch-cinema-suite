@@ -17,6 +17,8 @@ interface UserSettings {
   [key: string]: any;
 }
 
+export type PlaybackState = 'playing' | 'paused' | 'buffering' | 'stopped';
+
 interface MediaDetailContextType {
   media: BaseMedia | null;
   loading: boolean;
@@ -28,6 +30,7 @@ interface MediaDetailContextType {
   activeEpisodeIdx: number;
   activeSeasonIdx: number;
   activeEmbed: string | null;
+  playbackState: PlaybackState;
   setMedia: (m: BaseMedia | null) => void;
   setLoading: (l: boolean) => void;
   setLocalExists: (e: boolean) => void;
@@ -37,6 +40,7 @@ interface MediaDetailContextType {
   setActiveEpisodeIdx: (idx: number) => void;
   setActiveSeasonIdx: (idx: number) => void;
   setActiveEmbed: (url: string | null) => void;
+  setPlaybackState: (s: PlaybackState) => void;
   isPlayerReady: boolean;
   playerError: string | null;
   setIsPlayerReady: (ready: boolean) => void;
@@ -69,12 +73,12 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
   const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
   const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
+  const [playbackState, setPlaybackState] = useState<PlaybackState>('stopped');
   const [streamingLinks, setStreamingLinks] = useState<StreamingServer[]>([]);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
 
-  // Simple in-component lock that works with React's lifecycle
   const fetchingRef = useRef<string | null>(null);
 
   const seasonBoundaries = useMemo(() => {
@@ -90,47 +94,41 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
 
   useEffect(() => {
     if (!slug) return;
-    
-    // Prevent redundant fetches if we're already fetching THIS slug
     if (fetchingRef.current === slug) return;
     fetchingRef.current = slug;
 
     let isMounted = true;
     const fetchData = async () => {
-        // Reset state only when starting a NEW fetch
         setMedia(null);
         setLoading(true);
         setStreamableSources({});
         setActiveEmbed(null);
         setStreamingLinks([]);
+        setPlaybackState('stopped');
 
         try {
             const useCase = new GetMediaDetail();
             const mediaInstance = await useCase.execute(mediaType, slug);
-            
             if (isMounted) {
                 setMedia(mediaInstance);
                 const rawData = (mediaInstance as any)._rawResponse; 
                 setLocalExists(rawData?.data?.local?.exists || false);
             }
-
             const sRes = await api.get('/user/settings');
             if (isMounted) setUserSettings(sRes.data);
-
         } catch (err) {
             console.error('[DetailContext] Initial load failed:', err);
         } finally {
             if (isMounted) {
                 setLoading(false);
-                fetchingRef.current = null; // Release lock when done
+                fetchingRef.current = null;
             }
         }
     };
-
     fetchData();
     return () => { 
         isMounted = false; 
-        fetchingRef.current = null; // Release lock on unmount
+        fetchingRef.current = null;
     };
   }, [slug, mediaType]);
 
@@ -140,6 +138,7 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     activeProvider, setActiveProvider, activeServerIdx, setActiveServerIdx,
     activeEpisodeIdx, setActiveEpisodeIdx, activeSeasonIdx, setActiveSeasonIdx,
     activeEmbed, setActiveEmbed, streamingLinks, setStreamingLinks,
+    playbackState, setPlaybackState,
     isPlayerReady, setIsPlayerReady, playerError, setPlayerError,
     userSettings, setUserSettings, seasonBoundaries,
     onBack: initialValues.onBack, slug, mediaType,

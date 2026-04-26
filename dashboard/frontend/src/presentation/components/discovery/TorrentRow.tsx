@@ -62,7 +62,7 @@ const QualityBadge: React.FC<{ quality: string }> = ({ quality }) => {
   );
 };
 
-export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | null; compact?: boolean }> = ({ link, sourceBadge, compact }) => {
+export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | null }> = ({ link, sourceBadge }) => {
   const cloudTargets = useCloudViewModel();
   const [expanded, setExpanded] = useState(false);
   const [files, setFiles] = useState<any[] | null>(null);
@@ -145,7 +145,6 @@ export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | nu
           
           <CloudButtons 
             targets={cloudTargets}
-            compact={compact}
             onDeviceAction={() => window.open(link.url, '_blank')}
             onCloudAction={handleCloudAction}
           />
@@ -168,7 +167,6 @@ export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | nu
                   color="text-green-400" 
                   onAction={() => {}} 
                   depth={1} 
-                  compact={compact}
                 />
               ))}
             </div>

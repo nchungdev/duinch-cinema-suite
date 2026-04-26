@@ -60,7 +60,7 @@ const DetailContent = () => {
               {/* 1. Player */}
               <MediaStreamer ref={playerRef} />
               
-              {/* 2. Episode Gallery (Horizontal Strip now has space) */}
+              {/* 2. Episode Gallery (Horizontal Strip below player) */}
               <div className="bg-[#0c0c0e]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] overflow-hidden shadow-3xl">
                 {mediaType === 'tv' ? <TVGallery /> : <MovieGallery />}
               </div>
@@ -88,11 +88,10 @@ const DetailContent = () => {
 
             {/* RIGHT COLUMN: Media Info */}
             <div className="lg:col-span-4 sticky top-24 self-start space-y-6">
-              <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-2 shadow-3xl">
+              <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] overflow-hidden shadow-3xl">
                  <MediaInfo />
               </div>
               
-              {/* Optional: Add a small status or quick links box here */}
               <div className="px-8 py-4 bg-blue-600/5 border border-blue-500/10 rounded-3xl">
                  <div className="flex items-center justify-between">
                     <span className="text-[8px] font-black uppercase tracking-widest text-blue-500/60">Node Status</span>
