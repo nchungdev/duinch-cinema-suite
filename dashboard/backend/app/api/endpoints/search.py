@@ -1,20 +1,12 @@
-from fastapi import APIRouter, Request
-from app.infrastructure.clients import tmdb_client
+from fastapi import APIRouter, Request, Query
+from app.services import media_service
+from app.services.response_wrapper import wrap_response
 
 router = APIRouter()
 
-@router.get("")
-async def media_search(request: Request, q: str = None, media_type: str = "all", page: int = 1):
-    """
-    Search TMDB — supports media_type=all|movie|tv and pagination.
-    Returns a FLAT structure for direct frontend compatibility.
-    """
-    query = q or request.query_params.get("q")
-    if not query:
-        return {"results": [], "total_pages": 0, "page": 1}
-
+@router.get("/search")
+async def media_search(request: Request, q: str, media_type: str = "movie"):
+    """Search for movies or tv shows from TMDB."""
     client = request.app.state.http_client
-    payload = await tmdb_client.fetch_tmdb_search(client, query, media_type, page)
-    
-    # Return payload DIRECTLY (payload contains results, total_pages, page)
-    return payload
+    results = await media_service.fetch_tmdb_metadata(client, q, media_type)
+    return wrap_response({"results": results})

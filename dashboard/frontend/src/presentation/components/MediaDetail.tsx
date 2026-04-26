@@ -1,66 +1,12 @@
-import { useRef, useState, useLayoutEffect, useMemo } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import { ChevronLeft, Loader2 } from 'lucide-react';
-import { MarqueeText } from './MarqueeText';
 import { MediaDetailProvider } from '../context/MediaDetailContext';
 import { useMediaDetailViewModel } from '../view-models/MediaDetailViewModel';
 import { MediaStreamer } from './detail/MediaStreamer';
-import { SourceMenu } from './detail/SourceMenu';
 import { TVGallery } from './detail/TVGallery';
 import { MovieGallery } from './detail/MovieGallery';
 import { MediaInfo } from './detail/MediaInfo';
 import { DiscoveryPipeline } from './DiscoveryPipeline';
-import type { TVShow } from '../../domain/models/Media';
-
-const NowPlayingHeader = () => {
-  const { state } = useMediaDetailViewModel();
-  const { media, mediaType, activeEmbed, streamingLinks, activeServerIdx, activeEpisodeIdx } = state;
-
-  const currentEp = streamingLinks?.[activeServerIdx]?.server_data?.[activeEpisodeIdx];
-  const isLive = !!activeEmbed;
-
-  const tvLabel = useMemo(() => {
-    if (mediaType !== 'tv' || !media) return null;
-    const tv = media as TVShow;
-    const s = tv.getSeasonAt(activeEpisodeIdx);
-    if (!s) return null;
-    
-    let start = 0;
-    for (const item of tv.seasons) {
-        if (item.season_number === s.season_number) break;
-        start += item.episode_count;
-    }
-    const epNum = activeEpisodeIdx - start + 1;
-    return `Mùa ${s.season_number} · Tập ${epNum}`;
-  }, [media, mediaType, activeEpisodeIdx]);
-
-  const displayName = tvLabel ?? currentEp?.name ?? media?.title ?? '—';
-
-  return (
-    <div className="shrink-0 border-b border-white/5">
-      {isLive ? (
-        <div className="px-4 py-3 flex items-center gap-3">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shadow-[0_0_6px_#22c55e] shrink-0" />
-          <div className="flex-1 min-w-0">
-            <span className="text-[7px] font-black uppercase tracking-[0.3em] text-green-400 block mb-0.5">Now Playing</span>
-            <MarqueeText
-              text={displayName}
-              className="text-[13px] font-black text-white uppercase tracking-wide leading-tight"
-            />
-          </div>
-          <SourceMenu />
-        </div>
-      ) : (
-        <div className="p-4 flex items-center justify-between">
-          <div>
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-blue-500/80">Stream Control</span>
-            <p className="text-[7px] text-gray-600 uppercase tracking-widest mt-1">Select Transmission Mode</p>
-          </div>
-          <SourceMenu />
-        </div>
-      )}
-    </div>
-  );
-};
 
 const DetailContent = () => {
   const { state, actions } = useMediaDetailViewModel();
@@ -101,52 +47,60 @@ const DetailContent = () => {
     <div className="fixed inset-0 bg-[#0a0a0c] text-white overflow-hidden flex flex-col z-40 animate-in fade-in duration-700">
       <div className="absolute inset-0 overflow-y-auto no-scrollbar">
         <div className="max-w-7xl mx-auto px-6 lg:px-12 pt-24 pb-20">
-          <button onClick={onBack} className="group flex items-center gap-2 mb-6 px-3 py-1.5 bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 rounded-xl transition-all duration-200">
+          {/* Back Button */}
+          <button onClick={onBack} className="group flex items-center gap-2 mb-8 px-4 py-2 bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl transition-all duration-300 hover:scale-105 active:scale-95">
             <ChevronLeft className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 group-hover:text-white">Return to Discovery</span>
           </button>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-            <div className="lg:col-span-8 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* LEFT COLUMN: Player & Episodes & Discovery */}
+            <div className="lg:col-span-8 space-y-8">
+              {/* 1. Player */}
               <MediaStreamer ref={playerRef} />
-              {mediaType === 'tv' && <TVGallery />}
-              <MediaInfo />
-              {mediaType !== 'tv' && (
-                <DiscoveryPipeline
-                  key={slug}
-                  tmdbId={Number(media?.id || 0)}
-                  title={media?.title || ''}
-                  localizeTitle={media?.originTitle}
-                  year={media?.year}
-                  mediaType={mediaType}
-                  onStreamingReady={handleStreamingReady}
-                />
-              )}
-            </div>
+              
+              {/* 2. Episode Gallery (Horizontal Strip now has space) */}
+              <div className="bg-[#0c0c0e]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] overflow-hidden shadow-3xl">
+                {mediaType === 'tv' ? <TVGallery /> : <MovieGallery />}
+              </div>
 
-            <div className="lg:col-span-4 sticky top-24 self-start min-h-0" style={playerHeight ? { height: playerHeight, minHeight: playerHeight, maxHeight: playerHeight } : undefined}>
-              <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-3xl shadow-3xl flex flex-col h-full min-h-0 overflow-hidden">
-                <NowPlayingHeader />
-                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar rounded-b-3xl">
-                  {mediaType === 'tv' ? (
-                    <div className="p-4">
-                      <DiscoveryPipeline
-                        key={slug}
-                        tmdbId={Number(media?.id || 0)}
-                        title={media?.title || ''}
-                        localizeTitle={media?.originTitle}
-                        year={media?.year}
-                        mediaType={mediaType}
-                        initialSeason={initialSeason}
-                        initialEpisode={initialEpisode}
-                        onStreamingReady={handleStreamingReady}
-                        compact={true}
-                      />
-                    </div>
-                  ) : <MovieGallery />}
+              {/* 3. Discovery Engine */}
+              <div className="pt-4">
+                <div className="flex items-center gap-4 mb-6">
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-600">Discovery Engine</span>
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
                 </div>
+                <DiscoveryPipeline
+                    key={slug}
+                    tmdbId={Number(media?.id || 0)}
+                    title={media?.title || ''}
+                    localizeTitle={media?.originTitle}
+                    year={media?.year}
+                    mediaType={mediaType}
+                    initialSeason={mediaType === 'tv' ? initialSeason : undefined}
+                    initialEpisode={mediaType === 'tv' ? initialEpisode : undefined}
+                    onStreamingReady={handleStreamingReady}
+                />
               </div>
             </div>
+
+            {/* RIGHT COLUMN: Media Info */}
+            <div className="lg:col-span-4 sticky top-24 self-start space-y-6">
+              <div className="bg-[#0c0c0e]/80 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] p-2 shadow-3xl">
+                 <MediaInfo />
+              </div>
+              
+              {/* Optional: Add a small status or quick links box here */}
+              <div className="px-8 py-4 bg-blue-600/5 border border-blue-500/10 rounded-3xl">
+                 <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-blue-500/60">Node Status</span>
+                    <span className="text-[8px] font-black uppercase tracking-widest text-green-500">Connected</span>
+                 </div>
+              </div>
+            </div>
+
           </div>
         </div>
       </div>

@@ -7,51 +7,37 @@ from fastapi.responses import StreamingResponse
 from app.use_cases.discovery import DiscoveryUseCase
 from app.infrastructure.scrapers.fshare_lookup import resolve_fshare_url, lookup_timfshare
 from app.domain.models.media import DiscoveryTaskResult, DownloadableLink
+from app.services.response_wrapper import wrap_response
 
 router = APIRouter()
 
 DISCOVERY_SOURCES = [
-    {"source_type": "fshare",      "source": "indexed"}, # Pre-crawled/indexed FShare links
+    {"source_type": "fshare",      "source": "indexed"},
     {"source_type": "m3u8",        "source": "kkphim"},
     {"source_type": "m3u8",        "source": "ophim"},
     {"source_type": "fshare",      "source": "timfshare"},
-    {"source_type": "fshare",      "source": "forum"}, # New Forum Hunter
+    {"source_type": "fshare",      "source": "forum"},
     {"source_type": "torrent",     "source": "default"},
     {"source_type": "gdrive",      "source": "googlesearch"}
 ]
 
-@router.post("/test-timfshare", response_model=List[DownloadableLink], response_model_exclude_none=True, tags=["Test"])
-async def test_timfshare_endpoint(
-    request: Request,
-    query: str = Query(..., description="Search keyword for TimFShare"),
-    year: int = Query(None),
-    filter_title: str = Query(None),
-    media_type: str = Query("movie", description="movie or tv")
-):
-    """Directly test TimFShare API v1."""
-    client = request.app.state.http_client
-    results = await lookup_timfshare(query, year=year, filter_title=filter_title or query, media_type=media_type)
-    return results
-
-@router.get("/stream")
+@router.get("/media/stream")
 async def discovery_stream(
     request: Request,
-    tmdb_id: int = Query(None, description="TMDB ID of the movie/show"),
-    media_type: str = Query("movie", description="movie or tv"),
-    title: str = Query(..., description="Original/English title"),
-    localize_title: str = Query(None, description="Localized/Vietnamese title"),
-    year: str = Query(None, description="Release year"),
-    season: int = Query(None, description="Season number (for TV)"),
-    episode: int = Query(None, description="Episode number"),
-    force: bool = Query(False, description="Bypass cache and force re-scan"),
+    tmdb_id: int = Query(None),
+    media_type: str = Query("movie"),
+    title: str = Query(...),
+    localize_title: str = Query(None),
+    year: str = Query(None),
+    season: int = Query(None),
+    episode: int = Query(None),
+    force: bool = Query(False),
 ):
     """Server-Sent Events (SSE) stream for real-time discovery results."""
     client = request.app.state.http_client
     use_case = DiscoveryUseCase(client)
     tmdb_info = await use_case.get_tmdb_info(media_type, str(tmdb_id)) if tmdb_id else None
     
-    print(f"\n[SSE] 🚀 Starting Discovery Stream for: {title} ({year}) | ID: {tmdb_id}")
-
     async def event_generator():
         tasks = [
             asyncio.create_task(use_case.execute_task(
@@ -61,13 +47,18 @@ async def discovery_stream(
         ]
         yield f"data: {json.dumps({'type': 'init', 'total_sources': len(tasks), 'sources': DISCOVERY_SOURCES})}\n\n"
         for completed_task in asyncio.as_completed(tasks):
-            result = await completed_task
-            yield f"data: {json.dumps({'type': 'result', 'data': result.dict(exclude_none=True)})}\n\n"
+            try:
+                result = await completed_task
+                # Handle both Pydantic models and regular dicts
+                res_data = result.dict(exclude_none=True) if hasattr(result, "dict") else result
+                yield f"data: {json.dumps({'type': 'result', 'data': res_data})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'result', 'data': {'error': str(e)}})}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@router.get("/fetch")
+@router.get("/media/fetch")
 async def discovery_fetch(
     request: Request,
     tmdb_id: int = Query(None),
@@ -89,16 +80,16 @@ async def discovery_fetch(
         tmdb_id, media_type, title, localize_title, year, season, episode, 
         source_type, source, force, tmdb_info
     )
-    return {"data": result.dict(exclude_none=True), "error_code": 0, "error_msg": ""}
+    return wrap_response(result.dict(exclude_none=True))
 
-@router.get("/expand-folder")
+@router.get("/media/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
     """List all files within an FShare folder."""
     try:
         client = request.app.state.http_client
         if provider == "fshare":
             files = await resolve_fshare_url(url, client)
-            return { "data": {"results": files}, "error_code": 0, "error_msg": "" }
-        return { "data": None, "error_code": 400, "error_msg": "Not supported" }
+            return wrap_response({"results": files})
+        return wrap_response(error_code=400, error_message="Not supported")
     except Exception as e:
-        return { "data": None, "error_code": 500, "error_msg": str(e) }
+        return wrap_response(error_code=500, error_message=str(e))
