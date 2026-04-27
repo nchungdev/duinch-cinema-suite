@@ -77,8 +77,10 @@ export const DiscoveryPipeline = ({
 
   // Handle Download Request
   const handleDownloadRequest = async (url: string, name: string) => {
+    console.log('[DiscoveryPipeline] Triggering download request for:', name, url);
     const isHls = url.includes('.m3u8') || url.includes('.index');
     const pref = downloader.getPreference();
+    console.log('[DiscoveryPipeline] User Preference:', pref);
 
     if (pref) {
         if (pref === 'jdownloader') {
