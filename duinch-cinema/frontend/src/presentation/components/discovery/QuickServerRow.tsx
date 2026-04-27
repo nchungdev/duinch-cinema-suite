@@ -42,6 +42,15 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
     return final;
   }, [episodes]);
 
+  const handleBatchDownload = () => {
+    if (selected.size === 0) return;
+    const selectedEps = Array.from(selected).map(i => episodes[i]);
+    selectedEps.forEach(ep => {
+        const url = ep.link_m3u8 || ep.link_embed;
+        if (url && onDownload) onDownload(url, ep.name || `${serverName} Ep`);
+    });
+  };
+
   const toggleEp = (i: number) => {
     setSelected(prev => {
         const s = new Set(prev);
