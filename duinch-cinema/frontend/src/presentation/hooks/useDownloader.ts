@@ -53,7 +53,7 @@ export const useDownloader = () => {
         console.log('[Downloader] Downloading in browser:', { url, name });
         if (url.includes('.m3u8') || url.includes('.index')) {
             // Utilize the native backend FFmpeg proxy to download and mux M3U8 on the fly
-            const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8086/api/v1';
+            const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8086/api';
             const downloadUrl = `${backendUrl}/downloader/proxy-download-hls?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
             
             // Create an invisible link to trigger the browser's native download dialog
