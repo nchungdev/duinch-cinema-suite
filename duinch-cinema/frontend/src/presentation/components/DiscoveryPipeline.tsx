@@ -139,7 +139,6 @@ export const DiscoveryPipeline = ({
             // LOG: Discovery Engine Raw Output
             items.forEach((group: any) => {
                 group.episodes?.forEach((ep: any) => {
-                    console.log(`%c[1. Discovery Engine] Found Ep: ${ep.name} | Server: ${group.server} | Link: ${ep.link_m3u8 || ep.link_embed}`, "color: #ec4899");
                 });
             });
 

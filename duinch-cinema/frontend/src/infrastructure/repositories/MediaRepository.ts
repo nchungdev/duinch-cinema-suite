@@ -120,7 +120,6 @@ export class MediaRepository {
       callbacks.onDone?.();
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('[SSE] Stream aborted.');
       } else {
         console.error('[SSE] Network/Stream Error:', err);
         callbacks.onError?.(err);

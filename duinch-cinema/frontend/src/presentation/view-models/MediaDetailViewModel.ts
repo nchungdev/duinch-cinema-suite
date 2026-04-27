@@ -159,7 +159,6 @@ export const useMediaDetailViewModel = () => {
             const finalUrl = targetUrl || link.bestUrl;
             
             if (finalUrl && finalUrl !== activeEmbed) {
-                console.log(`[ViewModel] Selection Update -> Ep ${localEpNum} (${result.provider}):`, finalUrl);
                 setActiveEmbed(finalUrl);
             }
         }

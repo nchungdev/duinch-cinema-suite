@@ -50,7 +50,6 @@ export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement
 
         if (saved && saved.time > 0) {
             if (Math.abs(video.currentTime - saved.time) > 2) {
-                console.log(`[PlaybackController] Resuming at ${saved.time}s`);
                 video.currentTime = saved.time;
             }
         }

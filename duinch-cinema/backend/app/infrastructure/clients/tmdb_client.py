@@ -58,7 +58,6 @@ async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: s
             cache_manager.set_discovery("tmdb_search", cache_key, page, payload)
         return payload
     except Exception as e:
-        print(f"TMDB search error: {e}")
     return {"results": [], "total_pages": 0, "page": page}
 
 async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type: str = "movie") -> Optional[Dict[str, Any]]:
@@ -101,7 +100,6 @@ async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type:
             "tmdb_seasons": tmdb_seasons
         }
     except Exception as e:
-        print(f"TMDB detail fetch error: {e}")
         return None
 
 async def fetch_tmdb_season(client: httpx.AsyncClient, tmdb_id: int, season_number: int) -> Optional[Dict[str, Any]]:
@@ -133,7 +131,6 @@ async def fetch_tmdb_season(client: httpx.AsyncClient, tmdb_id: int, season_numb
             "episodes": episodes
         }
     except Exception as e:
-        print(f"TMDB season fetch error: {e}")
         return None
 
 async def get_tmdb_alternative_titles(client: httpx.AsyncClient, tmdb_id: int, media_type: str) -> List[str]:

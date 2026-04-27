@@ -96,7 +96,6 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     // Log the active streaming link whenever it changes
     useEffect(() => {
         if (activeEmbed) {
-            console.log(`%c[3. Player] ACTIVE URL: ${activeEmbed}`, "color: #3b82f6; font-weight: bold");
         }
     }, [activeEmbed]);
 

@@ -47,5 +47,4 @@ async def get_trending(request: Request, media_type: str = "movie"):
             cache_manager.set_discovery("tmdb_recommended", cache_key, 1, payload)
         return {"data": payload, "error_code": 0, "error_msg": ""}
     except Exception as e:
-        print(f"Trending fetch error: {e}")
     return {"data": {"results": []}, "error_code": 0, "error_msg": ""}

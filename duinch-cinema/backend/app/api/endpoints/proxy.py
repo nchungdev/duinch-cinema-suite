@@ -109,7 +109,6 @@ async def proxy_image(request: Request, url: str = Query(...)):
             )
         return RedirectResponse(url)
     except Exception as e:
-        print(f"Proxy error for {url}: {e}")
         return RedirectResponse(url)
 
 def _proxy_m3u8_url(base: str, request: Request) -> str:

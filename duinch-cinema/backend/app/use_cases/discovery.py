@@ -100,7 +100,6 @@ class DiscoveryUseCase:
             return DiscoveryTaskResult(source_type=source_type, source=source, results=final_results)
 
         except Exception as e:
-            print(f"[DiscoveryUseCase] Error in {source_type}/{source}: {e}")
             return DiscoveryTaskResult(source_type=source_type, source=source, results=[], error=str(e))
 
     async def get_tmdb_info(self, media_type: str, tmdb_id: str) -> TMDBInfo:

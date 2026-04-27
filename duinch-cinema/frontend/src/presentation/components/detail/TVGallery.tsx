@@ -334,7 +334,6 @@ export const TVGallery = () => {
                                                                             : (node.episode.embed || node.episode.url || node.episode.m3u8);
 
                                                                         if (link) {
-                                                                            console.log(`[TVGallery] Manual selection: ${node.type} from ${node.provider} (Server ${node.srvIdx}) -> ${link}`);
                                                                             setActiveEmbed(link);
                                                                         }
                                                                     }} className={`p-2.5 rounded-xl transition-all shadow-lg ${

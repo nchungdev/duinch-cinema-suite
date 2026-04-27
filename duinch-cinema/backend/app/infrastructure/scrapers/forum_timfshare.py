@@ -64,7 +64,6 @@ class ForumTimFShareScraper:
                         source_page=url
                     ))
         except Exception as e:
-            print(f"[ForumScraper] Error mining {url}: {e}")
             
         return links
 
