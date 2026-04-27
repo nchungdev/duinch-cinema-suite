@@ -47,12 +47,13 @@ export const useDownloader = () => {
         }
     };
 
+    const [hlsToolData, setHlsToolData] = useState<{url: string; name: string} | null>(null);
+
     const downloadInBrowser = (url: string, name: string) => {
         console.log('[Downloader] Downloading in browser:', { url, name });
         if (url.includes('.m3u8') || url.includes('.index')) {
-            // Specialized HLS Download Logic
-            const hlsToolUrl = `https://blog.v-3.cc/m3u8-downloader.html?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
-            window.open(hlsToolUrl, '_blank');
+            // Specialized HLS Download Logic - Open Local Iframe Modal
+            setHlsToolData({ url, name });
         } else {
             const link = document.createElement('a');
             link.href = url;
@@ -65,6 +66,8 @@ export const useDownloader = () => {
 
     return {
         isChecking,
+        hlsToolData,
+        setHlsToolData,
         checkJDStatus,
         getPreference,
         setPreference,

@@ -9,6 +9,7 @@ import { TorrentRow } from './discovery/TorrentRow';
 import { QuickServerRow } from './discovery/QuickServerRow';
 import { useDownloader } from '../hooks/useDownloader';
 import { DownloadModal } from './discovery/DownloadModal';
+import { HlsDownloaderModal } from './discovery/HlsDownloaderModal';
 
 interface DiscoveryPipelineProps {
   tmdbId: number;
@@ -357,8 +358,15 @@ export const DiscoveryPipeline = ({
         isOpen={!!modalData}
         title={modalData?.name || ''}
         isHls={modalData?.isHls}
+        isJdOnline={modalData?.isJdOnline}
         onClose={() => setModalData(null)}
         onConfirm={onConfirmDownload}
+      />
+      <HlsDownloaderModal 
+        isOpen={!!downloader.hlsToolData}
+        url={downloader.hlsToolData?.url || ''}
+        name={downloader.hlsToolData?.name || ''}
+        onClose={() => downloader.setHlsToolData(null)}
       />
     </div>
   );
