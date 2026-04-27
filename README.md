@@ -7,12 +7,14 @@ Hệ thống Media Discovery Engine mạnh mẽ, tự động "vét cạn" link 
 Dự án được chia thành 2 thành phần chính:
 - **`duinch-cinema/`**: Ứng dụng web xem phim và quản lý tải về (bao gồm Frontend React và Backend FastAPI).
 - **`duinch-crawler/`**: Hệ thống cào dữ liệu tự động (Miner, Cooker) để làm giàu cơ sở dữ liệu phim.
+- **`duinch-downloader/`**: Microservice chuyên biệt điều phối việc tải về qua JDownloader hoặc các engine khác.
 
 ### Directory Map
 - `duinch-cinema/frontend`: Giao diện người dùng (Vite + React + Tailwind).
 - `duinch-cinema/backend`: API phục vụ webapp, tích hợp logic tìm kiếm và điều phối.
 - `duinch-crawler/miner`: Thu thập link raw từ các nguồn forum, web.
 - `duinch-crawler/cooker`: Xử lý, phân loại và đồng bộ dữ liệu về database chính.
+- `duinch-downloader`: API trung gian kết nối với JDownloader Docker.
 - `data/`: Nơi lưu trữ tập trung cache, database (SQLite/Postgres) và cấu hình người dùng.
 
 ---

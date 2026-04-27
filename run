@@ -52,7 +52,12 @@ case $choice in
         python3 -m pip install -q --upgrade pip
         python3 -m pip install -q -r duinch-cinema/backend/requirements.txt
         cd duinch-cinema/frontend && npm install --silent && cd ../..
+        echo "[*] Installing Crawler dependencies..."
         python3 -m pip install -q -r duinch-crawler/miner/requirements.txt
+        
+        echo "[*] Installing Downloader dependencies..."
+        python3 -m pip install -q -r duinch-downloader/requirements.txt
+        
         echo -e "${GREEN}✅ Environment Initialized Successfully!${NC}"
         ;;
     6)

@@ -3,6 +3,8 @@ import os
 # --- Load Variables ---
 STORAGE_PATH = os.getenv("STORAGE_PATH", "/storage")
 JD_INTERNAL_PATH = os.getenv("JD_INTERNAL_PATH", "/downloads")
+JD_DOWNLOAD_PATH = os.getenv("JD_DOWNLOAD_PATH", "/output/DuinchCinema")
+DOWNLOADER_URL = os.getenv("DOWNLOADER_URL", "http://duinch-downloader:8088")
 MYJD_EMAIL = os.getenv("MYJD_EMAIL")
 MYJD_PASSWORD = os.getenv("MYJD_PASSWORD")
 TMDB_READ_ACCESS_TOKEN = os.getenv("TMDB_READ_ACCESS_TOKEN")

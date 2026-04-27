@@ -12,6 +12,7 @@ env:
   BACKEND_IMAGE_NAME: ${{ github.repository }}-api
   FRONTEND_IMAGE_NAME: ${{ github.repository }}-ui
   CRAWLER_IMAGE_NAME: ${{ github.repository }}-crawler
+  DOWNLOADER_IMAGE_NAME: ${{ github.repository }}-downloader
 
 jobs:
   lint:
@@ -107,7 +108,26 @@ jobs:
           tags: ${{ steps.meta-crawler.outputs.tags }}
           labels: ${{ steps.meta-crawler.outputs.labels }}
 
-      # 4. Trigger OMV Deploy
+      # 4. Build and push Downloader
+      - name: Extract metadata for Downloader
+        id: meta-downloader
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.DOWNLOADER_IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            latest
+
+      - name: Build and push Downloader image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./duinch-downloader
+          push: true
+          tags: ${{ steps.meta-downloader.outputs.tags }}
+          labels: ${{ steps.meta-downloader.outputs.labels }}
+
+      # 5. Trigger OMV Deploy
       - name: Trigger OMV Deploy (Watchtower Webhook)
         run: |
           curl -H "Authorization: Bearer omv_jd_secret_token_2026" \

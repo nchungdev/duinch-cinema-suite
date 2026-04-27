@@ -59,6 +59,19 @@ services:
     ports:
       - "8087:80"
 
+  duinch-downloader:
+    build:
+      context: ./duinch-downloader
+    container_name: duinch-downloader
+    restart: unless-stopped
+    environment:
+      - MYJD_EMAIL=${MYJD_EMAIL}
+      - MYJD_PASSWORD=${MYJD_PASSWORD}
+      - JD_DEVICE_NAME=${JD_DEVICE_NAME:-JDownloader}
+      - JD_DOWNLOAD_PATH=${JD_DOWNLOAD_PATH:-/output/DuinchCinema}
+    ports:
+      - "8088:8088"
+
   # --- Crawler Workers (Scale as needed) ---
   duinch-miner:
     build: 

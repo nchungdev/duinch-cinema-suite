@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-myjdapi
 httpx
 ddgs
 curl-cffi

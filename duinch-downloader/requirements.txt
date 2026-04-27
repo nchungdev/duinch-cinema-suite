@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+myjdapi
+python-dotenv
+pydantic
