@@ -7,6 +7,8 @@ import { useCloudViewModel } from '../view-models/CloudViewModel';
 import { DeepRow } from './discovery/DeepRow';
 import { TorrentRow } from './discovery/TorrentRow';
 import { QuickServerRow } from './discovery/QuickServerRow';
+import { useDownloader } from '../hooks/useDownloader';
+import { DownloadModal } from './discovery/DownloadModal';
 
 interface DiscoveryPipelineProps {
   tmdbId: number;
