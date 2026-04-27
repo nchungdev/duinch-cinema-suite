@@ -7,12 +7,12 @@ export const useDownloader = () => {
     const [isChecking, setIsChecking] = useState(false);
 
     const getPreference = useCallback((): DownloadPreference => {
-        return localStorage.getItem('duinch_download_pref') as DownloadPreference;
+        return localStorage.getItem('duinch_download_pref_v2') as DownloadPreference;
     }, []);
 
     const setPreference = useCallback((pref: DownloadPreference, remember: boolean) => {
         if (remember && pref) {
-            localStorage.setItem('duinch_download_pref', pref);
+            localStorage.setItem('duinch_download_pref_v2', pref);
         }
     }, []);
 

@@ -162,7 +162,7 @@ export const TorrentRow: React.FC<{
                   link={f} 
                   actionLabel="Watch" 
                   color="text-green-400" 
-                  onAction={() => {}} 
+                  onAction={() => { if (onDownload && f.url) onDownload(f.url, f.name || '') }} 
                   depth={1} 
                 />
               ))}
