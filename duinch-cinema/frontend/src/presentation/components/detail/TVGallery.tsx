@@ -6,6 +6,8 @@ import { useMediaDetail } from '../../context/MediaDetailContext';
 import { useCloudViewModel } from '../../view-models/CloudViewModel';
 import { CloudButtons } from '../discovery/CloudActions';
 import type { CloudTarget } from '../../../services/cloudTargets';
+import { useDownloader } from '../../hooks/useDownloader';
+import { DownloadModal } from '../discovery/DownloadModal';
 
 const TYPE_LABELS: Record<string, string> = {
     'HLS': 'Native HLS Stream',
@@ -35,6 +37,46 @@ export const TVGallery = () => {
     const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ 'HLS': true, 'EMBED': false, 'P2P': true, 'DIRECT': true });
     const stripRef = useRef<HTMLDivElement>(null);
+
+    // Download Manager Integration
+    const downloader = useDownloader();
+    const [modalData, setModalData] = useState<{ url: string; name: string; isHls: boolean; isJdOnline: boolean } | null>(null);
+
+    const handleDownloadRequest = async (url: string, name: string) => {
+        console.log('[TVGallery] Triggering download request for:', name, url);
+        const isHls = url.includes('.m3u8') || url.includes('.index');
+        const pref = downloader.getPreference();
+
+        if (pref) {
+            if (pref === 'jdownloader') {
+                const isJdOnline = await downloader.checkJDStatus();
+                if (isJdOnline) {
+                    const ok = await downloader.sendToJD(url, name);
+                    if (ok) return;
+                }
+                downloader.downloadInBrowser(url, name);
+            } else {
+                downloader.downloadInBrowser(url, name);
+            }
+            return;
+        }
+
+        const isJdOnline = await downloader.checkJDStatus();
+        setModalData({ url, name, isHls, isJdOnline });
+    };
+
+    const onConfirmDownload = async (choice: 'jdownloader' | 'browser', remember: boolean) => {
+        if (!modalData) return;
+        downloader.setPreference(choice, remember);
+        
+        if (choice === 'jdownloader') {
+            const ok = await downloader.sendToJD(modalData.url, modalData.name);
+            if (!ok) downloader.downloadInBrowser(modalData.url, modalData.name);
+        } else {
+            downloader.downloadInBrowser(modalData.url, modalData.name);
+        }
+        setModalData(null);
+    };
 
     const activeSeasonIdx = seasonBoundaries.findIndex(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
     const activeSeason = seasonBoundaries[activeSeasonIdx];
@@ -135,19 +177,9 @@ export const TVGallery = () => {
     }, [activeType]);
 
     const handleCloudAction = async (node: any, target: CloudTarget) => {
-        if (!node.episode?.url && !node.episode?.magnet) return;
-        try {
-            await api.post('/downloader/add', {
-                url: node.episode.url || node.episode.magnet,
-                name: node.episode.name || node.server.server_name,
-                target: target.id,
-                provider: node.provider?.toLowerCase() === 'fshare' ? 'fshare' : 'direct'
-            });
-            alert(`Gửi lệnh tải tới ${target.label} thành công!`);
-        } catch (err) {
-            console.error('[TVGallery] Cloud action failed:', err);
-            alert('Lỗi khi gửi lệnh tải!');
-        }
+        const link = node.episode.m3u8 || node.episode.link_m3u8 || node.episode.url || node.episode.magnet;
+        const name = node.episode.name || node.server.server_name;
+        if (link) handleDownloadRequest(link, name);
     };
 
     const toggleGroup = (type: string) => {
@@ -342,7 +374,11 @@ export const TVGallery = () => {
                                                                         <Play className={`w-3.5 h-3.5 ${isSelected ? 'fill-current' : ''}`} />
                                                                     </button>
                                                                     <CloudButtons targets={cloudTargets} compact={true}
-                                                                        onDeviceAction={() => window.open(node.episode.url || node.episode.magnet, '_blank')}
+                                                                        onDeviceAction={() => {
+                                                                            const link = node.episode.m3u8 || node.episode.link_m3u8 || node.episode.url || node.episode.magnet;
+                                                                            const name = node.episode.name || node.server.server_name;
+                                                                            if (link) handleDownloadRequest(link, name);
+                                                                        }}
                                                                         onCloudAction={(target) => handleCloudAction(node, target)} />
                                                                 </div>
                                                             </div>
@@ -358,6 +394,15 @@ export const TVGallery = () => {
                     </motion.div>
                 </AnimatePresence>
             </div>
+            
+            <DownloadModal 
+                isOpen={!!modalData}
+                title={modalData?.name || ''}
+                isHls={modalData?.isHls}
+                isJdOnline={modalData?.isJdOnline}
+                onClose={() => setModalData(null)}
+                onConfirm={onConfirmDownload}
+            />
         </div>
     );
 };
