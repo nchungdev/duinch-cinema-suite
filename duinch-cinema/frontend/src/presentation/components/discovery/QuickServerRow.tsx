@@ -46,7 +46,7 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
     if (selected.size === 0) return;
     const selectedEps = Array.from(selected).map(i => episodes[i]);
     selectedEps.forEach(ep => {
-        const url = ep.link_m3u8 || ep.link_embed;
+        const url = ep.m3u8 || ep.link_m3u8 || ep.embed || ep.link_embed;
         if (url && onDownload) onDownload(url, ep.name || `${serverName} Ep`);
     });
   };
@@ -199,7 +199,7 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
                 {group.items.map(({ ep, index }) => {
                   const isSelected = selected.has(index);
                   const epLabel = ep.name || `Tập ${String(index + 1).padStart(2, '0')}`;
-                  const epUrl = ep.link_m3u8 || ep.link_embed;
+                  const epUrl = ep.m3u8 || ep.link_m3u8 || ep.embed || ep.link_embed;
                   return (
                     <div key={`${group.season}-${index}`} className={`flex items-stretch rounded-lg border transition-all ${
                       isSelected ? 'bg-blue-600/20 border-blue-500/40' : 'bg-black/30 border-white/8 hover:border-white/15'
