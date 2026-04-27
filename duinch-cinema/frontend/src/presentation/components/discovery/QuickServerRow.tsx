@@ -9,10 +9,11 @@ interface QuickServerRowProps {
   color?: string; 
   cloudTargets: CloudTarget[];
   sourceBadge?: string | null;
+  onDownload?: (url: string, name: string) => void;
 }
 
 export const QuickServerRow: React.FC<QuickServerRowProps> = ({ 
-  serverName, episodes, color = 'text-orange-400', cloudTargets, sourceBadge 
+  serverName, episodes, color = 'text-orange-400', cloudTargets, sourceBadge, onDownload 
 }) => {
   const [open,     setOpen]     = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
