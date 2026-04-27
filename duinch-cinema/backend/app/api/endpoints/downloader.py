@@ -7,6 +7,18 @@ from app.use_cases.downloader import DownloaderUseCase
 router = APIRouter()
 downloader_use_case = DownloaderUseCase()
 
+@router.get("/health")
+async def jd_health():
+    """Check if JDownloader service is online."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{config.DOWNLOADER_URL}/health")
+            if resp.status_code == 200:
+                return resp.json()
+            return {"status": "disconnected"}
+    except Exception:
+        return {"status": "offline"}
+
 @router.get("/list")
 async def jd_list():
     """List current download packages."""
@@ -27,13 +39,27 @@ async def jd_control(action: str, uuids: List[str] = Query([])):
 
 @router.post("/add")
 async def jd_download(
-    url: str, name: str, title: str, 
-    origin_name: Optional[str] = None, year: Optional[str] = None,
-    media_type: str = "movie", collection: Optional[str] = None, season: Optional[int] = None
+    url: str = Body(...), 
+    name: str = Body(...),
+    folder: Optional[str] = Body(None),
+    package_name: Optional[str] = Body(None),
+    title: Optional[str] = Body(None), 
+    media_type: str = Body("movie"),
+    year: Optional[str] = Body(None),
+    season: Optional[int] = Body(None)
 ):
-    """Add a new download task to JDownloader."""
+    """Add a new download task to JDownloader via microservice."""
     try:
-        result = await downloader_use_case.add_download(url, name, title, origin_name, year, media_type, season)
+        # If package_name is not provided, use title or name
+        final_package = package_name or title or name
+        result = await downloader_use_case.add_download(
+            url=url, name=name, title=title or name, 
+            year=year, media_type=media_type, season=season
+        )
+        # We might need to override the calculated folder if provided
+        if folder:
+            result['path'] = folder
+            
         return {"data": result, "error_code": 0, "error_msg": ""}
     except Exception as e:
         return {"data": None, "error_code": 500, "error_msg": str(e)}

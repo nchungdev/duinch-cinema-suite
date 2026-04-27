@@ -275,16 +275,16 @@ export const DiscoveryPipeline = ({
                   <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
                     src === 'kkphim' ? 'text-blue-400 border-blue-500/20 bg-blue-500/5' : 'text-pink-400 border-pink-500/20 bg-pink-500/5'
                   }`}>
+                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${src === 'kkphim' ? 'text-blue-400 border-blue-500/20 bg-blue-500/5' : 'text-pink-400 border-pink-500/20 bg-pink-500/5'}`}>
                     <Globe className="w-2.5 h-2.5 shrink-0" />
-                    <span className="text-[8px] font-black uppercase tracking-[0.25em] flex-1">
-                      {SOURCE_BADGE[src] ?? src.toUpperCase()}
-                    </span>
+                    <span className="text-[8px] font-black uppercase tracking-[0.25em] flex-1">{SOURCE_BADGE[src] ?? src.toUpperCase()}</span>
                     <span className="text-[7px] font-bold opacity-50">{entries.length} sv</span>
                   </div>
                   {entries.map(([serverName, eps]) => (
                     <QuickServerRow key={serverName} serverName={serverName} episodes={eps}
                       color={src === 'kkphim' ? 'text-blue-400' : 'text-pink-400'} cloudTargets={cloudTargets}
-                      sourceBadge={SOURCE_BADGE[eps[0]?.source]} />
+                      sourceBadge={SOURCE_BADGE[eps[0]?.source]} 
+                      onDownload={(url, name) => handleDownloadRequest(url, name)} />
                   ))}
                 </div>
             ))}
@@ -295,17 +295,25 @@ export const DiscoveryPipeline = ({
           <div className="space-y-1">
             {downloadableByType[activeTab].map((l, i) => (
               activeTab === 'torrent'
-                ? <TorrentRow key={i} link={l as any} sourceBadge={SOURCE_BADGE[(l as any).source]} />
+                ? <TorrentRow key={i} link={l as any} sourceBadge={SOURCE_BADGE[(l as any).source]} 
+                    onDownload={(url, name) => handleDownloadRequest(url, name)} />
                 : <DeepRow key={i} link={l}
                     actionLabel={activeTab === 'gdrive' ? 'Drive' : 'FShare'}
                     color={SOURCE_TYPE_META[activeTab]?.color || 'text-sky-400'}
                     sourceBadge={SOURCE_BADGE[(l as any).source]}
-                    onAction={(url) => window.open(url, '_blank')}
+                    onAction={(url, name) => handleDownloadRequest(url, name)}
                   />
             ))}
           </div>
         )}
       </div>
+      <DownloadModal 
+        isOpen={!!modalData}
+        title={modalData?.name || ''}
+        isHls={modalData?.isHls}
+        onClose={() => setModalData(null)}
+        onConfirm={onConfirmDownload}
+      />
     </div>
   );
 };

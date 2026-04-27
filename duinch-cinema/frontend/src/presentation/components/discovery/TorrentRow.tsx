@@ -145,7 +145,7 @@ export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | nu
           
           <CloudButtons 
             targets={cloudTargets}
-            onDeviceAction={() => window.open(link.url, '_blank')}
+            onDeviceAction={() => onDownload?.(link.url, link.name)}
             onCloudAction={handleCloudAction}
           />
         </div>

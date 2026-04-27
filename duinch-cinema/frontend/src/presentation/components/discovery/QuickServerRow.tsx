@@ -153,7 +153,9 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
           <CloudButtons 
             targets={cloudTargets}
             count={selectMode ? selected.size : undefined}
-            onDeviceAction={() => {}}
+            onDeviceAction={() => {
+                if (selectMode) handleBatchDownload();
+            }}
             onCloudAction={(target) => {
                 alert(`Gửi ${selected.size || 1} tập tới ${target.label}`);
             }}
@@ -187,6 +189,7 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
                 {group.items.map(({ ep, index }) => {
                   const isSelected = selected.has(index);
                   const epLabel = ep.name || `Tập ${String(index + 1).padStart(2, '0')}`;
+                  const epUrl = ep.link_m3u8 || ep.link_embed;
                   return (
                     <div key={`${group.season}-${index}`} className={`flex items-stretch rounded-lg border transition-all ${
                       isSelected ? 'bg-blue-600/20 border-blue-500/40' : 'bg-black/30 border-white/8 hover:border-white/15'
@@ -207,7 +210,10 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
                       {!selectMode && (
                         <>
                           <div className="flex items-stretch">
-                            <button title="Device" className="px-1.5 flex items-center justify-center border-l border-white/5 hover:bg-white/10 transition-all group/dev">
+                            <button 
+                                title="Device" 
+                                onClick={() => epUrl && onDownload?.(epUrl, epLabel)}
+                                className="px-1.5 flex items-center justify-center border-l border-white/5 hover:bg-white/10 transition-all group/dev">
                                 <HardDrive className="w-2.5 h-2.5 text-gray-600 group-hover/dev:text-gray-300 transition-colors" />
                             </button>
                             {cloudTargets.map((t, ti) => (
