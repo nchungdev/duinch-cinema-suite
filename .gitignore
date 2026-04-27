@@ -19,3 +19,7 @@ backend/data/
 .pytest_cache/
 .venv/
 venv/
+clean_index.m3u8
+duinch-cinema/backend/test_m3u8_filtered.py
+.gitignore
+duinch-cinema/backend/test_m3u8.py

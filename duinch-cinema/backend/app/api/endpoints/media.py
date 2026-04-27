@@ -1,6 +1,10 @@
-import asyncio
+import sqlite3
+import os
 import json
-from typing import List, Dict, Any, Optional
+import subprocess
+import tempfile
+import asyncio
+import httpx
 from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -8,8 +12,57 @@ from app.use_cases.discovery import DiscoveryUseCase
 from app.infrastructure.scrapers.fshare_lookup import resolve_fshare_url, lookup_timfshare
 from app.domain.models.media import DiscoveryTaskResult, DownloadableLink
 from app.services.response_wrapper import wrap_response
+from app.services.m3u8_filter import M3U8AdFilter
 
 router = APIRouter()
+
+@router.get("/media/download-m3u8")
+async def download_m3u8(url: str, filename: str = "video.mp4"):
+    """Streams m3u8 to mp4 with parallel chunk downloading and ad filtering."""
+    filter_service = M3U8AdFilter()
+    clean_content = await filter_service.get_clean_content(url)
+    
+    async def stream_generator():
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8")
+        tmp.write(clean_content.encode())
+        tmp.close()
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-protocol_whitelist", "file,http,https,tcp,tls,crypto,data",
+            "-i", tmp.name,
+            "-c", "copy", "-bsf:a", "aac_adtstoasc",
+            "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "pipe:1"
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        
+        try:
+            while True:
+                chunk = await process.stdout.read(1024 * 128)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            if process.returncode is None:
+                process.terminate()
+            if os.path.exists(tmp.name):
+                os.remove(tmp.name)
+
+    return StreamingResponse(
+        stream_generator(),
+        media_type="video/mp4",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )
 
 DISCOVERY_SOURCES = [
     {"source_type": "fshare",      "source": "indexed"},
@@ -49,7 +102,6 @@ async def discovery_stream(
         for completed_task in asyncio.as_completed(tasks):
             try:
                 result = await completed_task
-                # Handle both Pydantic models and regular dicts
                 res_data = result.dict(exclude_none=True) if hasattr(result, "dict") else result
                 yield f"data: {json.dumps({'type': 'result', 'data': res_data})}\n\n"
             except Exception as e:
