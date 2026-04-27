@@ -20,15 +20,19 @@ export const useDownloader = () => {
         setIsChecking(true);
         try {
             const res = await api.get('/downloader/health');
+            const isHealthy = res.data?.status === 'healthy';
+            console.log('[Downloader] JD Health Status:', res.data?.status, '-> Healthy:', isHealthy);
             setIsChecking(false);
-            return res.data?.status === 'healthy';
-        } catch {
+            return isHealthy;
+        } catch (err) {
+            console.error('[Downloader] Health check failed:', err);
             setIsChecking(false);
             return false;
         }
     };
 
     const sendToJD = async (url: string, name: string, path?: string) => {
+        console.log('[Downloader] Sending to JD:', { url, name, path });
         try {
             await api.post('/downloader/add', {
                 url,
@@ -44,6 +48,7 @@ export const useDownloader = () => {
     };
 
     const downloadInBrowser = (url: string, name: string) => {
+        console.log('[Downloader] Downloading in browser:', { url, name });
         if (url.includes('.m3u8') || url.includes('.index')) {
             // Specialized HLS Download Logic
             const hlsToolUrl = `https://blog.v-3.cc/m3u8-downloader.html?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;

@@ -53,24 +53,36 @@ export interface MediaLink {
   source?: string;
   provider?: string;
   stream_type?: string;
+  updated_at?: string;
+  is_folder?: boolean;
+}
+
+export interface StreamingEpisode {
+  name: string;
+  m3u8?: string;
+  embed?: string;
+  server?: string;
+  source?: string;
 }
 
 export interface StreamingServer {
-  server_name: string;
-  server_data: any[];
-}
-
-export interface StreamableSources {
-  [type: string]: {
-    [provider: string]: StreamingServer[];
-  };
+  server: string;
+  episodes: StreamingEpisode[];
 }
 
 export interface MediaItem {
+  id: number;
+  tmdb_id?: number;
   title: string;
-  origin_name: string;
+  originTitle?: string;
+  origin_name?: string;
   poster: string;
-  year: string;
+  thumb_url?: string;
+  year: string | number;
   slug: string;
   media_type: 'movie' | 'tv';
+  type?: 'movie' | 'tv';
+  quality?: string;
+  overview?: string;
+  genres?: { name: string }[];
 }
