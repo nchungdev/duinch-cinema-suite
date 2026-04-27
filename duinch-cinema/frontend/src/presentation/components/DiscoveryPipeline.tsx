@@ -59,6 +59,7 @@ export const DiscoveryPipeline = ({
   tmdbId, title, localizeTitle, year, mediaType, season, initialSeason, initialEpisode, onStreamingReady,
 }: DiscoveryPipelineProps) => {
   const cloudTargets = useCloudViewModel();
+  const downloader = useDownloader();
 
   const [streamableByType, setStreamableByType] = useState<Record<string, Record<string, any[]>>>({});
   const [downloadableByType, setDownloadableByType] = useState<Record<string, MediaLink[]>>({});
@@ -68,8 +69,49 @@ export const DiscoveryPipeline = ({
   const [activeTab,   setActiveTab]   = useState<string>('');
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   
+  // Modal State
+  const [modalData, setModalData] = useState<{ url: string; name: string; isHls: boolean } | null>(null);
+
   const streamingNotifiedRef = useRef<Set<string>>(new Set());
   const fetchLock = useRef<string | null>(null);
+
+  // Handle Download Request
+  const handleDownloadRequest = async (url: string, name: string) => {
+    const isHls = url.includes('.m3u8') || url.includes('.index');
+    const pref = downloader.getPreference();
+
+    if (pref) {
+        if (pref === 'jdownloader') {
+            const ok = await downloader.sendToJD(url, name);
+            if (!ok) downloader.downloadInBrowser(url, name);
+        } else {
+            downloader.downloadInBrowser(url, name);
+        }
+        return;
+    }
+
+    // Check if JD is available before showing modal
+    const isJdOnline = await downloader.checkJDStatus();
+    if (!isJdOnline) {
+        downloader.downloadInBrowser(url, name);
+        return;
+    }
+
+    setModalData({ url, name, isHls });
+  };
+
+  const onConfirmDownload = async (choice: 'jdownloader' | 'browser', remember: boolean) => {
+    if (!modalData) return;
+    downloader.setPreference(choice, remember);
+    
+    if (choice === 'jdownloader') {
+        const ok = await downloader.sendToJD(modalData.url, modalData.name);
+        if (!ok) downloader.downloadInBrowser(modalData.url, modalData.name);
+    } else {
+        downloader.downloadInBrowser(modalData.url, modalData.name);
+    }
+    setModalData(null);
+  };
 
   const fetchSources = async (force = false) => {
     // ── Single-Flight Lock ──
