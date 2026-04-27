@@ -7,7 +7,7 @@
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MINER_DIR="$PROJECT_ROOT/duinch-crawler/miner"
 VENV_DIR="$MINER_DIR/venv"
-BACKEND_ENV="$PROJECT_ROOT/dashboard/backend/.env"
+BACKEND_ENV="$PROJECT_ROOT/duinch-cinema/backend/.env"
 MINER_ENV="$MINER_DIR/.env"
 PAGES=${1:-1}
 

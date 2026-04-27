@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- CinemaPro Dashboard Orchestrator (Watch Mode) ---
+# --- Duinch Cinema Dashboard Orchestrator (Watch Mode) ---
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
@@ -10,25 +10,25 @@ lsof -t -i:8086 | xargs kill -9 2>/dev/null
 lsof -t -i:5173 | xargs kill -9 2>/dev/null
 
 # Prepare logs directory
-mkdir -p dashboard/backend/logs
+mkdir -p duinch-cinema/backend/logs
 
 # 2. Setup Python environment for Backend
 echo "--- 2. Setting up Python environment for Backend ---"
 source venv/bin/activate
 python3 -m pip install -q --upgrade pip
-python3 -m pip install -q -r dashboard/backend/requirements.txt
+python3 -m pip install -q -r duinch-cinema/backend/requirements.txt
 
 # 3. Start Backend
 echo "--- 3. Starting Backend (HQ) (Port 8086) ---"
-export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/dashboard/backend # Ensure PYTHONPATH is set before uvicorn
-cd dashboard/backend
+export PYTHONPATH=$PYTHONPATH:$PROJECT_ROOT/duinch-cinema/backend # Ensure PYTHONPATH is set before uvicorn
+cd duinch-cinema/backend
 uvicorn app.main:app --host 0.0.0.0 --port 8086 --reload --reload-dir app > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 cd "$PROJECT_ROOT"
 
 # 4. Start Frontend
 echo "--- 4. Starting Frontend (Port 5173) ---"
-cd dashboard/frontend
+cd duinch-cinema/frontend
 # Ensure frontend dependencies are installed
 npm install --silent
 npm run dev -- --host 0.0.0.0 > ../backend/logs/frontend.log 2>&1 &
@@ -56,4 +56,4 @@ cleanup() {
 trap cleanup SIGINT
 
 # Combined log stream for easy monitoring
-tail -f dashboard/backend/logs/backend.log dashboard/backend/logs/frontend.log
+tail -f duinch-cinema/backend/logs/backend.log duinch-cinema/backend/logs/frontend.log

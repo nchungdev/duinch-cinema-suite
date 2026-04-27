@@ -10,7 +10,7 @@ NC='\033[0m'
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CACHE_DIR="$PROJECT_ROOT/data/cache"
 
-echo -e "${BLUE}=== CinemaPro Cache Manager ===${NC}"
+echo -e "${BLUE}=== Duinch Cinema Cache Manager ===${NC}"
 
 # 1. Clear Redis
 if redis-cli ping > /dev/null 2>&1; then

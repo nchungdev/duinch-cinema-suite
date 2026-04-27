@@ -6,7 +6,7 @@
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COOKER_DIR="$PROJECT_ROOT/duinch-crawler/cooker"
 VENV_DIR="$COOKER_DIR/venv"
-BACKEND_ENV="$PROJECT_ROOT/dashboard/backend/.env"
+BACKEND_ENV="$PROJECT_ROOT/duinch-cinema/backend/.env"
 COOKER_ENV="$COOKER_DIR/.env"
 LIMIT=${1:-100}
 
