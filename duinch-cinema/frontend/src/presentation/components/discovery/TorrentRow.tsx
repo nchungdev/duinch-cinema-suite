@@ -62,7 +62,11 @@ const QualityBadge: React.FC<{ quality: string }> = ({ quality }) => {
   );
 };
 
-export const TorrentRow: React.FC<{ link: TorrentLink; sourceBadge?: string | null }> = ({ link, sourceBadge }) => {
+export const TorrentRow: React.FC<{ 
+  link: TorrentLink; 
+  sourceBadge?: string | null;
+  onDownload?: (url: string, name: string) => void;
+}> = ({ link, sourceBadge, onDownload }) => {
   const cloudTargets = useCloudViewModel();
   const [expanded, setExpanded] = useState(false);
   const [files, setFiles] = useState<any[] | null>(null);
