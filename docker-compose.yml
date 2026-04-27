@@ -1,48 +1,89 @@
 services:
-  postgres:
+  # --- Core Infrastructure ---
+  duinch-db:
     image: postgres:15-alpine
-    container_name: omv-jd-dashboard-postgres
+    container_name: duinch-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-nexus}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus}
-      POSTGRES_DB: ${POSTGRES_DB:-nexus_db}
+      POSTGRES_USER: ${POSTGRES_USER:-duinch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-duinch}
+      POSTGRES_DB: ${POSTGRES_DB:-duinch_db}
     ports:
       - "5432:5432"
     volumes:
       - ./data/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U duinch -d duinch_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  redis:
+  duinch-cache:
     image: redis:alpine
-    container_name: omv-jd-dashboard-redis
+    container_name: duinch-cache
     restart: unless-stopped
     ports:
       - "6379:6379"
 
-  backend:
-    image: ghcr.io/nchungdev/omv-jdownloader-dashboard-api:latest
-    container_name: omv-jd-dashboard-api
+  # --- Web Application Stack ---
+  duinch-api:
+    build: 
+      context: ./duinch-cinema/backend
+    container_name: duinch-api
     restart: unless-stopped
     depends_on:
-      - redis
-      - postgres
+      duinch-db:
+        condition: service_healthy
+      duinch-cache:
+        condition: service_started
     ports:
       - "8086:8086"
     environment:
       - MYJD_EMAIL=${MYJD_EMAIL}
       - MYJD_PASSWORD=${MYJD_PASSWORD}
       - TMDB_READ_ACCESS_TOKEN=${TMDB_READ_ACCESS_TOKEN}
-      - STORAGE_PATH=/storage
-      - JD_DOWNLOAD_BASE=/storage
-      - JD_INTERNAL_PATH=/downloads
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD:-nexus}@postgres:5432/${POSTGRES_DB:-nexus_db}
+      - REDIS_URL=redis://duinch-cache:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-duinch}:${POSTGRES_PASSWORD:-duinch}@duinch-db:5432/${POSTGRES_DB:-duinch_db}
+      - DATA_ROOT=/app/data
     volumes:
       - ${HOST_STORAGE_PATH}:/storage
+      - ./data:/app/data
 
-  frontend:
-    image: ghcr.io/nchungdev/omv-jdownloader-dashboard-ui:latest
-    container_name: omv-jd-dashboard-ui
+  duinch-ui:
+    build:
+      context: ./duinch-cinema/frontend
+    container_name: duinch-ui
     restart: unless-stopped
+    depends_on:
+      - duinch-api
     ports:
       - "8087:80"
+
+  # --- Crawler Workers (Scale as needed) ---
+  duinch-miner:
+    build: 
+      context: ./duinch-crawler
+    container_name: duinch-miner
+    restart: "no"
+    depends_on:
+      - duinch-db
+      - duinch-cache
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-duinch}:${POSTGRES_PASSWORD:-duinch}@duinch-db:5432/${POSTGRES_DB:-duinch_db}
+      - REDIS_URL=redis://duinch-cache:6379
+    command: ["python3", "miner/main.py", "--pages", "1"]
+    profiles: ["workers"]
+
+  duinch-cooker:
+    build: 
+      context: ./duinch-crawler
+    container_name: duinch-cooker
+    restart: "no"
+    depends_on:
+      - duinch-db
+      - duinch-cache
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-duinch}:${POSTGRES_PASSWORD:-duinch}@duinch-db:5432/${POSTGRES_DB:-duinch_db}
+      - REDIS_URL=redis://duinch-cache:6379
+    command: ["python3", "cooker/main.py", "--limit", "100"]
+    profiles: ["workers"]

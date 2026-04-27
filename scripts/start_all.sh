@@ -2,7 +2,7 @@
 
 # --- CinemaPro Dashboard Orchestrator (Watch Mode) ---
 
-PROJECT_ROOT=$(pwd)
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # 1. Kill existing processes
 echo "--- 1. Cleaning up ports 8086 (Backend) and 5173 (Frontend) ---"

@@ -1,6 +1,6 @@
 # OMV JDownloader Dashboard API
 
-Backend API for OMV media management and JDownloader dashboard. Built with FastAPI and provides endpoints for media discovery, search, and download management.
+Backend API for OMV media management and JDownloader duinch-cinema. Built with FastAPI and provides endpoints for media discovery, search, and download management.
 
 ## Requirements
 

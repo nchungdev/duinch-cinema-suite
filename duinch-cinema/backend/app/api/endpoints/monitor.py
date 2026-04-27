@@ -147,7 +147,7 @@ async def trigger_task(task: str, pages: int = 1, limit: int = 100):
     script = "start_miner.sh" if task == "miner" else "start_cooker.sh"
     project_root = os.path.dirname(config.DATA_ROOT) 
     
-    script_path = os.path.join(project_root, script)
+    script_path = os.path.join(project_root, "scripts", script)
     
     # Setup logging
     log_dir = os.path.join(config.DATA_ROOT, "logs")

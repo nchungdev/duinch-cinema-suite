@@ -5,7 +5,7 @@
 
 # Lấy đường dẫn tuyệt đối đến thư mục gốc của project (nơi chứa script này)
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-MINER_DIR="$PROJECT_ROOT/crawler/miner"
+MINER_DIR="$PROJECT_ROOT/duinch-crawler/miner"
 VENV_DIR="$MINER_DIR/venv"
 BACKEND_ENV="$PROJECT_ROOT/dashboard/backend/.env"
 MINER_ENV="$MINER_DIR/.env"

@@ -7,7 +7,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-PROJECT_ROOT=$(pwd)
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CACHE_DIR="$PROJECT_ROOT/data/cache"
 
 echo -e "${BLUE}=== CinemaPro Cache Manager ===${NC}"

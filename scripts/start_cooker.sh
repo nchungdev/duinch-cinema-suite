@@ -4,7 +4,7 @@
 # ----------------------------------------
 
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COOKER_DIR="$PROJECT_ROOT/crawler/cooker"
+COOKER_DIR="$PROJECT_ROOT/duinch-crawler/cooker"
 VENV_DIR="$COOKER_DIR/venv"
 BACKEND_ENV="$PROJECT_ROOT/dashboard/backend/.env"
 COOKER_ENV="$COOKER_DIR/.env"
@@ -32,6 +32,6 @@ echo "[*] Running Cooker..."
 PYTHONPATH="$PROJECT_ROOT" python3 -u main.py --limit "$LIMIT"
 
 # Tự động giao hàng về HQ
-bash "$PROJECT_ROOT/crawler/deliver.sh"
+bash "$PROJECT_ROOT/duinch-crawler/deliver.sh"
 
 deactivate
