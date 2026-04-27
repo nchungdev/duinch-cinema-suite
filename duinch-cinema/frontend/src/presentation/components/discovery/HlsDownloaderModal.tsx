@@ -11,7 +11,8 @@ interface HlsDownloaderModalProps {
 export const HlsDownloaderModal: React.FC<HlsDownloaderModalProps> = ({ isOpen, url, name, onClose }) => {
     if (!isOpen) return null;
 
-    const toolUrl = `https://blog.v-3.cc/m3u8-downloader.html?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
+    // Use the self-hosted tool inside the public folder!
+    const toolUrl = `/m3u8-downloader.html?source=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
 
     return (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-cinema-fade">
