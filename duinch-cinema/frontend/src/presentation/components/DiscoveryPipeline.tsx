@@ -84,22 +84,21 @@ export const DiscoveryPipeline = ({
 
     if (pref) {
         if (pref === 'jdownloader') {
-            const ok = await downloader.sendToJD(url, name);
-            if (!ok) downloader.downloadInBrowser(url, name);
+            const isJdOnline = await downloader.checkJDStatus();
+            if (isJdOnline) {
+                const ok = await downloader.sendToJD(url, name);
+                if (ok) return;
+            }
+            downloader.downloadInBrowser(url, name);
         } else {
             downloader.downloadInBrowser(url, name);
         }
         return;
     }
 
-    // Check if JD is available before showing modal
+    // Always show modal to let user know what's happening
     const isJdOnline = await downloader.checkJDStatus();
-    if (!isJdOnline) {
-        downloader.downloadInBrowser(url, name);
-        return;
-    }
-
-    setModalData({ url, name, isHls });
+    setModalData({ url, name, isHls, isJdOnline });
   };
 
   const onConfirmDownload = async (choice: 'jdownloader' | 'browser', remember: boolean) => {

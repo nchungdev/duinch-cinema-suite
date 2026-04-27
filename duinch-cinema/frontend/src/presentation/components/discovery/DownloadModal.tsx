@@ -7,9 +7,10 @@ interface DownloadModalProps {
     onConfirm: (choice: 'jdownloader' | 'browser', remember: boolean) => void;
     title: string;
     isHls?: boolean;
+    isJdOnline?: boolean;
 }
 
-export const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onConfirm, title, isHls }) => {
+export const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, onConfirm, title, isHls, isJdOnline = true }) => {
     const [remember, setRemember] = useState(false);
 
     if (!isOpen) return null;
@@ -38,17 +39,26 @@ export const DownloadModal: React.FC<DownloadModalProps> = ({ isOpen, onClose, o
                         
                         {/* Option: JDownloader */}
                         <button 
-                            onClick={() => onConfirm('jdownloader', remember)}
-                            className="w-full flex items-center gap-4 p-5 bg-blue-600/10 border border-blue-500/30 rounded-2xl hover:bg-blue-600/20 hover:border-blue-500/50 transition-all group text-left"
+                            onClick={() => isJdOnline && onConfirm('jdownloader', remember)}
+                            disabled={!isJdOnline}
+                            className={`w-full flex items-center gap-4 p-5 border rounded-2xl transition-all group text-left ${
+                                isJdOnline 
+                                    ? 'bg-blue-600/10 border-blue-500/30 hover:bg-blue-600/20 hover:border-blue-500/50' 
+                                    : 'bg-red-500/5 border-red-500/20 opacity-50 cursor-not-allowed'
+                            }`}
                         >
-                            <div className="p-3 bg-blue-500/20 rounded-xl group-hover:scale-110 transition-transform">
-                                <Monitor className="w-6 h-6 text-blue-400" />
+                            <div className={`p-3 rounded-xl transition-transform ${isJdOnline ? 'bg-blue-500/20 group-hover:scale-110' : 'bg-red-500/20'}`}>
+                                <Monitor className={`w-6 h-6 ${isJdOnline ? 'text-blue-400' : 'text-red-400'}`} />
                             </div>
                             <div className="flex-1">
-                                <span className="block text-sm font-black text-white uppercase italic">JDownloader (NAS)</span>
-                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Tải về Server / NAS cực nhanh & ổn định</span>
+                                <span className={`block text-sm font-black uppercase italic ${isJdOnline ? 'text-white' : 'text-red-400'}`}>
+                                    JDownloader (NAS) {!isJdOnline && '(Offline)'}
+                                </span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider ${isJdOnline ? 'text-gray-400' : 'text-red-500/60'}`}>
+                                    {isJdOnline ? 'Tải về Server / NAS cực nhanh & ổn định' : 'Kết nối tới JDownloader thất bại'}
+                                </span>
                             </div>
-                            <CheckCircle2 className="w-5 h-5 text-blue-500" />
+                            {isJdOnline && <CheckCircle2 className="w-5 h-5 text-blue-500" />}
                         </button>
 
                         {/* Option: Browser */}
