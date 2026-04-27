@@ -91,17 +91,10 @@ export const TorrentRow: React.FC<{
   };
 
   const handleCloudAction = async (target: CloudTarget) => {
-    try {
-        await api.post('/downloader/add', {
-            url: link.url,
-            name: link.name,
-            target: target.id,
-            provider: 'torrent'
-        });
-        alert(`Gửi Torrent tới ${target.label} thành công!`);
-    } catch (err) {
-        console.error('[TorrentRow] Cloud action failed:', err);
-        alert('Lỗi khi gửi Torrent!');
+    // Legacy Cloud Targets feature now routes through the main download manager if needed,
+    // but for now we just trigger the main download action to keep it simple.
+    if (onDownload && link.url) {
+        onDownload(link.url, link.name);
     }
   };
 

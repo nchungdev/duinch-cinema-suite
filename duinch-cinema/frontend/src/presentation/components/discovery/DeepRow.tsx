@@ -52,18 +52,9 @@ export const DeepRow: React.FC<DeepRowProps> = ({
   };
 
   const handleCloudAction = async (target: CloudTarget) => {
-    if (!link.url) return;
-    try {
-        await api.post('/downloader/add', {
-            url: link.url,
-            name: link.name,
-            target: target.id,
-            provider: link.url.includes('fshare.vn') ? 'fshare' : 'direct'
-        });
-        alert(`Gửi lệnh tải tới ${target.label} thành công!`);
-    } catch (err) {
-        console.error('[DeepRow] Cloud action failed:', err);
-        alert('Lỗi khi gửi lệnh tải!');
+    // Route cloud actions through the main download manager logic
+    if (onAction && link.url) {
+        onAction(link.url, link.name || '');
     }
   };
 
