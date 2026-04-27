@@ -24,8 +24,10 @@ export class SelectBestStream {
   ): StreamSelectionResult | null {
     if (Object.keys(streamableSources).length === 0) return null;
 
-    const typesOrder = ['EMBED', 'HLS'];
-    
+    // HLS first: native player with backend ad-proxy → no third-party trackers.
+    // EMBED is a fallback for streams that only have an iframe link.
+    const typesOrder = ['HLS', 'EMBED'];
+
     // 1. Nếu người dùng chọn đích danh 1 Provider (ví dụ: KKPHIM)
     if (preferredSource !== 'auto') {
       for (const type of typesOrder) {
@@ -48,7 +50,7 @@ export class SelectBestStream {
       }
     }
 
-    // 3. Fallback mặc định: Tìm provider đầu tiên theo thứ tự EMBED -> HLS
+    // 3. Fallback mặc định: Tìm provider đầu tiên theo thứ tự HLS -> EMBED
     for (const type of typesOrder) {
       const providers = Object.keys(streamableSources[type] || {});
       if (providers.length > 0) {
