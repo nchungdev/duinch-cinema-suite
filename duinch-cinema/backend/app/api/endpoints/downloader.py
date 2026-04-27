@@ -77,3 +77,37 @@ async def proxy_download(url: str):
         return StreamingResponse(stream_content(), headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+import subprocess
+import urllib.parse
+
+@router.get("/proxy-download-hls")
+async def proxy_download_hls(url: str, name: str):
+    """Download M3U8 stream, mux to MP4 on the fly using FFmpeg, and stream directly to client."""
+    try:
+        # Sanitize filename
+        safe_name = "".join(c for c in name if c.isalnum() or c in " ._-").strip()
+        filename = f"{safe_name}.mp4"
+        encoded_filename = urllib.parse.quote(filename)
+
+        async def stream_ffmpeg():
+            process = subprocess.Popen(
+                ["ffmpeg", "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc", "-f", "mp4", "pipe:1"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
+            while True:
+                chunk = process.stdout.read(8192)
+                if not chunk:
+                    break
+                yield chunk
+            process.stdout.close()
+            process.wait()
+
+        headers = {
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Content-Type": "video/mp4"
+        }
+        return StreamingResponse(stream_ffmpeg(), headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

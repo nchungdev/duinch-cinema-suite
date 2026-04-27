@@ -52,8 +52,17 @@ export const useDownloader = () => {
     const downloadInBrowser = (url: string, name: string) => {
         console.log('[Downloader] Downloading in browser:', { url, name });
         if (url.includes('.m3u8') || url.includes('.index')) {
-            // Specialized HLS Download Logic - Open Local Iframe Modal
-            setHlsToolData({ url, name });
+            // Utilize the native backend FFmpeg proxy to download and mux M3U8 on the fly
+            const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8086/api/v1';
+            const downloadUrl = `${backendUrl}/downloader/proxy-download-hls?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
+            
+            // Create an invisible link to trigger the browser's native download dialog
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `${name}.mp4`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         } else {
             const link = document.createElement('a');
             link.href = url;
