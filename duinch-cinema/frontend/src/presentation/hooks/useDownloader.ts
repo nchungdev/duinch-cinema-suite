@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { api } from '../api/config';
+import { api } from '../../api/config';
 
 export type DownloadPreference = 'jdownloader' | 'browser' | null;
 
