@@ -25,6 +25,7 @@ BLOCKED_DOMAINS = {
 
 # ── Segment-URL heuristics (path / query keywords) ────────────────────────
 AD_SEGMENT_PATTERNS = [
+    r"/adjump/",            # phim1280.tv / kkphim SSAI ad path
     r"[/=]ads?[/=_]", r"pre[-_]roll", r"mid[-_]roll", r"post[-_]roll",
     r"ad[-_]delivery", r"ad[-_]stream", r"adv_", r"_ad_",
     r"vast", r"vpaid", r"banner", r"popunder", r"pop-under",
@@ -112,23 +113,55 @@ async def proxy_image(request: Request, url: str = Query(...)):
         return RedirectResponse(url)
 
 def _proxy_m3u8_url(base: str, request: Request) -> str:
-    """Wrap a sub-playlist URL so it also goes through this proxy."""
     return f"{request.url.scheme}://{request.url.netloc}/api/proxy/m3u8?url={base}"
+
+
+def _rewrite_tag_uris(line: str, base_url: str, request: Request) -> str | None:
+    """Rewrite URI="…" inside a tag. Returns None if the URI is blocked."""
+    if 'URI="' not in line:
+        return line
+    before, rest = line.split('URI="', 1)
+    uri, after = rest.split('"', 1)
+    abs_uri = urljoin(base_url, uri)
+    if is_blocked_url(abs_uri):
+        return None
+    if ".m3u8" in abs_uri.split("?")[0]:
+        abs_uri = _proxy_m3u8_url(abs_uri, request)
+    return f'{before}URI="{abs_uri}"{after}'
+
+
+def _split_into_blocks(lines: list[str]) -> list[list[str]]:
+    """Split a media playlist into blocks at every #EXT-X-DISCONTINUITY marker."""
+    blocks: list[list[str]] = [[]]
+    for line in lines:
+        if line.strip() == "#EXT-X-DISCONTINUITY":
+            blocks.append([])
+        else:
+            blocks[-1].append(line)
+    return blocks
+
+
+def _is_ad_block(block: list[str], base_url: str) -> bool:
+    """Return True when EVERY segment URI in the block is an ad URL."""
+    segs = [l.strip() for l in block if l.strip() and not l.strip().startswith("#")]
+    if not segs:
+        return False   # empty or header-only block → keep
+    return all(is_blocked_url(urljoin(base_url, s)) for s in segs)
 
 
 @router.get("/m3u8")
 async def proxy_m3u8(request: Request, url: str = Query(...)):
     """
-    Proxy M3U8 playlists through the backend.
-    - Strips ad/tracker segments (#EXTINF blocks whose URI matches blocklist)
-    - Strips tracking HLS tags (#EXT-X-DATERANGE, #EXT-X-CUE-OUT/IN, …)
-    - Rewrites sub-playlist URIs so nested playlists also pass through this proxy
-    - Forwards a realistic Referer/User-Agent so CDNs don't 403
+    Proxy M3U8 playlists with aggressive ad filtering:
+    - Block-level: drops entire DISCONTINUITY blocks where all segments are ads
+      (catches server-side ad insertion like /adjump/ on phim1280/kkphim)
+    - Segment-level: drops individual ad segments by URL pattern
+    - Tag-level: strips tracking tags (#EXT-X-DATERANGE, CUE-OUT/IN, SCTE35…)
+    - Forwards realistic Referer/UA so CDNs don't 403
     """
     client: httpx.AsyncClient = request.app.state.http_client
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-
     fetch_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
         "Referer": origin + "/",
@@ -140,68 +173,75 @@ async def proxy_m3u8(request: Request, url: str = Query(...)):
         if resp.status_code != 200:
             return Response(content=resp.text, status_code=resp.status_code)
 
-        base_url = str(resp.url)   # final URL after any redirects
-        lines = resp.text.splitlines()
-        out: list[str] = []
-        skip_next_segment = False
-        i = 0
+        base_url = str(resp.url)
+        raw_lines = resp.text.splitlines()
 
-        while i < len(lines):
-            raw = lines[i]
-            line = raw.strip()
+        # ── Detect playlist type ──────────────────────────────────────────
+        is_media_playlist = any(l.strip().startswith("#EXTINF") for l in raw_lines)
+
+        if is_media_playlist:
+            # ── BLOCK-LEVEL pass (SSAI ad removal) ───────────────────────
+            # Split into blocks at every #EXT-X-DISCONTINUITY boundary,
+            # drop blocks where all segments are ad paths (/adjump/ etc.),
+            # re-join with a single DISCONTINUITY marker between surviving blocks.
+            blocks = _split_into_blocks(raw_lines)
+            clean_blocks = [b for b in blocks if not _is_ad_block(b, base_url)]
+
+            # Flatten: insert DISCONTINUITY only between adjacent surviving blocks
+            # (skip if a block was at position 0 / end — no leading/trailing marker)
+            flat: list[str] = []
+            for idx, block in enumerate(clean_blocks):
+                if idx > 0:
+                    flat.append("#EXT-X-DISCONTINUITY")
+                flat.extend(block)
+        else:
+            flat = raw_lines   # master playlist — no block splitting needed
+
+        # ── LINE-LEVEL pass (segment + tag filtering + URI rewriting) ────
+        out: list[str] = []
+        i = 0
+        while i < len(flat):
+            line = flat[i].strip()
             i += 1
 
-            # ── Empty lines ──────────────────────────────────────────────
             if not line:
                 continue
 
-            # ── Tags to drop entirely (tracking / ad-break markers) ──────
+            # Drop tracking tags
             if any(line.startswith(pfx) for pfx in STRIP_TAG_PREFIXES):
                 continue
 
-            # ── Drop any tag whose value contains a blocked URL ──────────
+            # Drop tags containing blocked URLs
             if line.startswith("#") and is_blocked_url(line):
                 continue
 
-            # ── #EXTINF — peek at next non-empty line for segment URI ────
+            # #EXTINF — peek ahead and validate the segment URI
             if line.startswith("#EXTINF:"):
-                # look ahead for the segment URL
                 j = i
-                while j < len(lines) and not lines[j].strip():
+                while j < len(flat) and not flat[j].strip():
                     j += 1
-                if j < len(lines):
-                    seg = lines[j].strip()
+                if j < len(flat):
+                    seg = flat[j].strip()
                     if not seg.startswith("#"):
                         abs_seg = urljoin(base_url, seg)
                         if is_blocked_url(abs_seg):
-                            # drop both #EXTINF and the segment line
-                            i = j + 1
+                            i = j + 1   # drop both EXTINF + segment
                             continue
-                        # segment is clean — emit #EXTINF, then absolute URI
                         out.append(line)
                         out.append(abs_seg)
                         i = j + 1
                         continue
-                # no segment line found — keep the #EXTINF as-is
                 out.append(line)
                 continue
 
-            # ── Other tags: rewrite URI="…" attributes ───────────────────
+            # Other tags — rewrite URI="…" if present
             if line.startswith("#"):
-                if 'URI="' in line:
-                    before, rest = line.split('URI="', 1)
-                    uri, after = rest.split('"', 1)
-                    abs_uri = urljoin(base_url, uri)
-                    if is_blocked_url(abs_uri):
-                        continue   # drop the whole tag
-                    # sub-playlists → also proxy them
-                    if ".m3u8" in abs_uri.split("?")[0]:
-                        abs_uri = _proxy_m3u8_url(abs_uri, request)
-                    line = f'{before}URI="{abs_uri}"{after}'
-                out.append(line)
+                rewritten = _rewrite_tag_uris(line, base_url, request)
+                if rewritten is not None:
+                    out.append(rewritten)
                 continue
 
-            # ── Bare URL line (nested playlist or segment without #EXTINF) ─
+            # Bare URL (sub-playlist or untagged segment)
             abs_uri = urljoin(base_url, line)
             if is_blocked_url(abs_uri):
                 continue
@@ -209,13 +249,24 @@ async def proxy_m3u8(request: Request, url: str = Query(...)):
                 abs_uri = _proxy_m3u8_url(abs_uri, request)
             out.append(abs_uri)
 
+        # Remove duplicate / consecutive DISCONTINUITY markers left by block joins
+        deduped: list[str] = []
+        for line in out:
+            if line == "#EXT-X-DISCONTINUITY" and deduped and deduped[-1] == "#EXT-X-DISCONTINUITY":
+                continue
+            deduped.append(line)
+        # Also strip a leading DISCONTINUITY (can appear if first block was all ads)
+        while deduped and deduped[0] == "#EXT-X-DISCONTINUITY":
+            deduped.pop(0)
+
+        filtered = len(raw_lines) - len(out)
+        if filtered > 0:
+            print(f"[M3U8 Proxy] Filtered {filtered} lines from {url}")
+
         return Response(
-            content="\n".join(out) + "\n",
+            content="\n".join(deduped) + "\n",
             media_type="application/vnd.apple.mpegurl",
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "no-store",
-            },
+            headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "no-store"},
         )
 
     except Exception as e:
