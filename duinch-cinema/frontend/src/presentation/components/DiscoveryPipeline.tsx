@@ -275,9 +275,10 @@ export const DiscoveryPipeline = ({
                   <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
                     src === 'kkphim' ? 'text-blue-400 border-blue-500/20 bg-blue-500/5' : 'text-pink-400 border-pink-500/20 bg-pink-500/5'
                   }`}>
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${src === 'kkphim' ? 'text-blue-400 border-blue-500/20 bg-blue-500/5' : 'text-pink-400 border-pink-500/20 bg-pink-500/5'}`}>
                     <Globe className="w-2.5 h-2.5 shrink-0" />
-                    <span className="text-[8px] font-black uppercase tracking-[0.25em] flex-1">{SOURCE_BADGE[src] ?? src.toUpperCase()}</span>
+                    <span className="text-[8px] font-black uppercase tracking-[0.25em] flex-1">
+                      {SOURCE_BADGE[src] ?? src.toUpperCase()}
+                    </span>
                     <span className="text-[7px] font-bold opacity-50">{entries.length} sv</span>
                   </div>
                   {entries.map(([serverName, eps]) => (
