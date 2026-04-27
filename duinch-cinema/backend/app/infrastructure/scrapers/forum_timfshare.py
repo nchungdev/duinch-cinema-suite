@@ -64,7 +64,7 @@ class ForumTimFShareScraper:
                         source_page=url
                     ))
         except Exception as e:
-            
+            pass
         return links
 
     async def lookup(self, query: str, media_type: str = "movie") -> List[DownloadableLink]:

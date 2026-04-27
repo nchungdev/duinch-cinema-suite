@@ -31,7 +31,6 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
     
     # [STRATEGY] Only allow movie discovery for this specific API source
     if media_type != "movie":
-        print(f"[TimFShare] Skipping TV series request for '{query}' (API not suitable for series)")
         return []
 
     base_url = "https://timfshare.com/api/v1/string-query-search"

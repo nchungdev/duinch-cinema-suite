@@ -58,7 +58,7 @@ async def fetch_tmdb_search(client: httpx.AsyncClient, query: str, media_type: s
             cache_manager.set_discovery("tmdb_search", cache_key, page, payload)
         return payload
     except Exception as e:
-    return {"results": [], "total_pages": 0, "page": page}
+        return {"results": [], "total_pages": 0, "page": page}
 
 async def fetch_tmdb_detail(client: httpx.AsyncClient, tmdb_id: int, media_type: str = "movie") -> Optional[Dict[str, Any]]:
     """Fetch full detail for a TMDB item and format for frontend."""

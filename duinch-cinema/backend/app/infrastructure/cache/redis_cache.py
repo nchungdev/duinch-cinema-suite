@@ -11,10 +11,8 @@ class CacheManager:
             redis_host = os.getenv("REDIS_HOST", "localhost")
             self.redis = redis.Redis(host=redis_host, port=6379, db=0, decode_responses=True)
             self.redis.ping()
-            print("[Cache] Redis connected.")
         except Exception:
             self.redis = None
-            print("[Cache] Redis not available, using passthrough.")
 
     def get_discovery(self, provider: str, tmdb_id: Any, season: int = 1) -> Optional[list]:
         if not self.redis: return None
