@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Video, Download, ShieldCheck } from 'lucide-react';
+import { api } from '../../../api/config';
 
 interface HlsDownloaderModalProps {
     isOpen: boolean;
@@ -11,11 +12,21 @@ interface HlsDownloaderModalProps {
 export const HlsDownloaderModal: React.FC<HlsDownloaderModalProps> = ({ isOpen, url, name, onClose }) => {
     if (!isOpen) return null;
 
-    // Direct Backend Filtered Download URL
-    const backendDownloadUrl = `http://localhost:8086/api/media/download-m3u8?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(name.replace(/\s+/g, '_'))}.mp4`;
+    // Direct Backend Filtered Download URL pointing to port 8086
+    const getBackendDownloadUrl = () => {
+        return `http://localhost:8086/api/media/download-m3u8?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(name.replace(/\s+/g, '_'))}.mp4`;
+    };
 
     const handleBackendDownload = () => {
-        window.location.assign(backendDownloadUrl);
+        const downloadUrl = getBackendDownloadUrl();
+        console.log("🚀 Triggering Direct Download URL:", downloadUrl);
+        
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     };
 
     return (

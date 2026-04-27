@@ -21,12 +21,14 @@ async def download_m3u8(url: str, filename: str = "video.mp4"):
     """Streams m3u8 to mp4 with parallel chunk downloading and ad filtering."""
     filter_service = M3U8AdFilter()
     clean_content = await filter_service.get_clean_content(url)
-    
+
     async def stream_generator():
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".m3u8")
         tmp.write(clean_content.encode())
         tmp.close()
 
+        # Note: HTTP options (-user_agent, -headers, -reconnect) are rejected by FFmpeg 8.x
+        # when the input is a local file — only -protocol_whitelist is accepted globally.
         cmd = [
             "ffmpeg", "-y",
             "-protocol_whitelist", "file,http,https,tcp,tls,crypto,data",
@@ -35,32 +37,57 @@ async def download_m3u8(url: str, filename: str = "video.mp4"):
             "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof",
             "pipe:1"
         ]
-        
+
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        
+
+        # Drain stderr concurrently — prevents pipe buffer deadlock when FFmpeg is verbose
+        stderr_buf: list[bytes] = []
+        async def _drain_stderr():
+            while True:
+                chunk = await process.stderr.read(4096)
+                if not chunk:
+                    break
+                stderr_buf.append(chunk)
+
+        stderr_task = asyncio.create_task(_drain_stderr())
+
         try:
             while True:
-                chunk = await process.stdout.read(1024 * 128)
+                chunk = await process.stdout.read(1024 * 256)
                 if not chunk:
                     break
                 yield chunk
         finally:
+            await stderr_task
+            if process.returncode not in (0, None):
+                print(f"[FFmpeg] exit={process.returncode}\n" +
+                      b"".join(stderr_buf).decode(errors="replace")[-3000:])
             if process.returncode is None:
-                process.terminate()
+                try:
+                    process.terminate()
+                    await process.wait()
+                except Exception:
+                    pass
             if os.path.exists(tmp.name):
                 os.remove(tmp.name)
+
+    # Chuẩn hóa tên file để tránh lỗi Unicode trong Header
+    safe_filename = filename.replace('"', '').replace("'", "")
+    from urllib.parse import quote
+    encoded_filename = quote(safe_filename)
 
     return StreamingResponse(
         stream_generator(),
         media_type="video/mp4",
         headers={
-            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Content-Type": "video/mp4",
+            "Transfer-Encoding": "chunked",
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
         }
     )
 

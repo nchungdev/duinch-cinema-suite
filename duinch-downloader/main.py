@@ -16,19 +16,21 @@ class JDClient:
     def __init__(self):
         self.jd = myjdapi.Myjdapi()
         self.jd.set_app_key("Duinch_Downloader_Pro")
-        self.device = None
 
-    def connect(self):
+    def connect(self) -> bool:
+        if not MYJD_EMAIL or not MYJD_PASSWORD:
+            return False
         if not self.jd.is_connected():
-            if not MYJD_EMAIL or not MYJD_PASSWORD: return False
             self.jd.connect(MYJD_EMAIL, MYJD_PASSWORD)
         return True
 
     def get_device(self):
-        if not self.connect(): return None
+        if not self.connect():
+            return None
         self.jd.update_devices()
         devices = self.jd.list_devices()
-        if not devices: return None
+        if not devices:
+            return None
         target = next((d for d in devices if JD_DEVICE_NAME in d["name"]), devices[0])
         return self.jd.get_device(device_name=target["name"])
 
@@ -42,8 +44,15 @@ class DownloadRequest(BaseModel):
 
 @app.get("/health")
 async def health():
-    device = jd_client.get_device()
-    return {"status": "healthy" if device else "disconnected", "device": device.name if device else None}
+    if not MYJD_EMAIL or not MYJD_PASSWORD:
+        return {"status": "no_credentials", "device": None}
+    try:
+        device = jd_client.get_device()
+        if device:
+            return {"status": "healthy", "device": device.name}
+        return {"status": "no_devices", "device": None}
+    except Exception as e:
+        return {"status": "disconnected", "device": None, "detail": str(e)}
 
 @app.get("/list")
 async def list_downloads():
