@@ -1,6 +1,5 @@
-# OMV JDownloader Dashboard API
-
-Backend API for OMV media management and JDownloader dashboard. Built with FastAPI and provides endpoints for media discovery, search, and download management.
+# Duinch Cinema API
+Backend API for Duinch Cinema media management and JDownloader automation.
 
 ## Requirements
 
@@ -37,7 +36,7 @@ JD_INTERNAL_PATH=/path/to/jd/downloads
 ### 1. Install Dependencies
 
 ```bash
-cd backend
+cd duinch-cinema/backend
 pip install -r requirements.txt
 ```
 

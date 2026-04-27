@@ -1,3 +1,0 @@
-python-dotenv
-apscheduler
-subprocess.run

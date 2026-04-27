@@ -3,10 +3,10 @@
 # 🍳 FShare Data Cooker (Processor) Starter
 # ----------------------------------------
 
-PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-COOKER_DIR="$PROJECT_ROOT/crawler/cooker"
+PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+COOKER_DIR="$PROJECT_ROOT/duinch-crawler/cooker"
 VENV_DIR="$COOKER_DIR/venv"
-BACKEND_ENV="$PROJECT_ROOT/dashboard/backend/.env"
+BACKEND_ENV="$PROJECT_ROOT/duinch-cinema/backend/.env"
 COOKER_ENV="$COOKER_DIR/.env"
 LIMIT=${1:-100}
 
@@ -30,8 +30,5 @@ python3 -m pip install -q -r requirements.txt
 
 echo "[*] Running Cooker..."
 PYTHONPATH="$PROJECT_ROOT" python3 -u main.py --limit "$LIMIT"
-
-# Tự động giao hàng về HQ
-bash "$PROJECT_ROOT/crawler/deliver.sh"
 
 deactivate

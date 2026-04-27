@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
     await app.state.http_client.aclose()
 
 app = FastAPI(
-    title="NexusStream API",
+    title="Duinch Cinema API",
     description="Business-Logic focused API Architecture",
     version="4.0.0",
     lifespan=lifespan,

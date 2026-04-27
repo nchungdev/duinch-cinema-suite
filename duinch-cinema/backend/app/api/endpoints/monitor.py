@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from app.core import config
 
 router = APIRouter()
-# monitor.py is at dashboard/backend/app/api/endpoints/monitor.py (5 levels deep from ROOT)
+# monitor.py is at duinch-cinema/backend/app/api/endpoints/monitor.py (5 levels deep from ROOT)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 def get_db_conn():
@@ -154,7 +154,7 @@ async def trigger_task(task: str, pages: int = 1, limit: int = 100):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../../../.."))
     
-    script_path = os.path.join(project_root, script)
+    script_path = os.path.join(project_root, "scripts", script)
     
     # Setup logging
     log_dir = os.path.join(project_root, "data", "logs")

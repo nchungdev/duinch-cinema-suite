@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# --- Duinch Cinema Launcher ---
+
+# Colors
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+clear
+echo -e "${CYAN}======================================${NC}"
+echo -e "${CYAN}🎬  DUINCH CINEMA - UNIFIED LAUNCHER  ${NC}"
+echo -e "${CYAN}======================================${NC}"
+echo -e "Choose a service to launch:"
+echo -e "  ${GREEN}1) Launch All${NC} (Frontend + Backend) [Default]"
+echo -e "  2) Crawler Miner (Start Mining)"
+echo -e "  3) Crawler Cooker (Process Raw Links)"
+echo -e "  4) Clear Cache"
+echo -e "  ${YELLOW}5) Exit${NC}"
+echo -e "${CYAN}--------------------------------------${NC}"
+
+read -p "Enter selection [1]: " choice
+choice=${choice:-1}
+
+case $choice in
+    1)
+        echo -e "${GREEN}🚀 Launching Duinch Cinema Stack...${NC}"
+        bash scripts/start_all.sh
+        ;;
+    2)
+        echo -e "${GREEN}⛏️ Starting Miner...${NC}"
+        bash scripts/start_miner.sh
+        ;;
+    3)
+        echo -e "${GREEN}🍳 Starting Cooker...${NC}"
+        bash scripts/start_cooker.sh
+        ;;
+    4)
+        bash scripts/clear_cache.sh
+        ;;
+    5)
+        echo "Goodbye!"
+        exit 0
+        ;;
+    *)
+        echo -e "${RED}Invalid selection.${NC}"
+        exit 1
+        ;;
+esac
