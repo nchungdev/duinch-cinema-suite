@@ -20,7 +20,8 @@ echo -e "  2) Crawler Miner (Start Mining)"
 echo -e "  3) Crawler Cooker (Process Raw Links)"
 echo -e "  4) Clear Cache"
 echo -e "  ${BLUE}5) Init Environment${NC} (Install deps)"
-echo -e "  ${YELLOW}6) Exit${NC}"
+echo -e "  ${CYAN}6) Setup .env${NC} (From example)"
+echo -e "  ${YELLOW}7) Exit${NC}"
 echo -e "${CYAN}--------------------------------------${NC}"
 
 read -p "Enter selection [1]: " choice
@@ -44,27 +45,27 @@ case $choice in
         ;;
     5)
         echo -e "${BLUE}📦 Initializing Environment...${NC}"
-        
-        # 1. Root Venv
         if [ ! -d "venv" ]; then
-            echo "[*] Creating Virtual Environment..."
             python3 -m venv venv
         fi
         source venv/bin/activate
-        
-        echo "[*] Installing Backend dependencies..."
         python3 -m pip install -q --upgrade pip
         python3 -m pip install -q -r duinch-cinema/backend/requirements.txt
-        
-        echo "[*] Installing Frontend dependencies..."
         cd duinch-cinema/frontend && npm install --silent && cd ../..
-        
-        echo "[*] Installing Crawler dependencies..."
         python3 -m pip install -q -r duinch-crawler/miner/requirements.txt
-        
         echo -e "${GREEN}✅ Environment Initialized Successfully!${NC}"
         ;;
     6)
+        echo -e "${CYAN}📝 Setting up .env files...${NC}"
+        if [ -f "duinch-cinema/backend/.env.example" ]; then
+            cp "duinch-cinema/backend/.env.example" "duinch-cinema/backend/.env"
+            echo -e "${GREEN}✅ Created duinch-cinema/backend/.env${NC}"
+            echo -e "${YELLOW}⚠️ Please edit it with your credentials.${NC}"
+        else
+            echo -e "${RED}❌ Error: .env.example not found in duinch-cinema/backend/${NC}"
+        fi
+        ;;
+    7)
         echo "Goodbye!"
         exit 0
         ;;
