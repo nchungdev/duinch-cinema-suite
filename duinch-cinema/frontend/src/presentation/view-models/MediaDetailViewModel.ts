@@ -64,14 +64,25 @@ export const useMediaDetailViewModel = () => {
                 if (!next[type]) next[type] = {};
                 if (!next[type][platform]) next[type][platform] = [];
                 
-                let targetServer = next[type][platform].find((s: StreamingServer) => s.server_name === serverKey);
+                const sSeason = rawData.season || 1;
+                const sAudio = rawData.audio_type || undefined;
+                
+                let targetServer = next[type][platform].find((s: any) => 
+                    s.server_name === serverKey && s.season === sSeason && s.audio_type === sAudio
+                );
+                
                 if (!targetServer) {
-                    targetServer = { server_name: serverKey, server_data: [] };
+                    targetServer = { 
+                        server_name: serverKey, 
+                        audio_type: sAudio,
+                        season: sSeason,
+                        server_data: [] 
+                    };
                     next[type][platform].push(targetServer);
                 }
 
                 const epName = link.name;
-                const existingEp = targetServer.server_data.find((e: StreamingEpisode) => e.name === epName);
+                const existingEp = targetServer.server_data.find((e: any) => e.name === epName);
 
                 if (existingEp) {
                     if (link.hlsUrl)   existingEp.m3u8 = link.hlsUrl;
@@ -81,6 +92,7 @@ export const useMediaDetailViewModel = () => {
                 } else {
                     targetServer.server_data.push({
                         name: epName,
+                        season: sSeason,
                         m3u8: link.hlsUrl || '',
                         embed: link.embedUrl || '',
                         magnet: link.isP2P ? url : '',
