@@ -14,11 +14,9 @@ venv/
 .pytest_cache/
 
 # Backend
-backend/data/
 *.mkv
 *.mp4
 *.mp3
 *.zip
 *.torrent
-duinch-downloader/jd_config.json
-tmp/crawlerCache
+tmp/*
