@@ -1,4 +1,23 @@
 services:
+  # --- JDownloader Node (For NAS/Server) ---
+  jdownloader:
+    image: jlesage/jdownloader-2
+    container_name: jdownloader
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    ports:
+      - "5800:5800" # Web UI
+      - "9666:9666" # Local API (FlashGot)
+    volumes:
+      - ./data/jdownloader/config:/config
+      - ${HOST_STORAGE_PATH:-./data/downloads}:/output
+    environment:
+      - KEEP_APP_RUNNING=1
+      - DISPLAY_WIDTH=1280
+      - DISPLAY_HEIGHT=720
+
   # --- Core Infrastructure ---
   duinch-db:
     image: postgres:15-alpine

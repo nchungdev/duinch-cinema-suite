@@ -7,16 +7,17 @@
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MINER_DIR="$PROJECT_ROOT/duinch-crawler/miner"
 VENV_DIR="$MINER_DIR/venv"
-BACKEND_ENV="$PROJECT_ROOT/duinch-cinema/backend/.env"
-MINER_ENV="$MINER_DIR/.env"
 PAGES=${1:-1}
+
+# Load Environment Variables from Root
+ROOT_ENV="$PROJECT_ROOT/.env"
+if [ -f "$ROOT_ENV" ]; then
+    echo "--- Loading configuration from $ROOT_ENV ---"
+    set -a; source "$ROOT_ENV"; set +a
+fi
 
 # Luôn cd vào đúng thư mục miner
 cd "$MINER_DIR" || { echo "Error: Could not cd to $MINER_DIR"; exit 1; }
-
-if [ ! -f "$MINER_ENV" ] && [ -f "$BACKEND_ENV" ]; then
-    cp "$BACKEND_ENV" "$MINER_ENV"
-fi
 
 if [ ! -d "$VENV_DIR" ]; then
     echo "[*] Creating Virtual Environment..."

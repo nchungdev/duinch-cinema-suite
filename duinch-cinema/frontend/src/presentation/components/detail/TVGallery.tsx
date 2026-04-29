@@ -7,6 +7,7 @@ import { useCloudViewModel } from '../../view-models/CloudViewModel';
 import { CloudButtons } from '../discovery/CloudActions';
 import type { CloudTarget } from '../../../services/cloudTargets';
 import { useDownloader } from '../../hooks/useDownloader';
+import { useToast } from '../../context/ToastContext';
 import { DownloadModal } from '../discovery/DownloadModal';
 import { HlsDownloaderModal } from '../discovery/HlsDownloaderModal';
 
@@ -41,42 +42,31 @@ export const TVGallery = () => {
 
     // Download Manager Integration
     const downloader = useDownloader();
-    const [modalData, setModalData] = useState<{ url: string; name: string; isHls: boolean; isJdOnline: boolean } | null>(null);
+    const { showToast } = useToast();
 
     const handleDownloadRequest = async (url: string, name: string) => {
-        console.log('[TVGallery] Triggering download request for:', name, url);
-        const isHls = url.includes('.m3u8') || url.includes('.index');
-        const pref = downloader.getPreference();
-
-        if (pref) {
-            if (pref === 'jdownloader') {
-                const isJdOnline = await downloader.checkJDStatus();
-                if (isJdOnline) {
-                    const ok = await downloader.sendToJD(url, name);
-                    if (ok) return;
-                }
-                downloader.downloadInBrowser(url, name);
-            } else {
-                downloader.downloadInBrowser(url, name);
-            }
-            return;
-        }
-
-        const isJdOnline = await downloader.checkJDStatus();
-        setModalData({ url, name, isHls, isJdOnline });
-    };
-
-    const onConfirmDownload = async (choice: 'jdownloader' | 'browser', remember: boolean) => {
-        if (!modalData) return;
-        downloader.setPreference(choice, remember);
+        console.log('[TVGallery] Automatic download request for:', name, url);
         
-        if (choice === 'jdownloader') {
-            const ok = await downloader.sendToJD(modalData.url, modalData.name);
-            if (!ok) downloader.downloadInBrowser(modalData.url, modalData.name);
+        // 1. Check JD Status
+        const isJdOnline = await downloader.checkJDStatus();
+        
+        if (isJdOnline) {
+            console.log('[TVGallery] JD Online: Sending to JD...');
+            const ok = await downloader.sendToJD(url, name);
+            if (ok) {
+                showToast(`Đã gửi tới JDownloader: ${name}`, 'success');
+                return;
+            } else {
+                showToast(`Lỗi kết nối JDownloader. Tải bằng trình duyệt...`, 'error');
+            }
         } else {
-            downloader.downloadInBrowser(modalData.url, modalData.name);
+            showToast(`JDownloader (${activeDevice || 'Node'}) đang Offline. Tải bằng trình duyệt...`, 'info');
         }
-        setModalData(null);
+
+        // 2. Fallback to browser (automatic for both static files and HLS)
+        console.log('[TVGallery] Falling back to direct browser download...');
+        showToast(`Đang tải qua trình duyệt: ${name}`, 'success');
+        downloader.downloadInBrowser(url, name);
     };
 
     const activeSeasonIdx = seasonBoundaries.findIndex(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
@@ -395,22 +385,6 @@ export const TVGallery = () => {
                     </motion.div>
                 </AnimatePresence>
             </div>
-            
-            <DownloadModal 
-                isOpen={!!modalData}
-                title={modalData?.name || ''}
-                isHls={modalData?.isHls}
-                isJdOnline={modalData?.isJdOnline}
-                onClose={() => setModalData(null)}
-                onConfirm={onConfirmDownload}
-            />
-            
-            <HlsDownloaderModal 
-                isOpen={!!downloader.hlsToolData}
-                url={downloader.hlsToolData?.url || ''}
-                name={downloader.hlsToolData?.name || ''}
-                onClose={() => downloader.setHlsToolData(null)}
-            />
         </div>
     );
 };

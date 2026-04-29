@@ -3,3 +3,5 @@ uvicorn
 myjdapi
 python-dotenv
 pydantic
+httpx
+cryptography

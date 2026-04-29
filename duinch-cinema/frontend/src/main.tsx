@@ -38,8 +38,15 @@ window.addEventListener('error', (event) => {
 }, true); // Use capture phase
 // -------------------------------
 
+import { DownloaderProvider } from './presentation/context/DownloaderContext.tsx'
+import { ToastProvider } from './presentation/context/ToastContext.tsx'
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <DownloaderProvider>
+        <App />
+      </DownloaderProvider>
+    </ToastProvider>
   </StrictMode>,
 )

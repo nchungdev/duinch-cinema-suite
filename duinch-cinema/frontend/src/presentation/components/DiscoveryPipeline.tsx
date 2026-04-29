@@ -10,6 +10,8 @@ import { QuickServerRow } from './discovery/QuickServerRow';
 import { useDownloader } from '../hooks/useDownloader';
 import { DownloadModal } from './discovery/DownloadModal';
 import { HlsDownloaderModal } from './discovery/HlsDownloaderModal';
+import { useDownloaderContext } from '../context/DownloaderContext';
+import { useToast } from '../context/ToastContext';
 
 interface DiscoveryPipelineProps {
   tmdbId: number;
@@ -61,6 +63,8 @@ export const DiscoveryPipeline = ({
 }: DiscoveryPipelineProps) => {
   const cloudTargets = useCloudViewModel();
   const downloader = useDownloader();
+  const jdStatus = useDownloaderContext();
+  const { showToast } = useToast();
 
   const [streamableByType, setStreamableByType] = useState<Record<string, Record<string, any[]>>>({});
   const [downloadableByType, setDownloadableByType] = useState<Record<string, MediaLink[]>>({});
@@ -70,49 +74,33 @@ export const DiscoveryPipeline = ({
   const [activeTab,   setActiveTab]   = useState<string>('');
   const [isForceRefreshing, setIsForceRefreshing] = useState(false);
   
-  // Modal State
-  const [modalData, setModalData] = useState<{ url: string; name: string; isHls: boolean } | null>(null);
-
   const streamingNotifiedRef = useRef<Set<string>>(new Set());
   const fetchLock = useRef<string | null>(null);
 
-  // Handle Download Request
+  // Automatic Download Logic
   const handleDownloadRequest = async (url: string, name: string) => {
-    console.log('[DiscoveryPipeline] Triggering download request for:', name, url);
-    const isHls = url.includes('.m3u8') || url.includes('.index');
-    const pref = downloader.getPreference();
-    console.log('[DiscoveryPipeline] User Preference:', pref);
-
-    if (pref) {
-        if (pref === 'jdownloader') {
-            const isJdOnline = await downloader.checkJDStatus();
-            if (isJdOnline) {
-                const ok = await downloader.sendToJD(url, name);
-                if (ok) return;
-            }
-            downloader.downloadInBrowser(url, name);
-        } else {
-            downloader.downloadInBrowser(url, name);
-        }
-        return;
-    }
-
-    // Always show modal to let user know what's happening
-    const isJdOnline = await downloader.checkJDStatus();
-    setModalData({ url, name, isHls, isJdOnline });
-  };
-
-  const onConfirmDownload = async (choice: 'jdownloader' | 'browser', remember: boolean) => {
-    if (!modalData) return;
-    downloader.setPreference(choice, remember);
+    console.log('[DiscoveryPipeline] Automatic download request for:', name, url);
     
-    if (choice === 'jdownloader') {
-        const ok = await downloader.sendToJD(modalData.url, modalData.name);
-        if (!ok) downloader.downloadInBrowser(modalData.url, modalData.name);
+    // 1. Check JD Status
+    const isJdOnline = await downloader.checkJDStatus();
+    
+    if (isJdOnline) {
+        console.log('[DiscoveryPipeline] JD Online: Sending to JD...');
+        const ok = await downloader.sendToJD(url, name);
+        if (ok) {
+            showToast(`Đã gửi tới JDownloader: ${name}`, 'success');
+            return;
+        } else {
+            showToast(`Lỗi kết nối JDownloader. Tải bằng trình duyệt...`, 'error');
+        }
     } else {
-        downloader.downloadInBrowser(modalData.url, modalData.name);
+        showToast(`JDownloader (${jdStatus.activeDevice || 'Node'}) đang Offline. Tải bằng trình duyệt...`, 'info');
     }
-    setModalData(null);
+
+    // 2. Fallback to direct browser download
+    console.log('[DiscoveryPipeline] Falling back to direct browser download...');
+    showToast(`Đang tải qua trình duyệt: ${name}`, 'success');
+    downloader.downloadInBrowser(url, name);
   };
 
   const fetchSources = async (force = false) => {
@@ -331,7 +319,9 @@ export const DiscoveryPipeline = ({
                     <QuickServerRow key={serverName} serverName={serverName} episodes={eps}
                       color={src === 'kkphim' ? 'text-blue-400' : 'text-pink-400'} cloudTargets={cloudTargets}
                       sourceBadge={SOURCE_BADGE[eps[0]?.source]} 
-                      onDownload={(url, name) => handleDownloadRequest(url, name)} />
+                      onBrowserDownload={(url, name) => handleDownloadRequest(url, name)}
+                      onCloudDownload={(url, name) => handleDownloadRequest(url, name)}
+                      isJdOnline={jdStatus.isJdOnline} />
                   ))}
                 </div>
             ))}
@@ -340,34 +330,24 @@ export const DiscoveryPipeline = ({
 
         {activeTab !== 'm3u8' && downloadableByType[activeTab] && (
           <div className="space-y-1">
-            {downloadableByType[activeTab].map((l, i) => (
+                {downloadableByType[activeTab].map((l, i) => (
               activeTab === 'torrent'
                 ? <TorrentRow key={i} link={l as any} sourceBadge={SOURCE_BADGE[(l as any).source]} 
-                    onDownload={(url, name) => handleDownloadRequest(url, name)} />
+                    onBrowserDownload={(url, name) => handleDownloadRequest(url, name)}
+                    onCloudDownload={(url, name) => handleDownloadRequest(url, name)}
+                    isJdOnline={jdStatus.isJdOnline} />
                 : <DeepRow key={i} link={l}
                     actionLabel={activeTab === 'gdrive' ? 'Drive' : 'FShare'}
                     color={SOURCE_TYPE_META[activeTab]?.color || 'text-sky-400'}
                     sourceBadge={SOURCE_BADGE[(l as any).source]}
-                    onAction={(url, name) => handleDownloadRequest(url, name)}
+                    onBrowserAction={(url, name) => handleDownloadRequest(url, name)}
+                    onCloudAction={(url, name) => handleDownloadRequest(url, name)}
+                    isJdOnline={jdStatus.isJdOnline}
                   />
             ))}
           </div>
         )}
       </div>
-      <DownloadModal 
-        isOpen={!!modalData}
-        title={modalData?.name || ''}
-        isHls={modalData?.isHls}
-        isJdOnline={modalData?.isJdOnline}
-        onClose={() => setModalData(null)}
-        onConfirm={onConfirmDownload}
-      />
-      <HlsDownloaderModal 
-        isOpen={!!downloader.hlsToolData}
-        url={downloader.hlsToolData?.url || ''}
-        name={downloader.hlsToolData?.name || ''}
-        onClose={() => downloader.setHlsToolData(null)}
-      />
     </div>
   );
 };

@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Loader2, ChevronDown, Users, File } from 'lucide-react';
+import { Loader2, ChevronDown, Users, Box } from 'lucide-react';
 import { api } from '../../../api/config';
 import { formatSize } from '../../../utils/formatters';
-import { RankingService } from '../../../domain/services/RankingService';
 import { DeepRow } from './DeepRow';
 import { useCloudViewModel } from '../../view-models/CloudViewModel';
 import { CloudButtons } from './CloudActions';
@@ -19,24 +18,6 @@ interface TorrentLink {
   info_hash?: string; 
   source?: string;
 }
-
-const SpeedBar: React.FC<{ seeders: number }> = ({ seeders }) => {
-  const bars = RankingService.getSeederBars(seeders);
-  const color = bars >= 4 ? 'bg-green-400' : bars >= 3 ? 'bg-blue-400' : bars >= 2 ? 'bg-yellow-400' : 'bg-red-400';
-  const textColor = bars >= 4 ? 'text-green-400' : bars >= 3 ? 'text-blue-400' : bars >= 2 ? 'text-yellow-400' : 'text-red-400';
-  
-  return (
-    <span className={`flex items-center gap-1.5 text-[7px] font-black uppercase tracking-wider ${textColor}`}>
-      <span className="flex items-end gap-px h-3">
-        {[1,2,3,4,5].map(b => (
-          <span key={b} className={`w-1 rounded-sm transition-all ${b <= bars ? color : 'bg-white/10'}`}
-            style={{ height: `${4 + b * 2}px` }} />
-        ))}
-      </span>
-      {RankingService.estimateTorrentSpeed(seeders)}
-    </span>
-  );
-};
 
 const SeederBadge: React.FC<{ count: number }> = ({ count }) => {
   const color = count >= 50 ? 'text-green-400' : count >= 10 ? 'text-yellow-400' : 'text-red-400';
@@ -65,8 +46,10 @@ const QualityBadge: React.FC<{ quality: string }> = ({ quality }) => {
 export const TorrentRow: React.FC<{ 
   link: TorrentLink; 
   sourceBadge?: string | null;
-  onDownload?: (url: string, name: string) => void;
-}> = ({ link, sourceBadge, onDownload }) => {
+  onBrowserDownload?: (url: string, name: string) => void;
+  onCloudDownload?: (url: string, name: string) => void;
+  isJdOnline?: boolean;
+}> = ({ link, sourceBadge, onBrowserDownload, onCloudDownload, isJdOnline = false }) => {
   const cloudTargets = useCloudViewModel();
   const [expanded, setExpanded] = useState(false);
   const [files, setFiles] = useState<any[] | null>(null);
@@ -90,45 +73,39 @@ export const TorrentRow: React.FC<{
     setLoadingFiles(false);
   };
 
-  const handleCloudAction = async (target: CloudTarget) => {
-    // Legacy Cloud Targets feature now routes through the main download manager if needed,
-    // but for now we just trigger the main download action to keep it simple.
-    if (onDownload && link.url) {
-        onDownload(link.url, link.name);
+  const handleCloudAction = async (_target: CloudTarget) => {
+    if (onCloudDownload && link.url) {
+        onCloudDownload(link.url, link.name);
     }
   };
 
   return (
     <div className="rounded-xl bg-black/30 border border-white/5 hover:border-white/10 transition-all overflow-hidden">
       <div className="flex items-center gap-3 px-3 py-2.5 group">
-        <div className="flex-1 min-w-0 space-y-1.5">
-          <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
-            {link.name}
-          </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            {link.quality && <QualityBadge quality={link.quality} />}
-            {link.size != null && link.size > 0 && (
-              <span className="text-[7px] font-bold text-gray-500 uppercase tracking-wider">{formatSize(link.size)}</span>
-            )}
-            {link.seeders != null && (
-              <>
-                <SeederBadge count={link.seeders} />
-                <SpeedBar seeders={link.seeders} />
-              </>
-            )}
-            {link.leechers != null && (
-              <span className="flex items-center gap-1 text-[7px] font-bold text-gray-600 uppercase tracking-wider">
-                <Users className="w-2.5 h-2.5" />{link.leechers}↓
-              </span>
-            )}
-            {sourceBadge && (
-              <span className="text-[6px] font-black uppercase tracking-widest px-1 py-0.5 rounded bg-white/5 text-gray-600">{sourceBadge}</span>
-            )}
-            {canExpand && (
-              <span className="flex items-center gap-1 text-[7px] font-bold text-gray-500 uppercase tracking-wider">
-                <File className="w-2.5 h-2.5" />{link.num_files} files
-              </span>
-            )}
+        <div onClick={toggleFiles} className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer group/header">
+          <div className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-all border ${
+            expanded 
+              ? 'bg-blue-600 border-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.4)] text-white' 
+              : 'bg-white/5 border-white/10 text-gray-400 group-hover/header:bg-white/10 group-hover/header:text-blue-400'
+          }`}>
+            <Box className={`w-5 h-5 ${expanded ? 'animate-pulse' : ''}`} />
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[10px] font-black uppercase tracking-widest text-white truncate" title={link.name}>
+              {link.name}
+            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {link.quality && <QualityBadge quality={link.quality} />}
+              {link.size != null && link.size > 0 && (
+                <span className="text-[7px] font-bold text-gray-500 uppercase tracking-wider">{formatSize(link.size)}</span>
+              )}
+              {link.seeders != null && <SeederBadge count={link.seeders} />}
+              {sourceBadge && (
+                <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-400 border border-blue-500/20">
+                  {sourceBadge}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -142,7 +119,8 @@ export const TorrentRow: React.FC<{
           
           <CloudButtons 
             targets={cloudTargets}
-            onDeviceAction={() => onDownload?.(link.url, link.name)}
+            isCloudDisabled={!isJdOnline}
+            onDeviceAction={() => onBrowserDownload?.(link.url, link.name)}
             onCloudAction={handleCloudAction}
           />
         </div>
@@ -162,7 +140,9 @@ export const TorrentRow: React.FC<{
                   link={f} 
                   actionLabel="Watch" 
                   color="text-green-400" 
-                  onAction={() => { if (onDownload && f.url) onDownload(f.url, f.name || '') }} 
+                  onBrowserAction={onBrowserDownload}
+                  onCloudAction={onCloudDownload}
+                  isJdOnline={isJdOnline}
                   depth={1} 
                 />
               ))}

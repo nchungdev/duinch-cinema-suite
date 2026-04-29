@@ -20,20 +20,69 @@ async def jd_health():
     except Exception:
         return {"status": "offline"}
 
+@router.post("/config")
+async def jd_config(email: str = Body(...), password: str = Body(...)):
+    """Update MyJDownloader credentials via downloader service."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{config.DOWNLOADER_URL}/config",
+                json={"email": email, "password": password},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+
+            detail = "Unable to update JDownloader credentials"
+            try:
+                payload = resp.json()
+                detail = payload.get("detail") or detail
+            except Exception:
+                pass
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+@router.post("/logout")
+async def jd_logout():
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{config.DOWNLOADER_URL}/logout")
+            if resp.status_code == 200:
+                return resp.json()
+
+            detail = "Unable to logout from JDownloader"
+            try:
+                payload = resp.json()
+                detail = payload.get("detail") or detail
+            except Exception:
+                pass
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
 @router.get("/list")
-async def jd_list():
+async def jd_list(device: Optional[str] = Query(None)):
     """List current download packages."""
     try:
-        data = await downloader_use_case.list_packages()
+        data = await downloader_use_case.list_packages(device)
         return {"data": data, "error_code": 0, "error_msg": ""}
     except Exception as e:
         return {"data": [], "error_code": 500, "error_msg": str(e)}
 
 @router.post("/control")
-async def jd_control(action: str, uuids: List[str] = Query([])):
+async def jd_control(
+    action: str,
+    device: Optional[str] = Query(None),
+    ids: List[str] = Body(default=[]),
+    kind: str = Body(default="package"),
+):
     """Control download process."""
     try:
-        await downloader_use_case.control_downloads(action, uuids)
+        await downloader_use_case.control_downloads(action, ids, kind, device)
         return {"data": {"success": True}, "error_code": 0, "error_msg": ""}
     except Exception as e:
         return {"data": {"success": False}, "error_code": 500, "error_msg": str(e)}

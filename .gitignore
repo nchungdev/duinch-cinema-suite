@@ -8,6 +8,10 @@ __pycache__/
 .agents/
 logs/
 data/
+temp/
+venv/
+.venv/
+.pytest_cache/
 
 # Backend
 backend/data/
@@ -16,10 +20,5 @@ backend/data/
 *.mp3
 *.zip
 *.torrent
-.pytest_cache/
-.venv/
-venv/
-clean_index.m3u8
-duinch-cinema/backend/test_m3u8_filtered.py
-.gitignore
-duinch-cinema/backend/test_m3u8.py
+duinch-downloader/jd_config.json
+tmp/crawlerCache

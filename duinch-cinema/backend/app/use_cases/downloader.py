@@ -15,16 +15,23 @@ def extract_season(text: str):
     return 1
 
 class DownloaderUseCase:
-    async def list_packages(self) -> List[Dict[str, Any]]:
+    async def list_packages(self, device: Optional[str] = None) -> List[Dict[str, Any]]:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"{config.DOWNLOADER_URL}/list")
+            resp = await client.get(
+                f"{config.DOWNLOADER_URL}/list",
+                params={"device": device} if device else None,
+            )
             if resp.status_code == 200:
                 return resp.json()
             return []
 
-    async def control_downloads(self, action: str, uuids: List[str] = []):
+    async def control_downloads(self, action: str, ids: List[str] = [], kind: str = "package", device: Optional[str] = None):
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(f"{config.DOWNLOADER_URL}/control?action={action}", json=uuids)
+            await client.post(
+                f"{config.DOWNLOADER_URL}/control",
+                params={"action": action, **({"device": device} if device else {})},
+                json={"ids": ids, "kind": kind},
+            )
 
     async def add_download(self, url: str, name: str, title: str, origin_name: Optional[str] = None, year: Optional[str] = None, media_type: str = "movie", season: Optional[int] = None) -> Dict[str, str]:
         # Path calculation logic stays in Cinema (Business Logic)

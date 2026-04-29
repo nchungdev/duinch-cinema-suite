@@ -10,14 +10,21 @@ lsof -t -i:8086 | xargs kill -9 2>/dev/null
 lsof -t -i:8088 | xargs kill -9 2>/dev/null
 lsof -t -i:5173 | xargs kill -9 2>/dev/null
 
+# Load Global Environment Variables from Root
+if [ -f "$PROJECT_ROOT/.env" ]; then
+    echo "--- Loading Global configuration from .env ---"
+    set -a; source "$PROJECT_ROOT/.env"; set +a
+fi
+
 # Prepare logs directory
 mkdir -p duinch-cinema/backend/logs
 
-# 2. Setup Python environment for Backend
-echo "--- 2. Setting up Python environment for Backend ---"
+# 2. Setup Python environment for All Services
+echo "--- 2. Syncing Python dependencies ---"
 source venv/bin/activate
 python3 -m pip install -q --upgrade pip
 python3 -m pip install -q -r duinch-cinema/backend/requirements.txt
+python3 -m pip install -q -r duinch-downloader/requirements.txt
 
 # 3. Start Backend
 echo "--- 3. Starting Backend (HQ) (Port 8086) ---"
@@ -29,7 +36,6 @@ cd "$PROJECT_ROOT"
 
 # 3b. Start Downloader Service
 echo "--- 3b. Starting Downloader Service (Port 8088) ---"
-set -a; source duinch-cinema/backend/.env 2>/dev/null; set +a
 cd duinch-downloader
 uvicorn main:app --host 0.0.0.0 --port 8088 > ../duinch-cinema/backend/logs/downloader.log 2>&1 &
 DOWNLOADER_PID=$!

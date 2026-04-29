@@ -31,14 +31,16 @@ export const useDownloader = () => {
         }
     };
 
-    const sendToJD = async (url: string, name: string, path?: string) => {
-        console.log('[Downloader] Sending to JD:', { url, name, path });
+    const sendToJD = async (url: string, name: string, autostart: boolean = true, path?: string) => {
+        const activeDevice = localStorage.getItem('duinch_active_jd_device');
+        console.log('[Downloader] Sending to JD:', { url, name, path, device: activeDevice, autostart });
         try {
-            await api.post('/downloader/add', {
-                url,
-                name,
+            // Backend endpoint is /download
+            await api.post(`/downloader/download${activeDevice ? `?device=${encodeURIComponent(activeDevice)}` : ''}`, {
+                urls: [url],
                 package_name: name,
-                folder: path
+                folder: path,
+                autostart: autostart
             });
             return true;
         } catch (err) {

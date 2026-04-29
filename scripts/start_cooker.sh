@@ -6,16 +6,16 @@
 PROJECT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 COOKER_DIR="$PROJECT_ROOT/duinch-crawler/cooker"
 VENV_DIR="$COOKER_DIR/venv"
-BACKEND_ENV="$PROJECT_ROOT/duinch-cinema/backend/.env"
-COOKER_ENV="$COOKER_DIR/.env"
+# Load Environment Variables from Root
+ROOT_ENV="$PROJECT_ROOT/.env"
+if [ -f "$ROOT_ENV" ]; then
+    echo "--- Loading configuration from $ROOT_ENV ---"
+    set -a; source "$ROOT_ENV"; set +a
+fi
 LIMIT=${1:-100}
 
 # Luôn cd vào đúng thư mục cooker
 cd "$COOKER_DIR" || { echo "Error: Could not cd to $COOKER_DIR"; exit 1; }
-
-if [ ! -f "$COOKER_ENV" ] && [ -f "$BACKEND_ENV" ]; then
-    cp "$BACKEND_ENV" "$COOKER_ENV"
-fi
 
 if [ ! -d "$VENV_DIR" ]; then
     echo "[*] Creating Virtual Environment..."

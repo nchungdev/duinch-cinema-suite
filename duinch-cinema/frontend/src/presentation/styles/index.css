@@ -160,3 +160,12 @@ h1, h2, h3 {
   overflow: hidden;
   mask-image: linear-gradient(to right, black 70%, transparent 100%);
 }
+
+/* Toast Animations */
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-cinema-fade-in-right {
+  animation: fadeInRight 0.3s ease-out forwards;
+}

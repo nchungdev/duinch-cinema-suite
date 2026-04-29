@@ -11,13 +11,15 @@ interface DeepRowProps {
   link: MediaLink;
   actionLabel: string;
   color: string;
-  onAction?: (url: string, name: string) => void;
+  onBrowserAction?: (url: string, name: string) => void;
+  onCloudAction?: (url: string, name: string) => void;
   depth?: number;
   sourceBadge?: string | null;
+  isJdOnline?: boolean;
 }
 
 export const DeepRow: React.FC<DeepRowProps> = ({ 
-  link, actionLabel, color, onAction, depth = 0, sourceBadge 
+  link, actionLabel, color, onBrowserAction, onCloudAction, depth = 0, sourceBadge, isJdOnline = false 
 }) => {
   const cloudTargets = useCloudViewModel();
   const [expanded, setExpanded] = useState(false);
@@ -51,38 +53,44 @@ export const DeepRow: React.FC<DeepRowProps> = ({
     setLoadingFiles(false);
   };
 
-  const handleCloudAction = async (target: CloudTarget) => {
-    // Route cloud actions through the main download manager logic
-    if (onAction && link.url) {
-        onAction(link.url, link.name || '');
+  const handleCloudAction = async (_target: CloudTarget) => {
+    if (onCloudAction && link.url) {
+        onCloudAction(link.url, link.name || '');
     }
   };
 
   return (
     <div className={`rounded-xl transition-all overflow-hidden ${depth === 0 ? 'bg-black/30 border border-white/5 hover:border-white/10' : 'border-l border-white/5 ml-4 my-1'}`}>
       <div className="flex items-center gap-3 px-3 py-2 group">
-        <div className="flex-1 min-w-0 space-y-0.5">
-          <div className="flex items-center gap-2">
-            {!isFolder ? <File className="w-2.5 h-2.5 text-gray-600" /> : <Box className="w-2.5 h-2.5 text-blue-500" />}
-            <p className="text-[9px] font-bold text-gray-300 truncate group-hover:text-white transition-colors" title={link.name}>
-              {link.name || 'Unknown'}
-            </p>
+        <div 
+          onClick={() => canExpand && toggleFolder()} 
+          className={`flex items-center gap-3 min-w-0 flex-1 cursor-pointer group/header ${depth > 0 ? 'py-1.5' : ''}`}
+        >
+          <div className={`flex items-center justify-center transition-all border shrink-0 ${
+            depth === 0 ? 'w-10 h-10 rounded-2xl' : 'w-7 h-7 rounded-lg'
+          } ${
+            expanded 
+              ? 'bg-blue-600 border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.4)] text-white' 
+              : 'bg-white/5 border-white/10 text-gray-400 group-hover/header:bg-white/10 group-hover/header:text-blue-400'
+          }`}>
+            {isFolder ? (
+              <Box className={depth === 0 ? 'w-5 h-5' : 'w-3.5 h-3.5'} />
+            ) : (
+              <File className={depth === 0 ? 'w-5 h-5' : 'w-3.5 h-3.5'} />
+            )}
           </div>
-          <div className="flex items-center gap-1.5 pl-4">
-            {isFolder && (
-              <span className="text-[7px] font-black text-blue-500/60 uppercase tracking-widest">Folder</span>
-            )}
-            {link.size != null && link.size > 0 && (
-              <span className="text-[7px] font-bold text-gray-600 uppercase tracking-wider">{formatSize(link.size)}</span>
-            )}
-            {link.updated_at && (
-              <span className="text-[7px] font-bold text-gray-700 uppercase tracking-wider">{formatDate(link.updated_at)}</span>
-            )}
-            {sourceBadge && depth === 0 && (
-              <span className="text-[6px] font-black uppercase tracking-widest px-1 py-0.5 rounded bg-white/5 text-gray-600">
-                {sourceBadge}
-              </span>
-            )}
+          <div className="flex flex-col min-w-0">
+            <span className={`font-black uppercase tracking-widest truncate ${depth === 0 ? 'text-[10px] text-white' : 'text-[9px] text-gray-300'}`} title={link.name}>
+              {link.name || 'Unknown'}
+            </span>
+            <div className="flex items-center gap-2">
+              {link.size != null && link.size > 0 && (
+                <span className="text-[7px] font-bold text-gray-600 uppercase tracking-wider">{formatSize(link.size)}</span>
+              )}
+              {isFolder && (
+                <span className="text-[7px] font-black text-blue-500/60 uppercase tracking-widest">Directory Node</span>
+              )}
+            </div>
           </div>
         </div>
         
@@ -98,9 +106,10 @@ export const DeepRow: React.FC<DeepRowProps> = ({
             <CloudButtons 
               targets={cloudTargets}
               isFolder={isFolder}
+              isCloudDisabled={!isJdOnline}
               onDeviceAction={() => {
                 if (isFolder) toggleFolder();
-                else if (onAction) onAction(link.url!, link.name || '');
+                else if (onBrowserAction) onBrowserAction(link.url!, link.name || '');
                 else window.open(link.url!, '_blank');
               }}
               onCloudAction={handleCloudAction}
@@ -125,7 +134,9 @@ export const DeepRow: React.FC<DeepRowProps> = ({
                   link={f} 
                   actionLabel={actionLabel} 
                   color={color} 
-                  onAction={onAction} 
+                  onBrowserAction={onBrowserAction}
+                  onCloudAction={onCloudAction}
+                  isJdOnline={isJdOnline}
                   depth={depth + 1} 
                 />
               ))}

@@ -1,14 +1,42 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/config';
 import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
 import { MediaDetail } from './presentation/components/MediaDetail';
-import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2 } from 'lucide-react';
+import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw } from 'lucide-react';
+import { useDownloaderContext } from './presentation/context/DownloaderContext';
 
 type SearchTab = 'movie' | 'tv';
-const SEARCH_TABS: { id: SearchTab; label: string }[] = [
-  { id: 'movie', label: 'Movies' },
-  { id: 'tv',    label: 'TV'     },
-];
+
+interface JdTaskLink {
+  uuid: string;
+  name: string;
+  host?: string;
+  status: string;
+  bytesLoaded: number;
+  bytesTotal: number;
+  speed: number;
+  eta: number;
+  running: boolean;
+  enabled: boolean;
+  finished: boolean;
+  url?: string;
+}
+
+interface JdTaskPackage {
+  uuid: string;
+  name: string;
+  bytesLoaded: number;
+  bytesTotal: number;
+  speed: number;
+  eta: number;
+  status: string;
+  running: boolean;
+  enabled: boolean;
+  finished: boolean;
+  saveTo?: string;
+  childCount: number;
+  links: JdTaskLink[];
+}
 
 const CATEGORIES = [
   { id: 'new', label: 'Recommended', icon: <Compass className="w-4 h-4" /> },
@@ -43,15 +71,12 @@ function App() {
   const [searchActive,  setSearchActive]  = useState(!!init.searchQuery && init.category === 'search');
   const [searchTab,     setSearchTab]     = useState<SearchTab>('movie');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searchPage,    setSearchPage]    = useState(1);
-  const [searchTotal,   setSearchTotal]   = useState(0);
+  const [, setSearchPage] = useState(1);
+  const [, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [showRecent,     setShowRecent]    = useState(false);
   const [urlParams,     setUrlParams]     = useState<{ s?: number, e?: number, q?: string }>({});
 
   const lastSearchQuery = useRef<string | null>(null);
-  const sentinelRef     = useRef<HTMLDivElement>(null);
   const syncLock        = useRef(false);
 
   // --- SYNC MANAGER ---
@@ -304,8 +329,7 @@ function App() {
 
       <footer className="fixed bottom-0 left-0 right-0 h-12 bg-black/40 backdrop-blur-xl border-t border-white/5 px-10 flex items-center justify-between z-[90]">
          <div className="flex items-center gap-6">
-            <StatPill label="API Status" value="Online" color="text-green-500" />
-            <StatPill label="JD Node" value="Connected" color="text-blue-500" />
+            <DeviceSelector />
             <StatPill label="Storage" value="84% Free" color="text-yellow-500" />
          </div>
          <div className="flex items-center gap-4 text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">
@@ -324,6 +348,871 @@ function ToolIcon({ icon }: { icon: any }) {
       {icon}
     </button>
   );
+}
+
+function DeviceSelector() {
+  const { isJdOnline, isChecking, status, devices, activeDevice, accountEmail, hasCredentials, setActiveDevice, refreshStatus, updateConfig, logout } = useDownloaderContext();
+  const [showList, setShowList] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showConnectForm, setShowConnectForm] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
+  const [tasks, setTasks] = useState<JdTaskPackage[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+  const [expandedPackages, setExpandedPackages] = useState<Record<string, boolean>>({});
+  const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
+
+  // Close when clicking outside
+  useEffect(() => {
+    if (!showList) return;
+    const handle = () => setShowList(false);
+    window.addEventListener('click', handle);
+    return () => window.removeEventListener('click', handle);
+  }, [showList]);
+
+  const loadTasks = useCallback(async (background = false) => {
+    if (!hasCredentials) {
+      setTasks([]);
+      return;
+    }
+
+    if (!background) setLoadingTasks(true);
+    setTasksError(null);
+    try {
+      const query = activeDevice ? `?device=${encodeURIComponent(activeDevice)}` : '';
+      const res = await api.get<JdTaskPackage[]>(`/downloader/list${query}`);
+      const nextTasks = Array.isArray(res.data) ? res.data : [];
+      setTasks(nextTasks);
+      setExpandedPackages((prev) => {
+        const next = { ...prev };
+        nextTasks.forEach((pkg) => {
+          if (pkg.childCount <= 1) delete next[pkg.uuid];
+        });
+        return next;
+      });
+    } catch (err: any) {
+      setTasksError(err?.message || 'Unable to load JDownloader tasks.');
+    } finally {
+      if (!background) setLoadingTasks(false);
+    }
+  }, [activeDevice, hasCredentials]);
+
+  useEffect(() => {
+    if (!showTasks || !hasCredentials) return;
+    loadTasks();
+    const interval = setInterval(() => {
+      void loadTasks(true);
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [showTasks, hasCredentials, loadTasks]);
+
+  const runTaskAction = useCallback(async (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', ids: string[], kind: 'package' | 'link', key: string) => {
+    setActiveActionKey(key);
+    setTasksError(null);
+    try {
+      const query = activeDevice ? `?action=${action}&device=${encodeURIComponent(activeDevice)}` : `?action=${action}`;
+      await api.post(`/downloader/control${query}`, { ids, kind });
+      await loadTasks(true);
+    } catch (err: any) {
+      setTasksError(err?.message || 'Task action failed.');
+    } finally {
+      setActiveActionKey(null);
+    }
+  }, [activeDevice, loadTasks]);
+
+  const nodeLabel = isChecking ? 'Checking…' : isJdOnline ? (activeDevice || 'Online') : 'Offline';
+  const nodeTone = isJdOnline ? 'text-blue-500' : 'text-red-500';
+  return (
+    <>
+      <div className="relative flex items-center gap-2" onClick={e => e.stopPropagation()}>
+        {!hasCredentials && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowConnectForm((prev) => !prev);
+              setShowList(false);
+              setShowTasks(false);
+              setShowSettings(false);
+            }}
+            className="h-8 px-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.24em] transition-all flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-500"
+          >
+            <PlugZap className="w-4 h-4" />
+            Connect JDownloader
+          </button>
+        )}
+
+        {hasCredentials && (
+          <>
+            <button
+              type="button"
+              onClick={() => devices.length > 0 && setShowList(!showList)}
+              className={`h-8 px-3 rounded-2xl border border-white/10 bg-white/5 flex items-center gap-2 transition-all ${devices.length > 0 ? 'hover:bg-white/10 hover:border-white/20' : ''}`}
+            >
+              <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">JD Node</span>
+              <span className={`text-[11px] font-black uppercase tracking-[0.18em] ${nodeTone}`}>
+                {nodeLabel}
+              </span>
+              {devices.length > 0 && <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showList ? 'rotate-180 text-white' : 'text-gray-600'}`} />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowTasks((prev) => !prev);
+                if (!showTasks) void loadTasks();
+              }}
+              className={`h-8 px-3 rounded-2xl border flex items-center gap-2 transition-all ${showTasks ? 'border-blue-500/40 bg-blue-500/10 text-white' : 'border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 hover:border-white/20'}`}
+            >
+              <FolderTree className="w-4 h-4" />
+              <span className="text-[10px] font-black uppercase tracking-[0.22em]">Tasks</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="w-7 h-7 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:border-blue-500/40 hover:bg-blue-500/10 transition-all"
+              title="JDownloader Settings"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+
+            {showList && (
+              <div className="absolute bottom-full mb-3 left-0 min-w-[240px] bg-black/90 backdrop-blur-3xl border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[100] animate-cinema-fade border-b-blue-500/50">
+                <div className="px-4 py-3 border-b border-white/5 bg-white/5">
+                  <span className="text-[8px] font-black uppercase tracking-[0.25em] text-blue-400">Available JDownloader Nodes</span>
+                </div>
+                <div className="py-1 max-h-60 overflow-y-auto custom-scrollbar">
+                  {devices.length > 0 ? (
+                    devices.map((d: any) => (
+                      <button
+                        key={d.id || d.name}
+                        onClick={() => {
+                          setActiveDevice(d.name);
+                          setShowList(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-all group ${activeDevice === d.name ? 'bg-blue-600/10' : ''}`}
+                      >
+                        <div className="flex flex-col">
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${activeDevice === d.name ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'}`}>
+                            {d.name}
+                          </span>
+                          <span className="text-[7px] font-bold text-gray-600 uppercase tracking-tighter">
+                            {d.status === 'ONLINE' ? 'Ready for transmission' : 'Node is unreachable'}
+                          </span>
+                        </div>
+                        <div className={`w-2 h-2 rounded-full ${d.status === 'ONLINE' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-red-900/50'}`} />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6 text-center">
+                      <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">No devices found</span>
+                    </div>
+                  )}
+                </div>
+                {isChecking && (
+                  <div className="px-4 py-2 bg-blue-600/5 border-t border-white/5 flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+                    <span className="text-[7px] font-black uppercase tracking-widest text-blue-500/60">Refreshing grid...</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {showConnectForm && (
+        <JDownloaderConnectPanel
+          isChecking={isChecking}
+          status={status}
+          onClose={() => setShowConnectForm(false)}
+          onRefresh={refreshStatus}
+          onSave={updateConfig}
+          onSuccess={() => {
+            setShowConnectForm(false);
+            setShowSettings(false);
+          }}
+        />
+      )}
+
+      {hasCredentials && showTasks && (
+        <JDownloaderTaskPanel
+          tasks={tasks}
+          loading={loadingTasks}
+          error={tasksError}
+          activeDevice={activeDevice}
+          accountEmail={accountEmail}
+          expandedPackages={expandedPackages}
+          activeActionKey={activeActionKey}
+          onClose={() => setShowTasks(false)}
+          onRefresh={() => void loadTasks()}
+          onTogglePackage={(uuid) => setExpandedPackages((prev) => ({ ...prev, [uuid]: !prev[uuid] }))}
+          onPackageAction={(action, task) => void runTaskAction(action, [task.uuid], 'package', `${action}:package:${task.uuid}`)}
+          onLinkAction={(action, link) => void runTaskAction(action, [link.uuid], 'link', `${action}:link:${link.uuid}`)}
+        />
+      )}
+
+      <JDownloaderSettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        status={status}
+        accountEmail={accountEmail}
+        hasCredentials={hasCredentials}
+        activeDevice={activeDevice}
+        isJdOnline={isJdOnline}
+        isChecking={isChecking}
+        onRefresh={refreshStatus}
+        onSave={updateConfig}
+        onLogout={logout}
+      />
+    </>
+  );
+}
+
+function JDownloaderConnectPanel({
+  isChecking,
+  status,
+  onClose,
+  onRefresh,
+  onSave,
+  onSuccess,
+}: {
+  isChecking: boolean;
+  status: 'healthy' | 'no_credentials' | 'no_devices' | 'disconnected' | 'offline';
+  onClose: () => void;
+  onRefresh: () => Promise<boolean>;
+  onSave: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  onSuccess: () => void;
+}) {
+  return (
+    <div className="fixed left-0 right-0 bottom-12 z-[110] px-6 pb-4">
+      <div className="mx-auto w-full max-w-lg rounded-[2rem] border border-blue-500/20 bg-black/95 backdrop-blur-3xl shadow-[0_-20px_60px_rgba(0,0,0,0.6)] overflow-hidden animate-cinema-fade">
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-white/5 bg-blue-500/10">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-400">Connect MyJDownloader</p>
+            <p className="mt-1 text-xs text-gray-400">Nhập email/username và password để kết nối JD trực tiếp từ web.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl border border-white/10 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4">
+          <InlineJDownloaderConnectForm
+            isChecking={isChecking}
+            status={status}
+            onRefresh={onRefresh}
+            onSave={onSave}
+            onSuccess={onSuccess}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InlineJDownloaderConnectForm({
+  isChecking,
+  status,
+  onRefresh,
+  onSave,
+  onSuccess,
+}: {
+  isChecking: boolean;
+  status: 'healthy' | 'no_credentials' | 'no_devices' | 'disconnected' | 'offline';
+  onRefresh: () => Promise<boolean>;
+  onSave: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  onSuccess: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter both username/email and password.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    const result = await onSave(email.trim(), password);
+    setIsSaving(false);
+
+    if (result.success) {
+      setEmail('');
+      setPassword('');
+      onSuccess();
+      return;
+    }
+
+    setError(result.error || 'Login failed.');
+  };
+
+  const statusText =
+    status === 'offline'
+      ? 'Downloader service offline'
+      : status === 'disconnected'
+        ? 'Credentials invalid or connection failed'
+        : status === 'no_devices'
+          ? 'Connected but no JD node online'
+          : 'Ready to connect';
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">Status</p>
+        <p className="mt-2 text-sm text-gray-300">{statusText}</p>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">Username / Email</label>
+        <input
+          type="text"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition-all focus:border-blue-500/40 focus:bg-white/10"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-500">Password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="MyJDownloader password"
+          className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition-all focus:border-blue-500/40 focus:bg-white/10"
+        />
+      </div>
+
+      {error && (
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => void onRefresh()}
+          disabled={isChecking || isSaving}
+          className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5 text-[10px] font-black uppercase tracking-[0.22em] text-gray-300 hover:bg-white/10 transition-all disabled:opacity-50"
+        >
+          {isChecking ? 'Checking...' : 'Refresh'}
+        </button>
+        <button
+          type="submit"
+          disabled={isSaving}
+          className="min-w-[160px] px-5 py-3 rounded-2xl bg-blue-600 text-[10px] font-black uppercase tracking-[0.22em] text-white hover:bg-blue-500 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+        >
+          {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+          {isSaving ? 'Connecting...' : 'Connect'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function JDownloaderTaskPanel({
+  tasks,
+  loading,
+  error,
+  activeDevice,
+  accountEmail,
+  expandedPackages,
+  activeActionKey,
+  onClose,
+  onRefresh,
+  onTogglePackage,
+  onPackageAction,
+  onLinkAction,
+}: {
+  tasks: JdTaskPackage[];
+  loading: boolean;
+  error: string | null;
+  activeDevice: string | null;
+  accountEmail: string | null;
+  expandedPackages: Record<string, boolean>;
+  activeActionKey: string | null;
+  onClose: () => void;
+  onRefresh: () => void;
+  onTogglePackage: (uuid: string) => void;
+  onPackageAction: (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', task: JdTaskPackage) => void;
+  onLinkAction: (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', link: JdTaskLink) => void;
+}) {
+  return (
+    <div className="fixed left-0 right-0 bottom-12 z-[95] px-6 pb-4">
+      <div className="mx-auto max-w-screen-2xl rounded-[2rem] border border-white/10 bg-[#040404]/95 backdrop-blur-3xl shadow-[0_-20px_80px_rgba(0,0,0,0.55)] overflow-hidden">
+        <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-white/5 bg-white/[0.03]">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-400">JDownloader Queue</p>
+              {activeDevice && (
+                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-500">
+                  Node: {activeDevice}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-400 truncate">
+              {accountEmail || 'MyJDownloader'} • {tasks.length} package{tasks.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="h-9 px-3 rounded-2xl border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 transition-all flex items-center gap-2"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className="text-[10px] font-black uppercase tracking-[0.22em]">Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-2xl border border-white/10 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mx-6 mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+
+        <div className="max-h-[55vh] overflow-auto custom-scrollbar">
+          <table className="w-full text-left">
+            <thead className="sticky top-0 z-10 bg-[#080808]/95 backdrop-blur-xl">
+              <tr className="text-[9px] font-black uppercase tracking-[0.24em] text-gray-500">
+                <th className="px-6 py-3">Task</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Progress</th>
+                <th className="px-4 py-3">Speed</th>
+                <th className="px-4 py-3">ETA</th>
+                <th className="px-6 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                    Loading JDownloader tasks...
+                  </td>
+                </tr>
+              ) : tasks.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-sm text-gray-500">
+                    No active download packages.
+                  </td>
+                </tr>
+              ) : (
+                tasks.map((task) => {
+                  const isExpanded = expandedPackages[task.uuid];
+                  const canExpand = task.links.length > 1;
+                  return (
+                    <React.Fragment key={task.uuid}>
+                      <tr className="border-t border-white/5 align-top">
+                        <td className="px-6 py-4">
+                          <div className="flex items-start gap-3">
+                            {canExpand ? (
+                              <button
+                                type="button"
+                                onClick={() => onTogglePackage(task.uuid)}
+                                className="mt-0.5 w-6 h-6 rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center"
+                              >
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                              </button>
+                            ) : (
+                              <div className="mt-0.5 w-6 h-6 rounded-lg border border-white/5 bg-white/[0.03] text-gray-600 flex items-center justify-center">
+                                <FolderTree className="w-3.5 h-3.5" />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-white truncate">{task.name}</p>
+                              <p className="mt-1 text-[11px] text-gray-500">
+                                {task.childCount} file{task.childCount === 1 ? '' : 's'}{task.saveTo ? ` • ${task.saveTo}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <StatusBadge status={task.status} running={task.running} finished={task.finished} />
+                        </td>
+                        <td className="px-4 py-4 min-w-[180px]">
+                          <ProgressCell loaded={task.bytesLoaded} total={task.bytesTotal} />
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-300">{formatSpeed(task.speed)}</td>
+                        <td className="px-4 py-4 text-sm text-gray-300">{formatEta(task.eta)}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-end gap-2">
+                            <ActionButton
+                              label="Start"
+                              icon={<Play className="w-3.5 h-3.5" />}
+                              disabled={activeActionKey === `START:package:${task.uuid}`}
+                              onClick={() => onPackageAction('START', task)}
+                            />
+                            <ActionButton
+                              label="Stop"
+                              icon={<Pause className="w-3.5 h-3.5" />}
+                              disabled={activeActionKey === `STOP_JOB:package:${task.uuid}`}
+                              onClick={() => onPackageAction('STOP_JOB', task)}
+                            />
+                            <ActionButton
+                              label="Remove"
+                              tone="danger"
+                              icon={<Trash2 className="w-3.5 h-3.5" />}
+                              disabled={activeActionKey === `REMOVE_JOB:package:${task.uuid}`}
+                              onClick={() => onPackageAction('REMOVE_JOB', task)}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && task.links.map((link) => (
+                        <tr key={link.uuid} className="border-t border-white/5 bg-white/[0.02]">
+                          <td className="px-6 py-3">
+                            <div className="pl-9">
+                              <p className="text-sm text-gray-200 truncate">{link.name}</p>
+                              <p className="mt-1 text-[11px] text-gray-500">{link.host || 'Unknown host'}</p>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge status={link.status} running={link.running} finished={link.finished} />
+                          </td>
+                          <td className="px-4 py-3 min-w-[180px]">
+                            <ProgressCell loaded={link.bytesLoaded} total={link.bytesTotal} />
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-300">{formatSpeed(link.speed)}</td>
+                          <td className="px-4 py-3 text-sm text-gray-300">{formatEta(link.eta)}</td>
+                          <td className="px-6 py-3">
+                            <div className="flex justify-end gap-2">
+                              <ActionButton
+                                label="Start"
+                                icon={<Play className="w-3.5 h-3.5" />}
+                                disabled={activeActionKey === `START:link:${link.uuid}`}
+                                onClick={() => onLinkAction('START', link)}
+                              />
+                              <ActionButton
+                                label="Stop"
+                                icon={<Pause className="w-3.5 h-3.5" />}
+                                disabled={activeActionKey === `STOP_JOB:link:${link.uuid}`}
+                                onClick={() => onLinkAction('STOP_JOB', link)}
+                              />
+                              <ActionButton
+                                label="Remove"
+                                tone="danger"
+                                icon={<Trash2 className="w-3.5 h-3.5" />}
+                                disabled={activeActionKey === `REMOVE_JOB:link:${link.uuid}`}
+                                onClick={() => onLinkAction('REMOVE_JOB', link)}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionButton({
+  label,
+  icon,
+  tone = 'default',
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  tone?: 'default' | 'danger';
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const classes = tone === 'danger'
+    ? 'border-red-500/20 bg-red-500/10 text-red-300 hover:bg-red-500/15'
+    : 'border-white/10 bg-white/5 text-gray-300 hover:bg-white/10';
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`h-8 px-3 rounded-xl border transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] disabled:opacity-50 ${classes}`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function StatusBadge({ status, running, finished }: { status: string; running: boolean; finished: boolean }) {
+  const tone = finished
+    ? 'border-green-500/20 bg-green-500/10 text-green-300'
+    : running
+      ? 'border-blue-500/20 bg-blue-500/10 text-blue-300'
+      : status.toLowerCase().includes('error') || status.toLowerCase().includes('failed')
+        ? 'border-red-500/20 bg-red-500/10 text-red-300'
+        : 'border-white/10 bg-white/5 text-gray-300';
+
+  return (
+    <span className={`inline-flex rounded-xl border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${tone}`}>
+      {finished ? 'Finished' : running ? 'Running' : status || 'Idle'}
+    </span>
+  );
+}
+
+function ProgressCell({ loaded, total }: { loaded: number; total: number }) {
+  const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+
+  return (
+    <div className="space-y-2">
+      <div className="h-2 rounded-full bg-white/5 overflow-hidden">
+        <div className="h-full rounded-full bg-blue-500" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="flex items-center justify-between gap-3 text-[11px] text-gray-400">
+        <span>{formatBytes(loaded)} / {formatBytes(total)}</span>
+        <span>{percent}%</span>
+      </div>
+    </div>
+  );
+}
+
+function JDownloaderSettingsModal({
+  isOpen,
+  onClose,
+  status,
+  accountEmail,
+  hasCredentials,
+  activeDevice,
+  isJdOnline,
+  isChecking,
+  onRefresh,
+  onSave,
+  onLogout,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  status: 'healthy' | 'no_credentials' | 'no_devices' | 'disconnected' | 'offline';
+  accountEmail: string | null;
+  hasCredentials: boolean;
+  activeDevice: string | null;
+  isJdOnline: boolean;
+  isChecking: boolean;
+  onRefresh: () => Promise<boolean>;
+  onSave: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  onLogout: () => Promise<{ success: boolean; error?: string }>;
+}) {
+  const [email, setEmail] = useState(accountEmail || '');
+  const [password, setPassword] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setEmail(accountEmail || '');
+    setPassword('');
+    setError(null);
+  }, [isOpen, accountEmail]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter both email and password.');
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    const result = await onSave(email.trim(), password);
+    setIsSaving(false);
+
+    if (result.success) {
+      setPassword('');
+      onClose();
+      return;
+    }
+
+    setError(result.error || 'Login failed.');
+  };
+
+  const statusLabel =
+    status === 'healthy'
+      ? 'Connected'
+      : status === 'no_credentials'
+        ? 'Credentials required'
+        : status === 'no_devices'
+          ? 'No online nodes'
+          : status === 'disconnected'
+            ? 'Connection lost'
+            : 'Service offline';
+
+  return (
+    <div className="fixed left-0 right-0 bottom-12 z-[110] px-6 pb-4">
+      <div className="mx-auto w-full max-w-lg rounded-[2rem] border border-white/10 bg-[#060606]/95 backdrop-blur-3xl shadow-[0_-20px_60px_rgba(0,0,0,0.6)] overflow-hidden animate-cinema-fade">
+        <div className="flex items-start justify-between gap-4 px-7 py-5 border-b border-white/5 bg-white/[0.03]">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center">
+              <ShieldCheck className="w-5 h-5 text-blue-400" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">JDownloader Settings</p>
+              <h3 className="text-2xl font-black italic tracking-tight">Connect MyJDownloader</h3>
+              <p className="text-sm text-gray-400">
+                Đăng nhập tài khoản MyJDownloader để đồng bộ node và gửi download trực tiếp từ web.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl border border-white/10 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-7 space-y-6">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatusTile label="Status" value={statusLabel} tone={isJdOnline ? 'blue' : 'red'} />
+            <StatusTile label="Account" value={accountEmail || 'Not linked'} tone={hasCredentials ? 'green' : 'amber'} />
+            <StatusTile label="Active Node" value={activeDevice || 'None'} tone={activeDevice ? 'blue' : 'slate'} />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-500">MyJDownloader Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition-all focus:border-blue-500/40 focus:bg-white/10"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.24em] text-gray-500">App Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={hasCredentials ? 'Enter a new password to update' : 'Enter your MyJDownloader password'}
+                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition-all focus:border-blue-500/40 focus:bg-white/10"
+              />
+            </div>
+
+            {error && (
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+
+            {hasCredentials && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsLoggingOut(true);
+                  setError(null);
+                  const result = await onLogout();
+                  setIsLoggingOut(false);
+                  if (result.success) {
+                    onClose();
+                    return;
+                  }
+                  setError(result.error || 'Logout failed.');
+                }}
+                disabled={isSaving || isLoggingOut}
+                className="w-full px-4 py-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-[11px] font-black uppercase tracking-[0.24em] text-red-300 hover:bg-red-500/15 transition-all disabled:opacity-50"
+              >
+                {isLoggingOut ? 'Logging Out...' : 'Logout'}
+              </button>
+            )}
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => void onRefresh()}
+                disabled={isChecking || isSaving}
+                className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5 text-[11px] font-black uppercase tracking-[0.24em] text-gray-300 hover:bg-white/10 transition-all disabled:opacity-50"
+              >
+                {isChecking ? 'Refreshing...' : 'Refresh Status'}
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="min-w-[180px] px-5 py-3 rounded-2xl bg-blue-600 text-[11px] font-black uppercase tracking-[0.24em] text-white hover:bg-blue-500 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {isSaving ? 'Signing In...' : 'Save & Connect'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusTile({ label, value, tone }: { label: string; value: string; tone: 'blue' | 'green' | 'red' | 'amber' | 'slate' }) {
+  const toneClass = {
+    blue: 'border-blue-500/20 bg-blue-500/10 text-blue-300',
+    green: 'border-green-500/20 bg-green-500/10 text-green-300',
+    red: 'border-red-500/20 bg-red-500/10 text-red-300',
+    amber: 'border-yellow-500/20 bg-yellow-500/10 text-yellow-300',
+    slate: 'border-white/10 bg-white/5 text-gray-300',
+  }[tone];
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${toneClass}`}>
+      <p className="text-[9px] font-black uppercase tracking-[0.24em] opacity-70">{label}</p>
+      <p className="mt-2 text-sm font-black break-all">{value}</p>
+    </div>
+  );
+}
+
+function formatBytes(value: number) {
+  if (!value) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`;
+}
+
+function formatSpeed(value: number) {
+  if (!value) return '0 B/s';
+  return `${formatBytes(value)}/s`;
+}
+
+function formatEta(value: number) {
+  if (!value || value < 0) return '--';
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  const seconds = Math.floor(value % 60);
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function StatPill({ label, value, color }: { label: string, value: string, color: string }) {
