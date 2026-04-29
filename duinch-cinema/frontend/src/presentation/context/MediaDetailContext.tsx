@@ -138,19 +138,8 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     };
   }, [slug, mediaType]);
 
-  const prevSeasonIdxRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (prevSeasonIdxRef.current === null) {
-      prevSeasonIdxRef.current = activeSeasonIdx;
-      return;
-    }
-    if (prevSeasonIdxRef.current === activeSeasonIdx) return;
-    prevSeasonIdxRef.current = activeSeasonIdx;
-    setStreamableSources({});
-    setActiveEmbed(null);
-    setActiveType('');
-    setActiveProvider('');
-  }, [activeSeasonIdx]);
+  // REMOVED: legacy activeSeasonIdx side-effect that wiped streamableSources and playback state.
+  // We now fetch all seasons exhaustively on mount, so state should persist across season navigation.
 
   const value = {
     media, setMedia, loading, setLoading, localExists, setLocalExists,

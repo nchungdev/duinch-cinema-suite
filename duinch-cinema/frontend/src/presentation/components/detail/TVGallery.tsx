@@ -138,10 +138,13 @@ export const TVGallery = () => {
                     const ep = (srv.server_data || []).find((e: any) => {
                         const epNum = extractEpNum(e.name);
                         const targetSeasonNum = seasonBoundaries[activeSeasonIdx]?.season_number;
-                        const isCorrectSeason = (!e.season && !srv.season) || (e.season === targetSeasonNum) || (srv.season === targetSeasonNum);
+                        const isCorrectSeason = (!e.season && !srv.season) || 
+                                                (Number(e.season) === targetSeasonNum) || 
+                                                (Number(srv.season) === targetSeasonNum);
                         return epNum !== null && epNum === focusedEpNum && isCorrectSeason;
                     });
                     if (ep) {
+
                         if (!groups[type]) groups[type] = [];
                         groups[type].push({ type, provider, server: srv, episode: ep, srvIdx });
                     }
