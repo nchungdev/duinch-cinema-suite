@@ -22,8 +22,8 @@ export const TVGallery = () => {
     const cloudTargets = useCloudViewModel();
     const {
         media, activeEpisodeIdx, setActiveEpisodeIdx,
-        initialSeason, initialEpisode,
-        seasonBoundaries, setActiveSeasonIdx, activeType, streamableSources,
+        initialSeason, initialEpisode, isInitialized, setIsInitialized,
+        seasonBoundaries, setActiveSeasonIdx, activeType, streamableSources, setStreamableSources,
         setActiveType, setActiveProvider, activeProvider, playbackState, setActiveEmbed, activeEmbed,
         setActiveServerIdx, userSettings, setUserSettings
     } = useMediaDetail();
@@ -73,16 +73,17 @@ export const TVGallery = () => {
     const activeSeason = seasonBoundaries[activeSeasonIdx];
 
     useEffect(() => {
-        if (!seasonBoundaries.length) return;
+        if (!seasonBoundaries.length || isInitialized) return;
+
         const targetSeasonIdx = Math.max(0, seasonBoundaries.findIndex(s => s.season_number === (initialSeason ?? 1)));
-        const targetSeason = seasonBoundaries[targetSeasonIdx];
-        const localEpisode = Math.max(1, initialEpisode ?? 1);
-        const targetGlobalEpisode = Math.min(targetSeason.end - 1, targetSeason.start + localEpisode - 1);
-        
-        setActiveSeasonIdx(targetSeasonIdx);
-        setActiveEpisodeIdx(targetGlobalEpisode);
-        setFocusedIdx(targetGlobalEpisode);
-    }, [seasonBoundaries, initialSeason, initialEpisode, setActiveEpisodeIdx, setActiveSeasonIdx]);
+        const season = seasonBoundaries[targetSeasonIdx];
+        const targetEpIdx = season.start + (Math.max(1, initialEpisode ?? 1) - 1);
+
+        if (activeEpisodeIdx !== targetEpIdx) setActiveEpisodeIdx(targetEpIdx);
+        if (activeSeasonIdx !== targetSeasonIdx) setActiveSeasonIdx(targetSeasonIdx);
+        setFocusedIdx(targetEpIdx);
+        setIsInitialized(true);
+    }, [seasonBoundaries, initialSeason, initialEpisode, setActiveEpisodeIdx, setActiveSeasonIdx, isInitialized, setIsInitialized]);
 
     if (!seasonBoundaries.length) return null;
 
@@ -114,11 +115,31 @@ export const TVGallery = () => {
         };
 
         Object.entries(sources).forEach(([type, providers]) => {
-            Object.entries(providers as any).forEach(([provider, srvList]) => {
-                (srvList as any[]).forEach((srv: any, srvIdx: number) => {
-                    const ep = srv.server_data?.find((e: any) => {
+            Object.entries(providers as any).forEach(([provider, rawList]) => {
+                const items = rawList as any[];
+                let servers: any[] = [];
+                
+                // Support both legacy flat servers and new nested collections
+                if (items.length > 0 && 'servers' in items[0]) {
+                    items.forEach((col: any) => {
+                        (col.servers || []).forEach((srv: any) => {
+                            servers.push({
+                                ...srv,
+                                server_data: srv.episodes || srv.server_data || [],
+                                season: col.order
+                            });
+                        });
+                    });
+                } else {
+                    servers = items;
+                }
+
+                servers.forEach((srv: any, srvIdx: number) => {
+                    const ep = (srv.server_data || []).find((e: any) => {
                         const epNum = extractEpNum(e.name);
-                        return epNum !== null && epNum === focusedEpNum;
+                        const targetSeasonNum = seasonBoundaries[activeSeasonIdx]?.season_number;
+                        const isCorrectSeason = (!e.season && !srv.season) || (e.season === targetSeasonNum) || (srv.season === targetSeasonNum);
+                        return epNum !== null && epNum === focusedEpNum && isCorrectSeason;
                     });
                     if (ep) {
                         if (!groups[type]) groups[type] = [];
@@ -128,7 +149,7 @@ export const TVGallery = () => {
             });
         });
         return groups;
-    }, [streamableSources, focusedEpNum]);
+    }, [streamableSources, focusedEpNum, activeSeasonIdx, seasonBoundaries]);
 
     // Compute the ONE selected node key — guarantees only 1 highlight at a time.
     // Key format: `${type}:${provider}:${srvIdx}` (unique per server entry).
@@ -195,6 +216,7 @@ export const TVGallery = () => {
                                 setActiveSeasonIdx(idx);
                                 setActiveEpisodeIdx(s.start);
                                 setFocusedIdx(s.start);
+                                setStreamableSources({});
                             }
                         }}
                     >

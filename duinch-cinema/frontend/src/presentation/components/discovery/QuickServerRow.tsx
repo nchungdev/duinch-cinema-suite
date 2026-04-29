@@ -5,6 +5,7 @@ import type { CloudTarget } from '../../../services/cloudTargets';
 
 interface QuickServerRowProps {
   serverName: string; 
+  audioType?: string;
   episodes: any[]; 
   color?: string; 
   cloudTargets: CloudTarget[];
@@ -15,34 +16,13 @@ interface QuickServerRowProps {
 }
 
 export const QuickServerRow: React.FC<QuickServerRowProps> = ({ 
-  serverName, episodes, color = 'text-orange-400', cloudTargets, sourceBadge, onBrowserDownload, onCloudDownload, isJdOnline = false 
+  serverName, audioType, episodes = [], color = 'text-orange-400', cloudTargets, sourceBadge, onBrowserDownload, onCloudDownload, isJdOnline = false 
 }) => {
   const [open,     setOpen]     = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [focusIndex, setFocusIndex] = useState(0);
   const [rangeAnchor, setRangeAnchor] = useState<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
-
-  type SeasonGroupItem = { ep: any; index: number };
-  type SeasonGroup = { season: number; items: SeasonGroupItem[] };
-
-  const seasonGroups = useMemo(() => {
-    const acc: SeasonGroup[] = [];
-    episodes.forEach((ep, index) => {
-        const rawSeason = Number(ep?.season);
-        const season = (Number.isFinite(rawSeason) && rawSeason > 0) ? rawSeason : 1;
-        const existing = acc.find(group => group.season === season);
-        if (existing) {
-            existing.items.push({ ep, index });
-        } else {
-            acc.push({ season, items: [{ ep, index }] });
-        }
-    });
-    
-    const final = [...acc];
-    final.sort((a, b) => a.season - b.season);
-    return final;
-  }, [episodes]);
 
   const handleBatchDownload = (mode: 'browser' | 'cloud') => {
     if (selected.size === 0) return;
@@ -149,7 +129,16 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
             <Globe className={`w-5 h-5 ${open ? 'animate-pulse' : ''}`} />
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-[10px] font-black uppercase tracking-widest text-white truncate">{serverName}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-white truncate">{serverName}</span>
+              {audioType && (
+                <span className={`text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${
+                    audioType === 'Lồng Tiếng' ? 'bg-pink-600/20 text-pink-400 border-pink-500/20' : 'bg-green-600/20 text-green-400 border-green-500/20'
+                }`}>
+                  {audioType}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {sourceBadge && (
                 <span className="text-[7px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-400 border border-blue-500/20">
@@ -196,29 +185,18 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
 
       {open && (
         <div className="border-t border-white/5 px-3 pb-3 pt-2 space-y-1.5 animate-cinema-fade">
-          {seasonGroups.map(group => (
-            <div key={group.season} className="space-y-1.5">
-              <div className="flex items-center gap-2 px-1 pt-1">
-                <span className={`text-[8px] font-black uppercase tracking-[0.25em] ${color}`}>
-                  Mùa {group.season}
-                </span>
-                <span className="text-[7px] font-bold uppercase tracking-widest text-gray-600">
-                  {group.items.length} tập
-                </span>
-              </div>
-
               <div
                 ref={gridRef}
                 tabIndex={0}
                 onKeyDown={handleGridKeyDown}
                 className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 outline-none"
               >
-                {group.items.map(({ ep, index }) => {
+                {episodes.map((ep, index) => {
                   const isSelected = selected.has(index);
                   const epLabel = ep.name || `Tập ${String(index + 1).padStart(2, '0')}`;
-                  const epUrl = ep.m3u8 || ep.link_m3u8;
+                  const epUrl = ep.m3u8;
                   return (
-                    <div key={`${group.season}-${index}`} className={`flex items-stretch rounded-lg border transition-all ${
+                    <div key={index} className={`flex items-stretch rounded-lg border transition-all ${
                       isSelected ? 'bg-blue-600/20 border-blue-500/40' : 'bg-black/30 border-white/8 hover:border-white/15'
                     }`}>
                       <button
@@ -263,8 +241,6 @@ export const QuickServerRow: React.FC<QuickServerRowProps> = ({
                   );
                 })}
               </div>
-            </div>
-          ))}
         </div>
       )}
     </div>

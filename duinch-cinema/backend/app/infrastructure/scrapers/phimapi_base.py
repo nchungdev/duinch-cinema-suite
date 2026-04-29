@@ -7,7 +7,7 @@ import asyncio
 from typing import List, Dict, Optional, Any
 from app.core import config
 from app.domain.models.tmdb import TMDBInfo, TMDBSeason
-from app.domain.models.media import StreamingEpisode
+from app.domain.models.media import ScraperEpisode
 
 def title_to_slug(title: str) -> str:
     """Convert a movie title to a phimapi-style URL slug."""
@@ -100,14 +100,36 @@ class PhimAPIBase:
             current_total += count
         return None
 
-    def _detect_season(self, name: str, origin_name: str, year: int, tmdb_info: TMDBInfo) -> Optional[int]:
-        """Intelligently detect season from Title Regex OR Year matching."""
-        full_name = f"{name} {origin_name}".lower()
-        s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', full_name, re.IGNORECASE)
+    def _detect_season(self, name: str, origin_name: str, year: int, tmdb_info: TMDBInfo, slug: str = "") -> Optional[int]:
+        """Intelligently detect season from Title Regex, Slug, OR Year matching."""
+        full_text = f"{name} {origin_name} {slug}".lower().replace("-", " ")
+        
+        # 1. Standard Regex: Phần 5, Season 5, SS5, P5
+        s_match = re.search(r'(phần|season|ss|p)\s*(\d+)', full_text, re.IGNORECASE)
         if s_match: return int(s_match.group(2))
-        if year > 0:
+        
+        # 2. Trailing Number: "The Boys 5" -> 5
+        # Only if it's a TV show and the number is small (reasonable season count)
+        trail_match = re.search(r'\s(\d+)$', name.strip())
+        if trail_match:
+            val = int(trail_match.group(1))
+            if 1 <= val <= 30: return val
+
+        # 3. Year Match (Fallback)
+        if year > 0 and tmdb_info.season_years:
+            # First pass: try exact match
             for s_num, s_year in tmdb_info.season_years.items():
-                if s_year > 0 and abs(year - s_year) <= 0: return s_num
+                if s_year > 0 and abs(year - s_year) == 0: return s_num
+            # Second pass: allow 1 year tolerance
+            for s_num, s_year in tmdb_info.season_years.items():
+                if s_year > 0 and abs(year - s_year) <= 1: return s_num
+                
+            # If the year is much larger than the series start year but doesn't match any season year precisely,
+            # it might be the latest season which TMDB hasn't updated the year for yet.
+            max_season = max(tmdb_info.season_years.keys()) if tmdb_info.season_years else 1
+            if year >= (tmdb_info.series_year + max_season - 1):
+                return max_season
+                
         return None
 
     def _score_search_item(self, item: Dict, query: str, tmdb_id: Optional[str], year: Optional[int], media_type: str, requested_season: int, tmdb_info: TMDBInfo, is_search_phase: bool = False) -> int:
@@ -170,10 +192,16 @@ class PhimAPIBase:
         # 4. SEASON NUMBER
         found_s = self._detect_season(item.get("name", ""), item.get("origin_name", ""), s_year, tmdb_info)
         if found_s:
-            if found_s == requested_season: score += 500
-            else: score += 100
+            if requested_season is None:
+                # Global search mode: allow all seasons
+                score += 500
+            elif found_s == requested_season: 
+                score += 500
+            else: 
+                # HARD REJECT: Explicit season mismatch (e.g. found S1 but requested S2)
+                return -5000
 
-        # 4. TITLE MATCH
+        # 5. TITLE MATCH
         n_query = query.lower().strip()
         if n_query:
             if n_query == n_name or n_query == n_origin: score += 800
@@ -183,8 +211,8 @@ class PhimAPIBase:
 
         return score
 
-    async def lookup(self, client: httpx.AsyncClient, tmdb_id: Optional[Any] = None, title: str = None, localize_title: str = None, media_type: str = "movie", season: int = 1, episode: int = None, year: int = None, force: bool = False, tmdb_info: Optional[TMDBInfo] = None) -> List[StreamingEpisode]:
-        req_season = season if season is not None else 1
+    async def lookup(self, client: httpx.AsyncClient, tmdb_id: Optional[Any] = None, title: str = None, localize_title: str = None, media_type: str = "movie", season: int = None, episode: int = None, year: int = None, force: bool = False, tmdb_info: Optional[TMDBInfo] = None) -> List[ScraperEpisode]:
+        req_season = season # Can be None for "All Seasons"
         if not tmdb_info:
             tmdb_info = await tmdb_get_info(client, media_type, str(tmdb_id)) if tmdb_id else TMDBInfo(series_year=int(year) if year else 0)
         
@@ -199,27 +227,46 @@ class PhimAPIBase:
             movie_name = movie.get("name") or movie.get("origin_name") or "Unknown"
             
             s_year = int(movie.get("year") or 0)
-            current_s = self._detect_season(movie.get("name", ""), movie.get("origin_name", ""), s_year, tmdb_info)
+            current_s = self._detect_season(movie.get("name", ""), movie.get("origin_name", ""), s_year, tmdb_info, slug)
             if not current_s: current_s = assigned_season
             
-            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, current_s or 1, tmdb_info) >= 1000:
+            # CRITICAL FIX: Pass 'req_season' (the one we want) to score the item, not 'current_s'
+            if self._score_search_item(movie, title or "", tmdb_id, year, media_type, req_season, tmdb_info) >= 1000:
                 for server in (details.get("episodes") or []):
                     sname = server.get("server_name", "Server")
                     for ep in (server.get("server_data") or []):
                         u = ep.get("link_m3u8") or ep.get("link_embed")
                         if u:
-                            rs = current_s or 1
+                            # Try to detect season from episode name if still unknown
+                            rs = current_s or assigned_season
                             ename = str(ep.get("name") or "")
-                            epm = re.search(r'\d+', ename)
-                            if epm:
-                                num = int(epm.group())
-                                if num > 50 or not current_s:
-                                    ms = self._get_season_from_episode(num, tmdb_info.tmdb_seasons)
-                                    if ms: rs = ms
                             
+                            if not rs:
+                                # Fallback: check if episode name itself contains season info (e.g. "S5 - Tập 1")
+                                es_match = re.search(r'(phần|season|ss|p|s)\s*(\d+)', ename, re.IGNORECASE)
+                                if es_match: rs = int(es_match.group(2))
+                            
+                            # Correctly extract episode number: look for "Tập X" or "Ep X" first
+                            epm = re.search(r'(?:tập|episode|ep|e|t)\s*(\d+)', ename, re.IGNORECASE)
+                            if epm:
+                                num = int(epm.group(1))
+                            else:
+                                # Fallback: first number that is NOT the season number
+                                all_nums = re.findall(r'\d+', ename)
+                                num = 1
+                                for n in all_nums:
+                                    val = int(n)
+                                    if rs is not None and val == rs: continue
+                                    num = val
+                                    break
+                            
+                            # Final guard: only filter if a specific season was requested
+                            if media_type == 'tv' and req_season is not None and rs is not None and rs != req_season:
+                                continue
+
                             key = (u, rs, ename)
                             if key not in seen_keys:
-                                all_results.append(StreamingEpisode(
+                                all_results.append(ScraperEpisode(
                                     provider=self.provider_name.upper(), 
                                     server=sname, 
                                     name=ename, 
@@ -231,19 +278,31 @@ class PhimAPIBase:
                                 ))
                                 seen_keys.add(key)
 
+        # 1. Search Phase
         keywords = list(dict.fromkeys([q for q in [localize_title, title] if q and is_supported_lang(q)]))
         for kw in keywords:
             search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 20})
             items = (search_data.get("data") or {}).get("items") or []
             for item in items:
-                if self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) >= 500:
-                    itmdb = item.get("tmdb") or {}
+                # Use a slightly lower threshold for search phase to be inclusive
+                if self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) >= 400:
                     s_year = int(item.get("year") or 0)
                     is_ = self._detect_season(item.get("name", ""), item.get("origin_name", ""), s_year, tmdb_info)
                     await _process_slug(item.get("slug"), is_)
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.05)
 
-        if tmdb_id and not all_results:
+        # 2. TMDB Direct Lookup (ALWAYS for TV to ensure full series coverage)
+        if tmdb_id and (not all_results or media_type == 'tv'):
             res = await self.get_by_tmdb(client, media_type, str(tmdb_id))
-            if res and res.get("status") is True: await _process_slug((res.get("movie") or {}).get("slug"), req_season)
+            if res and res.get("status") is True: 
+                slug = (res.get("movie") or {}).get("slug")
+                if slug:
+                    details = await self.get_details(client, slug)
+                    if details:
+                        movie = details.get("movie") or {}
+                        s_year = int(movie.get("year") or 0)
+                        detected_s = self._detect_season(movie.get("name", ""), movie.get("origin_name", ""), s_year, tmdb_info)
+                        # For TV, we always process the TMDB slug
+                        await _process_slug(slug, detected_s or req_season)
+        
         return all_results

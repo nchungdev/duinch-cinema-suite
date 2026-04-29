@@ -155,9 +155,22 @@ async def discovery_fetch(
     client = request.app.state.http_client
     use_case = DiscoveryUseCase(client)
     tmdb_info = await use_case.get_tmdb_info(media_type, str(tmdb_id)) if tmdb_id else None
+
+    # Map source_type/source if user provided a provider name in source_type
+    actual_source_type = source_type
+    actual_source = source
+    
+    if not source:
+        # If source is missing, check if source_type is actually a provider name
+        for s in DISCOVERY_SOURCES:
+            if s["source"] == source_type:
+                actual_source_type = s["source_type"]
+                actual_source = s["source"]
+                break
+    
     result = await use_case.execute_task(
         tmdb_id, media_type, title, localize_title, year, season, episode, 
-        source_type, source, force, tmdb_info
+        actual_source_type, actual_source, force, tmdb_info
     )
     return wrap_response(result.dict(exclude_none=True))
 

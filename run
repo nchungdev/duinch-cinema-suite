@@ -54,127 +54,6 @@ validate_env() {
     fi
 }
 
-install_jdownloader() {
-    echo -e "${BLUE}🔍 Checking for existing JDownloader installation...${NC}"
-    OS_TYPE=$(uname -s)
-
-    # 1. Check Docker
-    if command -v docker &> /dev/null; then
-        if docker ps --format '{{.Names}}' | grep -q "^jdownloader$"; then
-            echo -e "${GREEN}✅ JDownloader is already running in Docker.${NC}"
-            return
-        fi
-    fi
-
-    # 2. Check macOS App
-    if [[ "$OS_TYPE" == "Darwin" ]]; then
-        if [[ -d "/Applications/JDownloader 2.app" || -d "$HOME/Applications/JDownloader 2.app" ]]; then
-            echo -e "${GREEN}✅ JDownloader 2 is already installed in Applications.${NC}"
-            return
-        fi
-    fi
-
-    # 3. Check Linux/Generic PATH or common install dirs
-    if command -v jdownloader &> /dev/null; then
-        echo -e "${GREEN}✅ JDownloader found in system PATH.${NC}"
-        return
-    fi
-
-    echo -e "${YELLOW}ℹ️  JDownloader not detected. Proceeding with setup...${NC}"
-
-    # --- Re-use existing Docker detection for installation ---
-    if command -v docker &> /dev/null; then
-        echo -e "${CYAN}🐳 Docker detected on this system.${NC}"
-        if [[ "$1" == "--auto" ]]; then
-            echo -e "${GREEN}🚀 Auto-starting JDownloader via Docker Compose...${NC}"
-            docker-compose up -d jdownloader
-            return
-        else
-            echo -e "${YELLOW}Do you want to run JDownloader as a Docker Container? (Highly Recommended) (y/n)${NC}"
-            read -p "> " use_docker
-            if [[ "$use_docker" == "y" ]]; then
-                echo -e "${GREEN}🚀 Launching JDownloader Container...${NC}"
-                docker-compose up -d jdownloader
-                echo -e "${GREEN}✅ JDownloader is running! Access the Web UI at http://localhost:5800${NC}"
-                return
-            fi
-        fi
-    fi
-
-    if [[ "$OS_TYPE" == "Darwin" ]]; then
-        echo -e "${CYAN}🍎 Detected macOS.${NC}"
-        
-        # Check if local file is valid (larger than 10MB)
-        if [[ -f "JDownloader2_Setup.dmg" && $(du -m "JDownloader2_Setup.dmg" | cut -f1) -gt 10 ]]; then
-            echo -e "${GREEN}✅ Local installer found: JDownloader2_Setup.dmg${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Local installer missing or corrupted. Downloading...${NC}"
-            ARCH=$(uname -m)
-            if [[ "$ARCH" == "arm64" ]]; then
-                echo -e "${CYAN}🏗️  Architecture: Apple Silicon (ARM64)${NC}"
-                # Corrected URL for ARM64
-                URL="https://installer.jdownloader.org/JD2Setup_macos_arm64_java21.dmg"
-            else
-                echo -e "${CYAN}🏗️  Architecture: Intel (x64)${NC}"
-                URL="https://installer.jdownloader.org/JD2Setup_macos_x64_java21.dmg"
-            fi
-            
-            # Using robust curl flags
-            curl -L -f -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-                 -e "https://jdownloader.org/" \
-                 "$URL" -o "JDownloader2_Setup.dmg"
-            
-            # Fallback if Java 21 link fails
-            if [[ $? -ne 0 || $(du -m "JDownloader2_Setup.dmg" | cut -f1) -lt 10 ]]; then
-                echo -e "${YELLOW}🔄 Retrying with universal JAR (Multi-OS)...${NC}"
-                URL="https://installer.jdownloader.org/JDownloader.jar"
-                curl -L -f -A "Mozilla/5.0" "$URL" -o "JDownloader.jar"
-                
-                if [[ -f "JDownloader.jar" && $(du -m "JDownloader.jar" | cut -f1) -gt 1 ]]; then
-                    echo -e "${GREEN}✅ Downloaded JDownloader.jar${NC}"
-                    echo -e "${YELLOW}🚀 Launching via Java...${NC}"
-                    java -jar JDownloader.jar &
-                    return
-                fi
-            fi
-        fi
-
-        if [[ -f "JDownloader2_Setup.dmg" && $(du -m "JDownloader2_Setup.dmg" | cut -f1) -gt 10 ]]; then
-            echo -e "${GREEN}✅ JDownloader installer ready.${NC}"
-            echo -e "${YELLOW}🚀 Launching installer UI...${NC}"
-            open "JDownloader2_Setup.dmg"
-        else
-            echo -e "${RED}❌ All download attempts failed. Please visit https://jdownloader.org/jdownloader2${NC}"
-        fi
-        
-    elif [[ "$OS_TYPE" == "Linux" ]]; then
-        if command -v docker &> /dev/null; then
-            echo -e "${CYAN}🐳 Detected Linux with Docker.${NC}"
-            echo -e "${GREEN}🚀 Auto-starting JDownloader via Docker Compose...${NC}"
-            docker-compose up -d jdownloader
-            echo -e "${GREEN}✅ JDownloader is running! Access it via Web UI.${NC}"
-            return
-        fi
-
-        echo -e "${CYAN}🐧 Detected Linux. Automating script installation...${NC}"
-        LOCAL_SH="duinch-downloader/JD2Setup_x64.sh"
-        
-        if [[ ! -f "$LOCAL_SH" || $(du -m "$LOCAL_SH" | cut -f1) -lt 10 ]]; then
-            echo -e "${YELLOW}📥 Downloading Linux Installer script...${NC}"
-            curl -L -f -A "Mozilla/5.0" "https://installer.jdownloader.org/JD2Setup_x64.sh" -o "$LOCAL_SH"
-        fi
-        
-        if [[ -f "$LOCAL_SH" ]]; then
-            chmod +x "$LOCAL_SH"
-            echo -e "${YELLOW}🚀 Running silent installer (might require sudo)...${NC}"
-            # Try to run silently if possible
-            ./"$LOCAL_SH" -q || sudo ./"$LOCAL_SH" -q
-        else
-            echo -e "${RED}❌ Could not obtain Linux installer.${NC}"
-        fi
-    fi
-}
-
 init_environment() {
     echo -e "${BLUE}📦 Initializing Environment...${NC}"
     if [ ! -d "venv" ]; then
@@ -193,9 +72,6 @@ init_environment() {
     
     echo "[*] Installing Frontend dependencies..."
     cd duinch-cinema/frontend && npm install --silent && cd ../..
-    
-    echo "[*] Setting up JDownloader..."
-    install_jdownloader "$1"
 }
 
 clear
@@ -211,10 +87,9 @@ echo -e "  ${GREEN}1) Launch All${NC} (Frontend + Backend) [Default]"
 echo -e "  2) Crawler Miner (Start Mining)"
 echo -e "  3) Crawler Cooker (Process Raw Links)"
 echo -e "  4) Clear Cache"
-echo -e "  ${BLUE}5) Init Environment${NC} (Install deps + JD)"
+echo -e "  ${BLUE}5) Init Environment${NC} (Install dependencies)"
 echo -e "  ${CYAN}6) Setup .env${NC} (From example)"
-echo -e "  7) Install JDownloader (Direct)"
-echo -e "  ${YELLOW}8) Exit${NC}"
+echo -e "  ${YELLOW}7) Exit${NC}"
 echo -e "${CYAN}--------------------------------------${NC}"
 
 read -p "Enter selection [1]: " choice
@@ -253,9 +128,6 @@ case $choice in
         fi
         ;;
     7)
-        install_jdownloader
-        ;;
-    8)
         echo "Goodbye!"
         exit 0
         ;;

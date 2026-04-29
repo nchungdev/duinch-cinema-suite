@@ -11,17 +11,24 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const [overlayOpen, setOverlayOpen] = useState(false);
 
     const {
-        activeEmbed, activeType, activeProvider,
+        activeEmbed, activeType, activeProvider, activeServerIdx,
         isPlayerReady, playerError, slug, mediaType, activeEpisodeIdx,
         streamableSources, setActiveType, setActiveProvider, setActiveServerIdx,
         setActiveEmbed, seasonBoundaries, userSettings, setUserSettings,
     } = useMediaDetail();
 
     // ── Player-level server switcher ─────────────────────────────────────
-    const savePreferred = async (serverName: string) => {
-        const next = { ...(userSettings || {}), preferred_server: serverName };
+    const savePreferred = async (serverName: string, audioType?: string) => {
+        const next = { 
+            ...(userSettings || {}), 
+            preferred_server: serverName,
+            preferred_audio_type: audioType
+        };
         setUserSettings(next);
-        try { await api.post('/user/settings', { preferred_server: serverName }); } catch {}
+        try { await api.post('/user/settings', { 
+            preferred_server: serverName,
+            preferred_audio_type: audioType
+        }); } catch {}
     };
 
     // Compute local episode number so we can find the right episode object
@@ -30,7 +37,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const extractNum = (name: string) => { const d = name?.toString().replace(/\D/g, ''); return d ? parseInt(d) : null; };
 
     const switchServer = (type: string, provider: string, srvIdx: number, server: any) => {
-        const ep = server.server_data?.find((e: any) => extractNum(e.name) === localEpNum)
+        const ep = (server.server_data || []).find((e: any) => extractNum(e.name) === localEpNum)
                 ?? server.server_data?.[0];
         if (!ep) return;
         const link = type === 'HLS' ? (ep.m3u8 || ep.url) : (ep.embed || ep.url || ep.m3u8);
@@ -39,18 +46,37 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
         setActiveProvider(provider);
         setActiveServerIdx(srvIdx);
         setActiveEmbed(link);
-        savePreferred(server.server_name);
+        savePreferred(server.server_name, server.audio_type);
         setOverlayOpen(false);
     };
 
     // Flat list: [{type, provider, srvIdx, server}]
     const allServers = Object.entries(streamableSources).flatMap(([type, providers]) =>
-        Object.entries(providers as any).flatMap(([provider, srvList]) =>
-            (srvList as any[]).map((server, srvIdx) => ({ type, provider, srvIdx, server }))
-        )
+        Object.entries(providers as any).flatMap(([provider, rawList]) => {
+            const items = rawList as any[];
+            // If it's a list of Collections, flatten them
+            if (items.length > 0 && 'servers' in items[0]) {
+                const flatServers: any[] = [];
+                items.forEach((col: any) => {
+                    (col.servers || []).forEach((srv: any) => {
+                        flatServers.push({
+                            ...srv,
+                            server_data: srv.episodes || srv.server_data || [],
+                            season: col.order
+                        });
+                    });
+                });
+                return flatServers.map((server, srvIdx) => ({ type, provider, srvIdx, server }));
+            }
+            // Otherwise it's already a flat list of servers
+            return items.map((server, srvIdx) => ({ type, provider, srvIdx, server }));
+        })
     );
     const preferredServer = (userSettings as any)?.preferred_server as string | undefined;
-    const currentServerName = streamableSources[activeType]?.[activeProvider]?.[0]?.server_name ?? '';
+    
+    // Find current server name safely
+    const currentProviderServers = streamableSources[activeType]?.[activeProvider] || [];
+    const currentServerName = currentProviderServers[activeServerIdx]?.server_name || '';
     
     usePlaybackController(videoRef);
 

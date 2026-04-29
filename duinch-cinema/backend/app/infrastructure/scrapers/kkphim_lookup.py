@@ -1,7 +1,7 @@
 import httpx
 from typing import List, Dict, Optional, Any
 from .phimapi_base import PhimAPIBase
-from app.domain.models.media import StreamingEpisode
+from app.domain.models.media import ScraperEpisode
 from app.domain.models.tmdb import TMDBInfo
 from app.domain.interfaces.provider import MediaProviderPort
 
@@ -22,7 +22,7 @@ async def lookup_kkphim(
     year: int = None,
     force: bool = False,
     tmdb_info: Optional[TMDBInfo] = None
-) -> List[StreamingEpisode]:
+) -> List[ScraperEpisode]:
     return await _kkphim.lookup(client, tmdb_id, title, localize_title, media_type, season, episode, year, force=force, tmdb_info=tmdb_info)
 
 # Backward Compatibility

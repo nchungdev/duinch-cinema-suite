@@ -1,4 +1,3 @@
-import { useRef, useState, useLayoutEffect } from 'react';
 import { ChevronLeft, Loader2 } from 'lucide-react';
 import { MediaDetailProvider } from '../context/MediaDetailContext';
 import { useMediaDetailViewModel } from '../view-models/MediaDetailViewModel';
@@ -10,25 +9,8 @@ import { DiscoveryPipeline } from './DiscoveryPipeline';
 
 const DetailContent = () => {
   const { state, actions } = useMediaDetailViewModel();
-  const { loading, media, mediaType, slug, initialSeason, initialEpisode } = state;
+  const { loading, media, mediaType, slug, initialSeason, initialEpisode, activeSeasonIdx, seasonBoundaries } = state;
   const { onBack, handleStreamingReady } = actions;
-
-  const playerRef = useRef<HTMLDivElement>(null);
-  const [playerHeight, setPlayerHeight] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    const el = playerRef.current;
-    if (!el) return;
-    const updateHeight = () => {
-      const height = el.getBoundingClientRect().height;
-      if (height > 0) setPlayerHeight(Math.round(height));
-    };
-    const ro = new ResizeObserver(updateHeight);
-    ro.observe(el);
-    updateHeight();
-    return () => ro.disconnect();
-  }, [loading, media]);
-
   if (loading && !media) {
     return (
       <div className="fixed inset-0 bg-[#0a0a0c] flex items-center justify-center z-[100]">
@@ -42,6 +24,8 @@ const DetailContent = () => {
       </div>
     );
   }
+
+  const currentSeason = mediaType === 'tv' ? seasonBoundaries[activeSeasonIdx]?.season_number : undefined;
 
   return (
     <div className="fixed inset-0 bg-[#0a0a0c] text-white overflow-hidden flex flex-col z-40 animate-in fade-in duration-700">
@@ -58,7 +42,7 @@ const DetailContent = () => {
             {/* LEFT COLUMN: Player & Episodes & Discovery */}
             <div className="lg:col-span-8 space-y-8">
               {/* 1. Player */}
-              <MediaStreamer ref={playerRef} />
+              <MediaStreamer />
               
               {/* 2. Episode Gallery (Horizontal Strip below player) */}
               <div className="bg-[#0c0c0e]/60 backdrop-blur-2xl border border-white/5 rounded-[2.5rem] overflow-hidden shadow-3xl">
@@ -81,6 +65,7 @@ const DetailContent = () => {
                     mediaType={mediaType}
                     initialSeason={mediaType === 'tv' ? initialSeason : undefined}
                     initialEpisode={mediaType === 'tv' ? initialEpisode : undefined}
+                    season={currentSeason}
                     onStreamingReady={handleStreamingReady}
                 />
               </div>

@@ -167,6 +167,7 @@ function App() {
       }
     };
 
+    handleUrlSync();
     window.addEventListener('hashchange', handleUrlSync);
     return () => window.removeEventListener('hashchange', handleUrlSync);
   }, [searchActive, executeSearch]);

@@ -56,6 +56,8 @@ interface MediaDetailContextType {
   mediaType: string;
   initialSeason?: number;
   initialEpisode?: number;
+  isInitialized: boolean;
+  setIsInitialized: (i: boolean) => void;
 }
 
 const MediaDetailContext = createContext<MediaDetailContextType | undefined>(undefined);
@@ -78,6 +80,7 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const fetchingRef = useRef<string | null>(null);
 
@@ -107,6 +110,7 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
         setActiveEmbed(null);
         setStreamingLinks([]);
         setPlaybackState('stopped');
+        setIsInitialized(false);
 
         try {
             const useCase = new GetMediaDetail();
@@ -134,6 +138,20 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     };
   }, [slug, mediaType]);
 
+  const prevSeasonIdxRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevSeasonIdxRef.current === null) {
+      prevSeasonIdxRef.current = activeSeasonIdx;
+      return;
+    }
+    if (prevSeasonIdxRef.current === activeSeasonIdx) return;
+    prevSeasonIdxRef.current = activeSeasonIdx;
+    setStreamableSources({});
+    setActiveEmbed(null);
+    setActiveType('');
+    setActiveProvider('');
+  }, [activeSeasonIdx]);
+
   const value = {
     media, setMedia, loading, setLoading, localExists, setLocalExists,
     streamableSources, setStreamableSources, activeType, setActiveType,
@@ -145,6 +163,7 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
     userSettings, setUserSettings, seasonBoundaries,
     onBack: initialValues.onBack, slug, mediaType,
     initialSeason: initialValues.initialSeason, initialEpisode: initialValues.initialEpisode,
+    isInitialized, setIsInitialized
   };
 
   return <MediaDetailContext.Provider value={value}>{children}</MediaDetailContext.Provider>;

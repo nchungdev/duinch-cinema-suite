@@ -103,10 +103,15 @@ export const DiscoveryPipeline = ({
     downloader.downloadInBrowser(url, name);
   };
 
+  const isTV = mediaType === 'tv';
+
   const fetchSources = async (force = false) => {
     // ── Single-Flight Lock ──
-    const currentTaskKey = `${tmdbId}-${season || 1}-${force}`;
-    if (fetchLock.current === currentTaskKey) return;
+    const currentTaskKey = `${tmdbId}-${force}`;
+    
+    if (fetchLock.current === currentTaskKey) {
+        return;
+    }
     fetchLock.current = currentTaskKey;
 
     const ctrl = new AbortController();
@@ -125,11 +130,8 @@ export const DiscoveryPipeline = ({
       setDoneKeys(prev    => { const n = new Set(prev); n.add(key);    return n; });
     };
 
-    const isTV = mediaType === 'tv';
-    const targetSeason = isTV ? (season ?? initialSeason) : undefined;
     const targetEpisode = isTV ? initialEpisode : undefined;
 
-    // 2. Call the SSE Streaming API
     MediaRepository.discoverSourcesStream(
       {
         tmdb_id: tmdbId,
@@ -138,63 +140,51 @@ export const DiscoveryPipeline = ({
         force,
         localize_title: localizeTitle,
         year: String(year || ''),
-        season: targetSeason,
+        season: undefined,
         episode: targetEpisode,
       },
       {
         onInit: (_total, _sources) => {},
         onResult: (source_type, source, items, error) => {
           const key = toKey(source_type, source);
-
-          if (error || !items || items.length === 0) {
-            markDone(key); return;
+          if (error || !items || (Array.isArray(items) && items.length === 0)) { 
+            markDone(key); 
+            return; 
           }
 
           if (source_type === 'm3u8') {
+            const collections = items as any[];
+            
             setStreamableByType(prev => {
               const next = { ...prev };
-              const existing: Record<string, any[]> = { ...(next['m3u8'] ?? {}) };
-              for (const group of items) {
-                const srv = group.server || source;
-                if (!existing[srv]) existing[srv] = [];
-                const mergedEps = [...existing[srv], ...(group.episodes ?? []).map((ep: any) => ({ ...ep, source }))];
-                const seenEps = new Set();
-                existing[srv] = mergedEps.filter(e => {
-                   const k = `${e.name}-${e.m3u8}`;
-                   if (seenEps.has(k)) return false;
-                   seenEps.add(k);
-                   return true;
-                });
-              }
-              next['m3u8'] = existing;
+              const current = next['m3u8'] || {};
+              next['m3u8'] = { ...current, [source]: collections };
               return next;
             });
 
-            // LOG: Discovery Engine Raw Output
-            items.forEach((group: any) => {
-                group.episodes?.forEach((ep: any) => {
-                });
-            });
-
-            const flat = items.flatMap((g: any) =>
-                (g.episodes ?? []).map((ep: StreamingEpisode) => ({ 
-                    ...ep, 
-                    server: g.server, 
-                    source_type: 'm3u8', 
-                    source 
-                }))
+            // Single Path Flattening: collections -> servers -> episodes
+            const flat = collections.flatMap(collection => 
+                (collection.servers ?? []).flatMap((srv: any) => 
+                    (srv.episodes ?? []).map((st: any) => ({ 
+                        ...st, 
+                        source, 
+                        server: srv.server_name,
+                        audio_type: srv.audio_type,
+                        season: collection.order, 
+                        movie_name: collection.collection_name
+                    }))
+                )
             );
             
-            if (flat.length > 0) {
-                onStreamingReady?.(flat, source);
-            }
+            if (flat.length > 0) onStreamingReady?.(flat, source);
           } else {
+            const links = items as any[];
+            
             setDownloadableByType(prev => {
               const existing = prev[source_type] ?? [];
               const existingUrls = new Set(existing.map((l: MediaLink) => l.url));
-              const fresh = items.filter((l: MediaLink) => l.url && !existingUrls.has(l.url));
+              const fresh = links.filter((l: MediaLink) => l.url && !existingUrls.has(l.url));
               if (fresh.length === 0) return prev;
-              
               const combined = [...existing, ...fresh];
               return { ...prev, [source_type]: RankingService.sortMediaLinks(combined) };
             });
@@ -220,21 +210,30 @@ export const DiscoveryPipeline = ({
 
   useEffect(() => {
     fetchSources(false);
-  }, [tmdbId, season]);
+  }, [tmdbId]);
 
   const tabs = ['m3u8', 'fshare', 'torrent', 'gdrive'].flatMap(st => {
     const isStreamable = st === 'm3u8';
     const hasResults   = isStreamable ? !!streamableByType[st] : !!downloadableByType[st];
     const loading      = DISCOVERY_SOURCES.filter(d => d.source_type === st).some(d => loadingKeys.has(toKey(d.source_type, d.source)));
-    
     if (!hasResults && !loading) return [];
 
-    const meta  = SOURCE_TYPE_META[st] || { label: st, color: 'text-sky-400', icon: <Box className="w-3 h-3" /> };
-    const count = isStreamable
-      ? Object.keys(streamableByType[st] ?? {}).length
-      : (downloadableByType[st] ?? []).length;
+    const meta  = SOURCE_TYPE_META[st] || { label: st, color: 'text-orange-400', icon: <Box className="w-3 h-3" /> };
+    let count = 0;
+    if (isStreamable) {
+        const allServers = new Set();
+        Object.values(streamableByType[st] ?? {}).forEach((items: any) => {
+            if (isTV) {
+                items.forEach((s: any) => s.servers.forEach((srv: any) => allServers.add(srv.server)));
+            } else {
+                items.forEach((srv: any) => allServers.add(srv.server));
+            }
+        });
+        count = allServers.size;
+    } else {
+        count = (downloadableByType[st] ?? []).length;
+    }
     const badge = isStreamable ? (count > 0 ? `${count} sv` : '…') : String(count);
-
     return [{ id: st, label: meta.label, icon: meta.icon, color: meta.color, badge, isLoading: loading }];
   });
 
@@ -244,13 +243,70 @@ export const DiscoveryPipeline = ({
     }
   }, [tabs, activeTab]);
 
-  const m3u8Groups: { src: string; entries: [string, any[]][] }[] = [];
-  for (const [serverName, eps] of Object.entries(streamableByType['m3u8'] ?? {})) {
-    const src = (eps[0] as any)?.source ?? '_';
-    const group = m3u8Groups.find(g => g.src === src);
-    if (group) group.entries.push([serverName, eps]);
-    else m3u8Groups.push({ src, entries: [[serverName, eps]] });
-  }
+  const renderM3U8Content = () => {
+    const sources = streamableByType['m3u8'] ?? {};
+    const collectionsMap: Record<string, { meta: any, servers: any[] }> = {};
+    
+    // Group all collections from all sources by their name/order
+    // Group all collections from all sources by their name/order
+    Object.entries(sources).forEach(([sourceKey, collections]: [string, any]) => {
+        (collections || []).forEach((col: any) => {
+            const groupKey = col.collection_name || `col_${col.order}`;
+            if (!collectionsMap[groupKey]) {
+                collectionsMap[groupKey] = { meta: col, servers: [] };
+            }
+            (col.servers || []).forEach((srv: any) => {
+                collectionsMap[groupKey].servers.push({ 
+                  ...srv, 
+                  source: sourceKey,
+                  episodes: srv.episodes || srv.server_data || []
+                });
+            });
+        });
+    });
+
+    const sortedGroups = Object.values(collectionsMap).sort((a, b) => a.meta.order - b.meta.order);
+
+    return (
+        <div className="space-y-6">
+            {sortedGroups.map(group => (
+                <div key={group.meta.id} className="space-y-2">
+                    {/* Only show header if it's not a single "Bản Chính" movie group or if we have multiple collections */}
+                    {(sortedGroups.length > 1 || (group.meta.collection_name && group.meta.collection_name !== 'Bản Chính')) && (
+                        <div className="flex items-center gap-3 px-2">
+                            <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+                                <Tv className="w-4 h-4 text-blue-400" />
+                            </div>
+                            <div>
+                                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/90">
+                                    {group.meta.collection_name}
+                                </h4>
+                            </div>
+                            <div className="flex-1 h-px bg-gradient-to-r from-blue-500/20 to-transparent ml-2" />
+                        </div>
+                    )}
+                    
+                    <div className="grid gap-2">
+                        {group.servers.map((srv, idx) => (
+                            <QuickServerRow 
+                                key={`${srv.source}-${srv.server_name}-${idx}`} 
+                                serverName={srv.server_name} 
+                                audioType={srv.audio_type}
+                                episodes={srv.episodes} 
+                                color={srv.source === 'kkphim' ? 'text-blue-400' : 'text-pink-400'} 
+                                cloudTargets={cloudTargets}
+                                sourceBadge={SOURCE_BADGE[srv.source]} 
+                                onBrowserDownload={(url, name) => handleDownloadRequest(url, name)}
+                                onCloudDownload={(url, name) => handleDownloadRequest(url, name)}
+                                isJdOnline={jdStatus.isJdOnline} 
+                            />
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+  };
 
   return (
     <div className="glass-dark p-6 rounded-[2.5rem] border border-blue-500/10 space-y-4 relative overflow-hidden shadow-xl">
@@ -302,31 +358,7 @@ export const DiscoveryPipeline = ({
       </div>
 
       <div className="min-h-[56px] animate-cinema-fade" key={activeTab}>
-        {activeTab === 'm3u8' && m3u8Groups.length > 0 && (
-          <div className="space-y-3">
-            {m3u8Groups.map(({ src, entries }) => (
-                <div key={src} className="space-y-1">
-                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
-                    src === 'kkphim' ? 'text-blue-400 border-blue-500/20 bg-blue-500/5' : 'text-pink-400 border-pink-500/20 bg-pink-500/5'
-                  }`}>
-                    <Globe className="w-2.5 h-2.5 shrink-0" />
-                    <span className="text-[8px] font-black uppercase tracking-[0.25em] flex-1">
-                      {SOURCE_BADGE[src] ?? src.toUpperCase()}
-                    </span>
-                    <span className="text-[7px] font-bold opacity-50">{entries.length} sv</span>
-                  </div>
-                  {entries.map(([serverName, eps]) => (
-                    <QuickServerRow key={serverName} serverName={serverName} episodes={eps}
-                      color={src === 'kkphim' ? 'text-blue-400' : 'text-pink-400'} cloudTargets={cloudTargets}
-                      sourceBadge={SOURCE_BADGE[eps[0]?.source]} 
-                      onBrowserDownload={(url, name) => handleDownloadRequest(url, name)}
-                      onCloudDownload={(url, name) => handleDownloadRequest(url, name)}
-                      isJdOnline={jdStatus.isJdOnline} />
-                  ))}
-                </div>
-            ))}
-          </div>
-        )}
+        {activeTab === 'm3u8' && renderM3U8Content()}
 
         {activeTab !== 'm3u8' && downloadableByType[activeTab] && (
           <div className="space-y-1">

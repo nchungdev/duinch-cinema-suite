@@ -1,14 +1,11 @@
 from typing import List, Dict, Optional, Any, Union
 from pydantic import BaseModel, Field
-from enum import Enum
 
-class MediaSourceType(str, Enum):
-    M3U8 = "m3u8"
-    FSHARE = "fshare"
-    TORRENT = "torrent"
-    GDRIVE = "gdrive"
+class MediaInfo(BaseModel):
+    id: str
+    name: str
 
-class StreamingEpisode(BaseModel):
+class ScraperEpisode(BaseModel):
     type: str = "streamable"
     provider: str
     server: str
@@ -18,10 +15,25 @@ class StreamingEpisode(BaseModel):
     season: int = 1
     movie_name: Optional[str] = None
     slug: Optional[str] = None
+    year: Optional[int] = None
 
-class StreamingServerGroup(BaseModel):
-    server: str
+class StreamingEpisode(BaseModel):
+    id: str
+    name: str
+    order: int
+    m3u8: Optional[str] = None
+    embed: Optional[str] = None
+
+class StreamingServer(BaseModel):
+    server_name: str
+    audio_type: str = "Vietsub"
     episodes: List[StreamingEpisode]
+
+class StreamingCollection(BaseModel):
+    id: str
+    collection_name: str
+    order: int
+    servers: List[StreamingServer]
 
 class DownloadableLink(BaseModel):
     type: str = "downloadable"
@@ -38,5 +50,6 @@ class DownloadableLink(BaseModel):
 class DiscoveryTaskResult(BaseModel):
     source_type: str
     source: str
-    results: Union[List[StreamingServerGroup], List[DownloadableLink]]
+    media_info: Optional[MediaInfo] = None
+    results: Union[List[StreamingCollection], List[DownloadableLink]]
     error: Optional[str] = None
