@@ -216,7 +216,7 @@ export const TVGallery = () => {
                                 setActiveSeasonIdx(idx);
                                 setActiveEpisodeIdx(s.start);
                                 setFocusedIdx(s.start);
-                                setStreamableSources({});
+                                // REMOVED: setStreamableSources({}) - because data is fetched exhaustively once
                             }
                         }}
                     >
