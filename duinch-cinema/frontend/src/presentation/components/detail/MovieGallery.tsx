@@ -86,27 +86,39 @@ export const MovieGallery = () => {
 
     // Determine which node is currently selected
     const selectedNodeKey = useMemo(() => {
-        if (!activeEmbed) return null;
-        const sig = (url?: string) => {
-            if (!url) return null;
-            const parts = url.split('/').filter(Boolean);
-            if (parts.length < 2) return null;
-            const last = parts[parts.length - 1];
-            return last === 'index.m3u8' ? parts[parts.length - 2] : last;
-        };
-        const activeSig = sig(activeEmbed);
-
-        for (const [type, nodes] of Object.entries(groupedNodes)) {
-            for (const node of nodes) {
-                const epSig = sig(node.resolvedLink);
-                if (activeSig && epSig && activeSig === epSig) return `${type}:${node.provider}:${node.srvIdx}`;
-                if (preferredServer && node.server.server_name === preferredServer &&
-                    preferredType === type && preferredProvider === node.provider)
-                    return `${type}:${node.provider}:${node.srvIdx}`;
+        // Pass 1: Strict match using active selection state from context
+        if (activeType && activeProvider !== undefined) {
+            for (const [type, nodes] of Object.entries(groupedNodes)) {
+                if (type !== activeType) continue;
+                for (const node of nodes) {
+                    if (node.provider === activeProvider && node.srvIdx === activeServerIdx) {
+                        return `${type}:${node.provider}:${node.srvIdx}`;
+                    }
+                }
             }
         }
+
+        // Pass 2: Signature fallback (if activeEmbed exists but selection is out of sync)
+        if (activeEmbed) {
+            const sig = (url?: string) => {
+                if (!url) return null;
+                const parts = url.split('/').filter(Boolean);
+                if (parts.length < 2) return null;
+                const last = parts[parts.length - 1];
+                return last === 'index.m3u8' ? parts[parts.length - 2] : last;
+            };
+            const activeSig = sig(activeEmbed);
+
+            for (const [type, nodes] of Object.entries(groupedNodes)) {
+                for (const node of nodes) {
+                    const epSig = sig(node.resolvedLink);
+                    if (activeSig && epSig && activeSig === epSig) return `${type}:${node.provider}:${node.srvIdx}`;
+                }
+            }
+        }
+        
         return null;
-    }, [activeEmbed, groupedNodes, preferredServer, preferredType, preferredProvider]);
+    }, [activeEmbed, activeType, activeProvider, activeServerIdx, groupedNodes]);
 
     const toggleGroup = (type: string) =>
         setExpandedGroups(prev => ({ ...prev, [type]: !prev[type] }));
