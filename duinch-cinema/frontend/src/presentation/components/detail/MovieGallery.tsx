@@ -25,7 +25,6 @@ export const MovieGallery = () => {
         activeType, setActiveType,
         activeProvider, setActiveProvider,
         activeServerIdx, setActiveServerIdx,
-        setActiveEpisodeIdx,
         activeEmbed, setActiveEmbed,
         userSettings, setUserSettings,
     } = useMediaDetail();
@@ -87,7 +86,6 @@ export const MovieGallery = () => {
                         : (ep.embed || ep.link_embed || ep.url || ep.m3u8);
                     if (!link) return;
                     if (!groups[type]) groups[type] = [];
-                    // Lưu link trực tiếp vào node — tránh srvIdx mismatch khi nested collection
                     groups[type].push({ type, provider, server: srv, episode: ep, srvIdx, resolvedLink: link });
                 });
             });
@@ -180,8 +178,6 @@ export const MovieGallery = () => {
                                                             setActiveType(node.type);
                                                             setActiveProvider(node.provider);
                                                             setActiveServerIdx(node.srvIdx);
-                                                            setActiveEpisodeIdx(0);
-                                                            // Dùng resolvedLink đã tính sẵn trong useMemo — tránh re-derive sai
                                                             if (node.resolvedLink) setActiveEmbed(node.resolvedLink);
                                                         }}
                                                         className={`group flex items-center justify-between p-3 rounded-2xl transition-all border cursor-pointer ${

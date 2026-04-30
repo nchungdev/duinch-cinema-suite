@@ -109,12 +109,11 @@ export const useMediaDetailViewModel = () => {
     });
   }, [setStreamableSources]);
 
-  // Logic: Điều hướng luồng phát (Navigation & Link Selection)
+  // Logic: Điều hướng luồng phát (chỉ dành cho TV)
+  // Movie tự quản lý link qua MovieGallery click — không để effect override
   useEffect(() => {
-    // NẾU CHƯA CÓ DỮ LIỆU TỪ DISCOVERY ENGINE -> KHÔNG TỰ Ý CHỌN LINK
-    if (!isInitialized || !streamableSources || Object.keys(streamableSources).length === 0) {
-        return;
-    }
+    if (!isInitialized || !streamableSources || Object.keys(streamableSources).length === 0) return;
+    if (mediaType !== 'tv') return;
 
     const selector = new SelectBestStream();
     const result = selector.execute(
@@ -135,11 +134,7 @@ export const useMediaDetailViewModel = () => {
         if (rawData.length > 0 && 'servers' in rawData[0]) {
             rawData.forEach((col: any) => {
                 (col.servers || []).forEach((srv: any) => {
-                    servers.push({
-                        ...srv,
-                        server_data: srv.episodes || srv.server_data || [],
-                        season: col.order
-                    });
+                    servers.push({ ...srv, server_data: srv.episodes || srv.server_data || [], season: col.order });
                 });
             });
         } else {
@@ -151,39 +146,66 @@ export const useMediaDetailViewModel = () => {
 
         const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
         const targetSeasonNum = currentSeason?.season_number;
-        const globalEpNum = activeEpisodeIdx + 1; // SỬ DỤNG SỐ TẬP TUYỆT ĐỐI (CONTINUOUS)
-        
-        const extractNum = (name: string) => { 
-            if (!name) return null;
-            const digits = name.toString().replace(/\D/g, ''); 
-            return digits ? parseInt(digits) : null; 
-        };
+        const globalEpNum = activeEpisodeIdx + 1;
+        const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : globalEpNum;
+        const extractNum = (name: string) => { const d = name?.toString().replace(/\D/g, ''); return d ? parseInt(d) : null; };
         
         let ep = (server.server_data || []).find((item: any) => {
             const itemSeason = item.season || server.season;
-            const isMatchSeason = mediaType !== 'tv' || Number(itemSeason) === targetSeasonNum;
+            const isMatchSeason = Number(itemSeason) === targetSeasonNum;
             if (!isMatchSeason) return false;
-
             const num = extractNum(item.name);
-            // Ưu tiên khớp số tuyệt đối, nếu không được thì thử số tương đối (localEpNum)
-            const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : globalEpNum;
             return num !== null && (num === globalEpNum || num === localEpNum);
         });
-
         if (!ep) ep = server.server_data[0];
 
         if (ep) {
             const link = new StreamLink(ep);
-            const targetUrl = result.type === 'HLS' ? link.hlsUrl : link.embedUrl;
-            const finalUrl = targetUrl || link.bestUrl;
-            
-            if (finalUrl && finalUrl !== activeEmbed) {
-                console.log(`[Player] Absolute Ep ${globalEpNum} Selection Updated -> ${finalUrl}`);
-                setActiveEmbed(finalUrl);
-            }
+            const finalUrl = result.type === 'HLS' ? link.hlsUrl : (link.embedUrl || link.bestUrl);
+            if (finalUrl && finalUrl !== activeEmbed) setActiveEmbed(finalUrl);
         }
     }
   }, [isInitialized, streamableSources, activeEpisodeIdx, userSettings]);
+
+  // Logic: Auto-select link đầu tiên cho movie (chỉ chạy 1 lần khi có data)
+  useEffect(() => {
+    if (!isInitialized || !streamableSources || Object.keys(streamableSources).length === 0) return;
+    if (mediaType !== 'movie') return;
+    if (activeEmbed) return; // Đã có link rồi (user đã chọn hoặc đã init) — không override
+
+    // Tìm server tốt nhất theo preferred settings, fallback về HLS đầu tiên
+    const pinnedType     = userSettings?.preferred_type;
+    const pinnedProvider = userSettings?.preferred_provider;
+    const pinnedAudio    = userSettings?.preferred_audio;
+    const pinnedServer   = userSettings?.preferred_server;
+
+    let bestLink: string | null = null;
+    let bestScore = -1;
+
+    Object.entries(streamableSources).forEach(([type, providers]) => {
+        Object.entries(providers as any).forEach(([provider, rawList]) => {
+            (rawList as any[]).forEach((srv: any) => {
+                const ep = (srv.server_data || [])[0];
+                if (!ep) return;
+                const link = type === 'HLS'
+                    ? (ep.m3u8 || ep.link_m3u8 || ep.url)
+                    : (ep.embed || ep.link_embed || ep.url || ep.m3u8);
+                if (!link) return;
+
+                let score = 0;
+                if (pinnedType === type) score += 1000;
+                if (pinnedProvider === provider) score += 2000;
+                if (pinnedAudio === srv.audio_type) score += 1500;
+                if (pinnedServer === srv.server_name) score += 3000;
+                if (type === 'HLS') score += 500;
+
+                if (score > bestScore) { bestScore = score; bestLink = link; }
+            });
+        });
+    });
+
+    if (bestLink) setActiveEmbed(bestLink);
+  }, [isInitialized, streamableSources, userSettings, mediaType]);
 
   // Logic: URL Synchronization
   useEffect(() => {
