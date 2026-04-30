@@ -417,14 +417,6 @@ export const TVGallery = () => {
                                                                         }}
                                                                         onCloudAction={(target) => handleCloudAction(node, target)} />
                                                                 </div>
-                                                                    <CloudButtons targets={cloudTargets} compact={true}
-                                                                        onDeviceAction={() => {
-                                                                            const link = node.episode.m3u8 || node.episode.link_m3u8 || node.episode.url || node.episode.magnet;
-                                                                            const name = node.episode.name || node.server.server_name;
-                                                                            if (link) handleDownloadRequest(link, name);
-                                                                        }}
-                                                                        onCloudAction={(target) => handleCloudAction(node, target)} />
-                                                                </div>
                                                             </div>
                                                         );
                                                     })}
