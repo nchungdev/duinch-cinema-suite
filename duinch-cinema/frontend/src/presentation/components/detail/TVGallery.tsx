@@ -217,35 +217,34 @@ export const TVGallery = () => {
 
     // Compute the ONE selected node key — guarantees only 1 highlight at a time.
     // Key format: `${type}:${provider}:${srvIdx}` (unique per server entry).
+    // Priority: URL-sig match (active episode only) > preferred server name (first match).
     const selectedNodeKey = useMemo(() => {
-        const isViewingActiveEp = focusedGlobalIdx === activeEpisodeIdx;
-        if (!isViewingActiveEp) return null;
-
-        // Pass 1: Strict match using active selection state from context
-        if (activeType && activeProvider !== undefined) {
-            for (const [type, nodes] of Object.entries(groupedNodes)) {
-                if (type !== activeType) continue;
-                for (const node of nodes) {
-                    if (node.provider === activeProvider && node.srvIdx === activeServerIdx) {
-                        return `${type}:${node.provider}:${node.srvIdx}`;
-                    }
-                }
-            }
-        }
-
-        // Pass 2: Fallback to signature matching if context state is out of sync
         const activeSig = extractSig(activeEmbed || '');
-        if (activeSig) {
+        const isViewingActiveEp = focusedGlobalIdx === activeEpisodeIdx;
+
+        // Pass 1: exact URL match — highest confidence
+        if (isViewingActiveEp && activeSig) {
             for (const nodes of Object.values(groupedNodes)) {
                 for (const node of nodes) {
+                    if (node.provider !== activeProvider || node.type !== activeType) continue;
                     const nodeSig = extractSig(node.episode.m3u8) || extractSig(node.episode.embed);
                     if (nodeSig === activeSig) return `${node.type}:${node.provider}:${node.srvIdx}`;
                 }
             }
         }
 
+        // Pass 2: preferred server name — first node that matches
+        if (preferredServer) {
+            for (const nodes of Object.values(groupedNodes)) {
+                for (const node of nodes) {
+                    if (node.provider !== activeProvider || node.type !== activeType) continue;
+                    if (node.server.server_name === preferredServer) return `${node.type}:${node.provider}:${node.srvIdx}`;
+                }
+            }
+        }
+
         return null;
-    }, [groupedNodes, activeType, activeProvider, activeServerIdx, activeEmbed, focusedGlobalIdx, activeEpisodeIdx]);
+    }, [groupedNodes, activeType, activeProvider, preferredServer, activeEmbed, focusedGlobalIdx, activeEpisodeIdx]);
 
     // Auto-expand the group that contains the active/selected node
     useEffect(() => {
@@ -332,62 +331,38 @@ export const TVGallery = () => {
             </div>
 
             <div className="relative overflow-hidden">
-                {/* Sticky Playing Now badge — left side */}
+                {/* Pin badge — tập đang phát bị scroll ra ngoài bên trái */}
                 {activeEpDir === 'left' && (
-                    <motion.button
-                        initial={{ x: -50, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
+                    <button
                         onClick={() => {
                             const el = document.getElementById(`ep-${activeEpisodeIdx}`);
                             if (el && stripRef.current) {
                                 stripRef.current.scrollTo({ left: el.offsetLeft - stripRef.current.offsetWidth / 2 + el.offsetWidth / 2, behavior: 'smooth' });
                             }
                         }}
-                        className="absolute left-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-3 pl-3 pr-5 py-2.5 bg-blue-600/95 backdrop-blur-xl text-white rounded-r-[2rem] shadow-[20px_0_40px_rgba(0,0,0,0.4),0_0_20px_rgba(37,99,235,0.4)] border-r border-y border-white/20 transition-all hover:bg-blue-500 active:scale-95 cursor-pointer group"
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-30 flex items-center gap-1.5 pl-2 pr-3 py-1.5 bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-bold rounded-r-full shadow-[0_0_20px_rgba(37,99,235,0.6)] border-r border-y border-blue-400/40 transition-all hover:bg-blue-500 active:scale-95 cursor-pointer"
                     >
-                        <div className="relative">
-                            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white/30 group-hover:border-white transition-colors">
-                                <img src={getProxiedImageUrl((media as any)?.poster)} className="w-full h-full object-cover" alt="" />
-                            </div>
-                            <div className="absolute -right-1 -bottom-1 bg-blue-500 rounded-full p-0.5 border border-white/20">
-                                <Play className="w-2 h-2 fill-white" />
-                            </div>
-                        </div>
-                        <div className="flex flex-col items-start leading-tight">
-                            <span className="text-[10px] font-black uppercase tracking-tighter">Now Playing</span>
-                            <span className="text-[12px] font-black italic">EP {activeEpisodeIdx + 1}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-white/60 group-hover:translate-x-1 transition-transform rotate-180" />
-                    </motion.button>
+                        <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="15 18 9 12 15 6"/></svg>
+                        <Play className="w-2.5 h-2.5 fill-white shrink-0" />
+                        <span>EP {activeEpisodeIdx + 1}</span>
+                    </button>
                 )}
 
-                {/* Sticky Playing Now badge — right side */}
+                {/* Pin badge — tập đang phát bị scroll ra ngoài bên phải */}
                 {activeEpDir === 'right' && (
-                    <motion.button
-                        initial={{ x: 50, opacity: 0 }}
-                        animate={{ x: 0, opacity: 1 }}
+                    <button
                         onClick={() => {
                             const el = document.getElementById(`ep-${activeEpisodeIdx}`);
                             if (el && stripRef.current) {
                                 stripRef.current.scrollTo({ left: el.offsetLeft - stripRef.current.offsetWidth / 2 + el.offsetWidth / 2, behavior: 'smooth' });
                             }
                         }}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-3 pr-3 pl-5 py-2.5 bg-blue-600/95 backdrop-blur-xl text-white rounded-l-[2rem] shadow-[-20px_0_40px_rgba(0,0,0,0.4),0_0_20px_rgba(37,99,235,0.4)] border-l border-y border-white/20 transition-all hover:bg-blue-500 active:scale-95 cursor-pointer group text-right"
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-30 flex items-center gap-1.5 pr-2 pl-3 py-1.5 bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-bold rounded-l-full shadow-[0_0_20px_rgba(37,99,235,0.6)] border-l border-y border-blue-400/40 transition-all hover:bg-blue-500 active:scale-95 cursor-pointer"
                     >
-                        <ChevronRight className="w-4 h-4 text-white/60 group-hover:-translate-x-1 transition-transform" />
-                        <div className="flex flex-col items-end leading-tight">
-                            <span className="text-[10px] font-black uppercase tracking-tighter text-blue-200">Now Playing</span>
-                            <span className="text-[12px] font-black italic">EP {activeEpisodeIdx + 1}</span>
-                        </div>
-                        <div className="relative">
-                            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-white/30 group-hover:border-white transition-colors">
-                                <img src={getProxiedImageUrl((media as any)?.poster)} className="w-full h-full object-cover" alt="" />
-                            </div>
-                            <div className="absolute -left-1 -bottom-1 bg-blue-500 rounded-full p-0.5 border border-white/20">
-                                <Play className="w-2 h-2 fill-white" />
-                            </div>
-                        </div>
-                    </motion.button>
+                        <span>EP {activeEpisodeIdx + 1}</span>
+                        <Play className="w-2.5 h-2.5 fill-white shrink-0" />
+                        <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
                 )}
 
                 <div ref={stripRef} className="flex gap-5 overflow-x-auto no-scrollbar py-8 px-10 scroll-smooth">
