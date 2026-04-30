@@ -205,7 +205,7 @@ export const useMediaDetailViewModel = () => {
     });
 
     if (bestLink) setActiveEmbed(bestLink);
-  }, [isInitialized, streamableSources, userSettings, mediaType]);
+  }, [isInitialized, streamableSources, userSettings, mediaType, activeEmbed]);
 
   // Logic: URL Synchronization
   useEffect(() => {
