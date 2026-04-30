@@ -32,7 +32,9 @@ export class MediaMapper {
       const seasons: Season[] = (raw.tmdb_seasons || raw.seasons || []).map((s: any) => ({
         season_number: s.season_number,
         name: s.name || `Season ${s.season_number}`,
-        episode_count: s.episode_count || 0
+        episode_count: s.episode_count || 0,
+        poster: s.poster_path || s.poster || s.poster_url,
+        overview: s.overview || s.content
       }));
       
       return new TVShow(

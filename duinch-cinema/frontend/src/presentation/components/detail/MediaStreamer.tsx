@@ -1,21 +1,23 @@
 import React, { forwardRef, useRef, useEffect, useState } from 'react';
 import { Loader2, Zap, Activity, Settings, ChevronRight, Pin } from 'lucide-react';
-import { useMediaDetail } from '../../context/MediaDetailContext';
+import { useMediaDetail, PlaybackState } from '../../context/MediaDetailContext';
 import { usePlaybackController } from '../../view-models/PlaybackController';
 import { api } from '../../../api/config';
 
 export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const dailymotionPollRef = useRef<number | null>(null);
     const [overlayOpen, setOverlayOpen] = useState(false);
 
     const {
+        videoRef,
         activeEmbed, activeType, activeProvider, activeServerIdx,
         isPlayerReady, playerError, slug, mediaType, activeEpisodeIdx,
         streamableSources, setActiveType, setActiveProvider, setActiveServerIdx,
         setActiveEmbed, seasonBoundaries, userSettings, setUserSettings,
+        setPlaybackState,
     } = useMediaDetail();
+    const embedFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // ── Player-level server switcher ─────────────────────────────────────
     const savePreferredSource = async (type: string, provider: string, audio?: string, serverName?: string) => {
@@ -72,7 +74,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     const currentProviderServers = streamableSources[activeType]?.[activeProvider] || [];
     const currentServerName = currentProviderServers[activeServerIdx]?.server_name || '';
     
-    usePlaybackController(videoRef);
+    usePlaybackController();
 
     // Definite Switch based on stream type
     const isEmbedMode = activeType !== 'HLS';
@@ -179,6 +181,39 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
             clearTimeout(initialTimer);
         };
     }, [activeEmbed, isEmbedMode, slug, mediaType, activeEpisodeIdx, activeProvider]);
+
+    // Embed playback state: khi load embed mới → buffering, fallback → playing sau 3s
+    useEffect(() => {
+        if (!activeEmbed || !isEmbedMode) return;
+        setPlaybackState(PlaybackState.Buffering);
+        if (embedFallbackRef.current) clearTimeout(embedFallbackRef.current);
+        // Sau 3s giả định embed đã playing (không thể detect từ cross-origin iframe)
+        embedFallbackRef.current = setTimeout(() => setPlaybackState(PlaybackState.Playing), 3000);
+        return () => {
+            if (embedFallbackRef.current) clearTimeout(embedFallbackRef.current);
+        };
+    }, [activeEmbed, isEmbedMode, setPlaybackState]);
+
+    // Dailymotion play/pause state via postMessage events
+    useEffect(() => {
+        if (!activeEmbed || !isEmbedMode) return;
+        if (!activeEmbed.includes('dailymotion.com')) return;
+
+        const handleDMState = (event: MessageEvent) => {
+            let data: any;
+            try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; }
+            catch { return; }
+            if (!data) return;
+            // Dailymotion postMessage events: { event: 'play' | 'pause' | 'buffering' | 'end' }
+            if (data.event === 'play')           setPlaybackState(PlaybackState.Playing);
+            else if (data.event === 'pause')     setPlaybackState(PlaybackState.Paused);
+            else if (data.event === 'buffering') setPlaybackState(PlaybackState.Buffering);
+            else if (data.event === 'end')       setPlaybackState(PlaybackState.Stopped);
+        };
+
+        window.addEventListener('message', handleDMState);
+        return () => window.removeEventListener('message', handleDMState);
+    }, [activeEmbed, isEmbedMode, setPlaybackState]);
 
     const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
         const video = e.currentTarget;

@@ -1,15 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
-import { useMediaDetail } from '../context/MediaDetailContext';
+import { useMediaDetail, PlaybackState } from '../context/MediaDetailContext';
 
 /**
  * Controller: PlaybackController
  * Chịu trách nhiệm điều khiển trình phát video (HLS hoặc Native).
  * Nhận URL sạch từ ViewModel và thực hiện việc buffer/play.
  */
-export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement | null>) => {
+export const usePlaybackController = () => {
   const { 
+    videoRef,
     activeEmbed, activeType, setIsPlayerReady, setPlayerError, 
+    setPlaybackState,
     slug, mediaType, activeEpisodeIdx, activeProvider 
   } = useMediaDetail();
   
@@ -38,6 +40,7 @@ export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement
 
     setIsPlayerReady(false);
     setPlayerError(null);
+    setPlaybackState(PlaybackState.Buffering);
 
     const onCanPlay = () => {
         setIsPlayerReady(true);
@@ -58,10 +61,22 @@ export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement
     const onError = (e: any) => {
         console.error('[PlaybackController] Error:', e);
         setPlayerError('Failed to play video. Source might be dead.');
+        setPlaybackState(PlaybackState.Stopped);
     };
+
+    // Sync playbackState với native video events
+    // 'playing' fire khi frame đầu tiên thực sự render (chắc hơn 'play' chỉ là intent)
+    const onPlaying = () => setPlaybackState(PlaybackState.Playing);
+    const onPause   = () => setPlaybackState(PlaybackState.Paused);
+    const onWaiting = () => setPlaybackState(PlaybackState.Buffering);
+    const onEnded   = () => setPlaybackState(PlaybackState.Stopped);
 
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('error', onError);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('ended', onEnded);
 
     // Route the m3u8 through the backend proxy to strip ads / tracker tags
     const proxiedUrl = `/api/proxy/m3u8?url=${encodeURIComponent(activeEmbed)}`;
@@ -84,6 +99,10 @@ export const usePlaybackController = (videoRef: React.RefObject<HTMLVideoElement
     return () => {
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('error', onError);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('ended', onEnded);
       if (hlsRef.current) hlsRef.current.destroy();
     };
   }, [activeEmbed, activeType, videoRef, setIsPlayerReady, setPlayerError, slug, mediaType, activeEpisodeIdx, activeProvider]);

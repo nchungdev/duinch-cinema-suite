@@ -17,9 +17,17 @@ interface UserSettings {
   [key: string]: any;
 }
 
-export type PlaybackState = 'playing' | 'paused' | 'buffering' | 'stopped';
+export const PlaybackState = {
+  Playing:   'playing',
+  Paused:    'paused',
+  Buffering: 'buffering',
+  Stopped:   'stopped',
+} as const;
+
+export type PlaybackState = typeof PlaybackState[keyof typeof PlaybackState];
 
 interface MediaDetailContextType {
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   media: BaseMedia | null;
   loading: boolean;
   localExists: boolean;
@@ -70,12 +78,14 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
   const [localExists, setLocalExists] = useState(false);
   const [streamableSources, setStreamableSources] = useState<StreamableSources>({});
   const [activeType, setActiveType] = useState<string>('');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
   const [activeProvider, setActiveProvider] = useState<string>('');
   const [activeServerIdx, setActiveServerIdx] = useState(0);
   const [activeEpisodeIdx, setActiveEpisodeIdx] = useState(0);
   const [activeSeasonIdx, setActiveSeasonIdx] = useState(0);
   const [activeEmbed, setActiveEmbed] = useState<string | null>(null);
-  const [playbackState, setPlaybackState] = useState<PlaybackState>('stopped');
+  const [playbackState, setPlaybackState] = useState<PlaybackState>(PlaybackState.Stopped);
   const [streamingLinks, setStreamingLinks] = useState<StreamingServer[]>([]);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
@@ -109,7 +119,7 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
         setActiveProvider('');    // Clear selection
         setActiveEmbed(null);
         setStreamingLinks([]);
-        setPlaybackState('stopped');
+        setPlaybackState(PlaybackState.Stopped);
         setIsInitialized(false);
 
         try {
@@ -142,6 +152,7 @@ export const MediaDetailProvider = ({ children, initialValues }: { children: Rea
   // We now fetch all seasons exhaustively on mount, so state should persist across season navigation.
 
   const value = {
+    videoRef,
     media, setMedia, loading, setLoading, localExists, setLocalExists,
     streamableSources, setStreamableSources, activeType, setActiveType,
     activeProvider, setActiveProvider, activeServerIdx, setActiveServerIdx,

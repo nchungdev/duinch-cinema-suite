@@ -12,6 +12,8 @@ export interface Season {
   season_number: number;
   name: string;
   episode_count: number;
+  poster?: string;
+  overview?: string;
   start_idx?: number;
   end_idx?: number;
 }

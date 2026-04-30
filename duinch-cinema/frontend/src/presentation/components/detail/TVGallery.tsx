@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { Play, Tv, ChevronDown, Zap, Globe, HardDrive, Layout, ChevronRight, Box, Magnet, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api, getProxiedImageUrl } from '../../../api/config';
-import { useMediaDetail } from '../../context/MediaDetailContext';
+import { useMediaDetail, PlaybackState } from '../../context/MediaDetailContext';
 import { useCloudViewModel } from '../../view-models/CloudViewModel';
 import { CloudButtons } from '../discovery/CloudActions';
 import type { CloudTarget } from '../../../services/cloudTargets';
@@ -21,6 +21,7 @@ const TYPE_LABELS: Record<string, string> = {
 export const TVGallery = () => {
     const cloudTargets = useCloudViewModel();
     const {
+        videoRef,
         media, activeEpisodeIdx, setActiveEpisodeIdx,
         initialSeason, initialEpisode, isInitialized, setIsInitialized,
         seasonBoundaries, setActiveSeasonIdx, activeType, streamableSources, setStreamableSources,
@@ -56,10 +57,53 @@ export const TVGallery = () => {
     const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ 'HLS': true, 'EMBED': false, 'P2P': true, 'DIRECT': true });
     const stripRef = useRef<HTMLDivElement>(null);
+    // 'left' | 'right' | null — hướng tập đang phát khi bị scroll ra ngoài
+    const [activeEpDir, setActiveEpDir] = useState<'left' | 'right' | null>(null);
 
     // Download Manager Integration
     const downloader = useDownloader();
     const { showToast } = useToast();
+
+    const activeSeasonIdx = seasonBoundaries.findIndex(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
+    const activeSeason = seasonBoundaries[activeSeasonIdx];
+
+    const currentSeasonMeta = (media as any)?.seasons?.find((s: any) => s.season_number === activeSeason?.season_number);
+    const hasUniqueSeasonPoster = currentSeasonMeta?.poster && currentSeasonMeta.poster !== (media as any)?.poster;
+
+    // Auto-scroll to active episode
+    useEffect(() => {
+        const activeElement = document.getElementById(`ep-${activeEpisodeIdx}`);
+        if (activeElement && stripRef.current) {
+            stripRef.current.scrollTo({
+                left: activeElement.offsetLeft - stripRef.current.offsetWidth / 2 + activeElement.offsetWidth / 2,
+                behavior: 'smooth'
+            });
+        }
+    }, [activeEpisodeIdx, activeSeasonIdx]);
+
+    // Pin indicator: detect khi tập đang phát bị scroll ra ngoài viewport của strip
+    useEffect(() => {
+        const strip = stripRef.current;
+        if (!strip) return;
+
+        const check = () => {
+            const activeEl = document.getElementById(`ep-${activeEpisodeIdx}`);
+            if (!activeEl) { setActiveEpDir(null); return; }
+            const stripRect = strip.getBoundingClientRect();
+            const elRect = activeEl.getBoundingClientRect();
+            if (elRect.right < stripRect.left + 20) {
+                setActiveEpDir('left');
+            } else if (elRect.left > stripRect.right - 20) {
+                setActiveEpDir('right');
+            } else {
+                setActiveEpDir(null);
+            }
+        };
+
+        check();
+        strip.addEventListener('scroll', check, { passive: true });
+        return () => strip.removeEventListener('scroll', check);
+    }, [activeEpisodeIdx, activeSeasonIdx]);
 
     const handleDownloadRequest = async (url: string, name: string) => {
         console.log('[TVGallery] Automatic download request for:', name, url);
@@ -85,9 +129,6 @@ export const TVGallery = () => {
         showToast(`Đang tải qua trình duyệt: ${name}`, 'success');
         downloader.downloadInBrowser(url, name);
     };
-
-    const activeSeasonIdx = seasonBoundaries.findIndex(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
-    const activeSeason = seasonBoundaries[activeSeasonIdx];
 
     useEffect(() => {
         if (!seasonBoundaries.length || isInitialized) return;
@@ -223,35 +264,107 @@ export const TVGallery = () => {
 
     return (
         <div className="flex flex-col h-full bg-[#0a0a0c] overflow-hidden">
-            <div className="px-6 py-4 flex items-center justify-between border-b border-white/5 bg-white/[0.01]">
-                <div className="flex flex-col">
-                    <span className="text-[8px] font-black uppercase tracking-[0.4em] text-blue-500 mb-1">Navigation</span>
-                    <h3 className="text-sm font-black uppercase tracking-widest text-white">Episode Strip</h3>
-                </div>
-                <div className="relative">
-                    <select 
-                        className="appearance-none bg-white/5 border border-white/10 rounded-xl px-5 py-2.5 pr-12 text-[10px] font-black uppercase tracking-widest text-blue-400 outline-none hover:bg-white/10 transition-all cursor-pointer"
-                        value={activeSeasonIdx}
-                        onChange={(e) => {
-                            const idx = parseInt(e.target.value);
-                            const s = seasonBoundaries[idx];
-                            if (s) {
-                                setActiveSeasonIdx(idx);
-                                setActiveEpisodeIdx(s.start);
-                                setFocusedIdx(s.start);
-                                // REMOVED: setStreamableSources({}) - because data is fetched exhaustively once
-                            }
-                        }}
-                    >
-                        {seasonBoundaries.map((s, i) => (
-                            <option key={i} value={i} className="bg-[#0c0c0e] text-white">{s.name}</option>
-                        ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-blue-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {/* ── Season Rich Header ────────────────────────────────────── */}
+            <div className="relative px-8 pt-8 pb-4 flex flex-col md:flex-row gap-8 items-start border-b border-white/5 bg-white/[0.01]">
+                {/* Season Thumbnail - Only show if different from main poster */}
+                {hasUniqueSeasonPoster && (
+                    <div className="relative shrink-0 group">
+                        <div className="absolute -inset-2 bg-blue-600/20 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                        <div className="relative w-32 md:w-40 aspect-[2/3] rounded-2xl overflow-hidden border border-white/10 shadow-2xl transition-transform duration-500 hover:scale-105">
+                            <img 
+                                src={getProxiedImageUrl(currentSeasonMeta.poster)} 
+                                className="w-full h-full object-cover" 
+                                alt={activeSeason?.name} 
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                        </div>
+                    </div>
+                )}
+
+                {/* Season Info & Selector */}
+                <div className="flex-1 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-2xl font-black uppercase tracking-tighter text-white">
+                                    {activeSeason?.name || 'Season Info'}
+                                </h3>
+                                <span className="px-2 py-0.5 rounded-lg bg-blue-600/10 border border-blue-500/20 text-blue-400 text-[9px] font-black uppercase tracking-widest">
+                                    {activeSeason?.end - activeSeason?.start} Episodes
+                                </span>
+                            </div>
+                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.3em] flex items-center gap-2">
+                                <Tv className="w-3 h-3" /> Navigation Control
+                            </p>
+                        </div>
+
+                        {/* Enhanced Season Selector */}
+                        <div className="relative">
+                            <select 
+                                className="appearance-none bg-white/5 border border-white/10 rounded-xl px-5 py-2.5 pr-12 text-[10px] font-black uppercase tracking-widest text-blue-400 outline-none hover:bg-white/10 hover:border-blue-500/30 transition-all cursor-pointer shadow-lg"
+                                value={activeSeasonIdx}
+                                onChange={(e) => {
+                                    const idx = parseInt(e.target.value);
+                                    const s = seasonBoundaries[idx];
+                                    if (s) {
+                                        setActiveSeasonIdx(idx);
+                                        setActiveEpisodeIdx(s.start);
+                                        setFocusedIdx(s.start);
+                                    }
+                                }}
+                            >
+                                {seasonBoundaries.map((s, i) => (
+                                    <option key={i} value={i} className="bg-[#0c0c0e] text-white">{s.name}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="w-4 h-4 text-blue-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                    </div>
+
+                    {/* Season Description */}
+                    {currentSeasonMeta?.overview && (
+                        <p className="text-xs text-gray-400 leading-relaxed max-w-3xl line-clamp-3 md:line-clamp-none font-medium italic opacity-80">
+                            {currentSeasonMeta.overview}
+                        </p>
+                    )}
                 </div>
             </div>
 
             <div className="relative overflow-hidden">
+                {/* Pin badge — tập đang phát bị scroll ra ngoài bên trái */}
+                {activeEpDir === 'left' && (
+                    <button
+                        onClick={() => {
+                            const el = document.getElementById(`ep-${activeEpisodeIdx}`);
+                            if (el && stripRef.current) {
+                                stripRef.current.scrollTo({ left: el.offsetLeft - stripRef.current.offsetWidth / 2 + el.offsetWidth / 2, behavior: 'smooth' });
+                            }
+                        }}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-30 flex items-center gap-1.5 pl-2 pr-3 py-1.5 bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-bold rounded-r-full shadow-[0_0_20px_rgba(37,99,235,0.6)] border-r border-y border-blue-400/40 transition-all hover:bg-blue-500 active:scale-95 cursor-pointer"
+                    >
+                        <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="15 18 9 12 15 6"/></svg>
+                        <Play className="w-2.5 h-2.5 fill-white shrink-0" />
+                        <span>EP {activeEpisodeIdx + 1}</span>
+                    </button>
+                )}
+
+                {/* Pin badge — tập đang phát bị scroll ra ngoài bên phải */}
+                {activeEpDir === 'right' && (
+                    <button
+                        onClick={() => {
+                            const el = document.getElementById(`ep-${activeEpisodeIdx}`);
+                            if (el && stripRef.current) {
+                                stripRef.current.scrollTo({ left: el.offsetLeft - stripRef.current.offsetWidth / 2 + el.offsetWidth / 2, behavior: 'smooth' });
+                            }
+                        }}
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-30 flex items-center gap-1.5 pr-2 pl-3 py-1.5 bg-blue-600/90 backdrop-blur-md text-white text-[10px] font-bold rounded-l-full shadow-[0_0_20px_rgba(37,99,235,0.6)] border-l border-y border-blue-400/40 transition-all hover:bg-blue-500 active:scale-95 cursor-pointer"
+                    >
+                        <span>EP {activeEpisodeIdx + 1}</span>
+                        <Play className="w-2.5 h-2.5 fill-white shrink-0" />
+                        <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                )}
+
                 <div ref={stripRef} className="flex gap-5 overflow-x-auto no-scrollbar py-8 px-10 scroll-smooth">
                     {seasonEps.map((globalIdx) => {
                         const isPlaying = activeEpisodeIdx === globalIdx;
@@ -284,15 +397,53 @@ export const TVGallery = () => {
                                 
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-transparent z-10" />
                                 
-                                {/* Central Wave Bar for playing episode */}
+                                {/* Central state indicator — clickable play/pause (HLS only) */}
                                 {isPlaying && (
-                                    <div className="absolute inset-0 flex items-center justify-center z-20">
-                                        <div className={`flex items-end gap-[3px] h-6 px-3 py-2 bg-blue-500/80 backdrop-blur-md rounded-xl shadow-[0_0_30px_rgba(59,130,246,0.4)] transition-all duration-500 ${playbackState === 'buffering' ? 'animate-pulse opacity-50' : 'opacity-100'}`}>
-                                            <div className="w-[3px] bg-white animate-[wave_0.8s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '100%' : '30%' }} />
-                                            <div className="w-[3px] bg-white animate-[wave_0.5s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '60%' : '20%' }} />
-                                            <div className="w-[3px] bg-white animate-[wave_1.1s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '80%' : '40%' }} />
-                                            <div className="w-[3px] bg-white animate-[wave_0.7s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '90%' : '25%' }} />
-                                        </div>
+                                    <div
+                                        className="absolute inset-0 flex items-center justify-center z-20"
+                                        onClick={(e) => {
+                                            // embed mode: không can thiệp được, chỉ HLS mới control được
+                                            const video = videoRef.current;
+                                            if (!video) return;
+                                            e.stopPropagation();
+                                            if (video.paused) video.play();
+                                            else video.pause();
+                                        }}
+                                    >
+                                        {/* buffering — spinner, không clickable */}
+                                        {playbackState === PlaybackState.Buffering && (
+                                            <div className="w-12 h-12 flex items-center justify-center bg-blue-600/80 backdrop-blur-xl rounded-full shadow-[0_0_30px_rgba(59,130,246,0.5)]">
+                                                <svg className="w-6 h-6 text-white animate-spin" viewBox="0 0 24 24" fill="none">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                                                    <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+                                                </svg>
+                                            </div>
+                                        )}
+                                        {/* playing — sound wave, click để pause */}
+                                        {playbackState === PlaybackState.Playing && (
+                                            <div className="w-12 h-12 flex items-center justify-center bg-blue-600/80 backdrop-blur-xl rounded-full shadow-[0_0_30px_rgba(59,130,246,0.5)] cursor-pointer hover:bg-blue-500 transition-colors">
+                                                <div className="flex items-end gap-[3px] h-4">
+                                                    <div className="w-[3px] bg-white rounded-full animate-[wave_0.8s_ease-in-out_infinite]" style={{ height: '100%' }} />
+                                                    <div className="w-[3px] bg-white rounded-full animate-[wave_0.5s_ease-in-out_infinite]" style={{ height: '60%' }} />
+                                                    <div className="w-[3px] bg-white rounded-full animate-[wave_1.1s_ease-in-out_infinite]" style={{ height: '80%' }} />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* paused — 2 bar, click để resume */}
+                                        {playbackState === PlaybackState.Paused && (
+                                            <div className="w-12 h-12 flex items-center justify-center bg-white/20 backdrop-blur-xl rounded-full shadow-[0_0_20px_rgba(255,255,255,0.15)] border border-white/20 cursor-pointer hover:bg-white/30 transition-colors">
+                                                <div className="flex items-center gap-[4px]">
+                                                    <div className="w-[4px] h-[14px] bg-white rounded-full" />
+                                                    <div className="w-[4px] h-[14px] bg-white rounded-full" />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* stopped — play icon mờ */}
+                                        {playbackState === PlaybackState.Stopped && (
+                                            <div className="w-12 h-12 flex items-center justify-center bg-black/40 backdrop-blur-xl rounded-full border border-white/10 cursor-pointer hover:bg-black/60 transition-colors">
+                                                <Play className="w-5 h-5 text-white/60 fill-white/60 ml-0.5" />
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -359,10 +510,19 @@ export const TVGallery = () => {
                                                         const isSelected = nodeKey === selectedNodeKey;
 
                                                         return (
-                                                            <div key={idx} className={`group flex items-center justify-between p-3 rounded-2xl transition-all border ${
+                                                            <div key={idx} onClick={() => {
+                                                                    setActiveType(node.type);
+                                                                    setActiveProvider(node.provider);
+                                                                    setActiveServerIdx(node.srvIdx);
+                                                                    setActiveEpisodeIdx(focusedGlobalIdx);
+                                                                    const link = node.type === 'HLS'
+                                                                        ? (node.episode.m3u8 || node.episode.url)
+                                                                        : (node.episode.embed || node.episode.url || node.episode.m3u8);
+                                                                    if (link) setActiveEmbed(link);
+                                                                }} className={`group flex items-center justify-between p-3 rounded-2xl transition-all border cursor-pointer ${
                                                                 isSelected 
                                                                 ? 'bg-blue-600/10 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)]' 
-                                                                : 'bg-white/5 border-white/5 hover:border-blue-500/30'
+                                                                : 'bg-white/5 border-white/5 hover:border-blue-500/30 hover:bg-white/[0.07]'
                                                             }`}>
                                                                 <div className="flex items-center gap-3 min-w-0">
                                                                     <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
@@ -383,27 +543,7 @@ export const TVGallery = () => {
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <button onClick={() => {
-                                                                        setActiveType(node.type);
-                                                                        setActiveProvider(node.provider);
-                                                                        setActiveServerIdx(node.srvIdx);
-                                                                        setActiveEpisodeIdx(focusedGlobalIdx);
-                                                                        savePreferredSource(node.type, node.provider, node.server.audio_type, node.server.server_name);
-
-                                                                        const link = node.type === 'HLS'
-                                                                            ? (node.episode.m3u8 || node.episode.url)
-                                                                            : (node.episode.embed || node.episode.url || node.episode.m3u8);
-
-                                                                        if (link) {
-                                                                            setActiveEmbed(link);
-                                                                        }
-                                                                    }} className={`p-2.5 rounded-xl transition-all shadow-lg ${
-                                                                        isSelected ? 'bg-blue-600 text-white' : 'bg-blue-600/10 hover:bg-blue-600 text-blue-400 hover:text-white'
-                                                                    }`}>
-                                                                        <Play className={`w-3.5 h-3.5 ${isSelected ? 'fill-current' : ''}`} />
-                                                                    </button>
-
+                                                                <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                                                     <button
                                                                         title={preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type ? 'Đã ghim nguồn này' : 'Ghim nguồn này cho các tập sau'}
                                                                         onClick={() => savePreferredSource(node.type, node.provider, node.server.audio_type, node.server.server_name)}
