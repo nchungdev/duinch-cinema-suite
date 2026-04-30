@@ -151,7 +151,7 @@ export const useMediaDetailViewModel = () => {
 
         const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
         const targetSeasonNum = currentSeason?.season_number;
-        const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : (activeEpisodeIdx + 1);
+        const globalEpNum = activeEpisodeIdx + 1; // SỬ DỤNG SỐ TẬP TUYỆT ĐỐI (CONTINUOUS)
         
         const extractNum = (name: string) => { 
             if (!name) return null;
@@ -165,7 +165,9 @@ export const useMediaDetailViewModel = () => {
             if (!isMatchSeason) return false;
 
             const num = extractNum(item.name);
-            return num !== null && num === localEpNum;
+            // Ưu tiên khớp số tuyệt đối, nếu không được thì thử số tương đối (localEpNum)
+            const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : globalEpNum;
+            return num !== null && (num === globalEpNum || num === localEpNum);
         });
 
         if (!ep) ep = server.server_data[0];
@@ -176,7 +178,7 @@ export const useMediaDetailViewModel = () => {
             const finalUrl = targetUrl || link.bestUrl;
             
             if (finalUrl && finalUrl !== activeEmbed) {
-                console.log(`[Player] S${targetSeasonNum ?? '?'}E${localEpNum} Selection Updated -> ${finalUrl}`);
+                console.log(`[Player] Absolute Ep ${globalEpNum} Selection Updated -> ${finalUrl}`);
                 setActiveEmbed(finalUrl);
             }
         }

@@ -185,6 +185,12 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-blue-500/40 font-inter antialiased">
+      <style dangerouslySetInnerHTML={{ __html: `
+        @keyframes wave {
+          0%, 100% { height: 30%; }
+          50% { height: 100%; }
+        }
+      `}} />
       <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
         <div className="absolute top-[-10%] right-[-10%] w-[600px] h-[600px] bg-blue-600/10 blur-[120px] rounded-full animate-pulse" />
         <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-purple-600/5 blur-[120px] rounded-full" />

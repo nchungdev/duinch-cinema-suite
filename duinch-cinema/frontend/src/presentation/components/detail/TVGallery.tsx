@@ -109,7 +109,7 @@ export const TVGallery = () => {
         : [];
     
     const focusedGlobalIdx = focusedIdx ?? activeEpisodeIdx;
-    const focusedEpNum = focusedGlobalIdx - (activeSeason?.start || 0) + 1;
+    const focusedEpNum = focusedGlobalIdx + 1; // SỬ DỤNG SỐ TẬP TUYỆT ĐỐI (CONTINUOUS)
     
     // Shared sig extractor (moved out of render loop)
     const extractSig = (url?: string) => {
@@ -158,7 +158,10 @@ export const TVGallery = () => {
                         const isCorrectSeason = (!e.season && !srv.season) || 
                                                 (Number(e.season) === targetSeasonNum) || 
                                                 (Number(srv.season) === targetSeasonNum);
-                        return epNum !== null && epNum === focusedEpNum && isCorrectSeason;
+                        
+                        // Khớp số tập: Thử cả số tập tuyệt đối (517) và tương đối (1)
+                        const localEpNum = activeSeason ? (focusedGlobalIdx - activeSeason.start + 1) : focusedEpNum;
+                        return epNum !== null && (epNum === focusedEpNum || epNum === localEpNum) && isCorrectSeason;
                     });
                     if (ep) {
 
@@ -169,7 +172,7 @@ export const TVGallery = () => {
             });
         });
         return groups;
-    }, [streamableSources, focusedEpNum, activeSeasonIdx, seasonBoundaries]);
+    }, [streamableSources, focusedEpNum, activeSeasonIdx, seasonBoundaries, activeSeason]);
 
     // Compute the ONE selected node key — guarantees only 1 highlight at a time.
     // Key format: `${type}:${provider}:${srvIdx}` (unique per server entry).
@@ -253,7 +256,7 @@ export const TVGallery = () => {
                     {seasonEps.map((globalIdx) => {
                         const isPlaying = activeEpisodeIdx === globalIdx;
                         const isFocused = focusedGlobalIdx === globalIdx;
-                        const epNum = globalIdx - (activeSeason?.start || 0) + 1;
+                        const epNum = globalIdx + 1; // CHUYỂN SANG SỐ TẬP TUYỆT ĐỐI
                         const epThumb = getProxiedImageUrl((media as any)?.poster);
 
                         // Three distinct visual states
@@ -319,14 +322,14 @@ export const TVGallery = () => {
                                         Preview — Ep {focusedEpNum}
                                     </h4>
                                     <span className="shrink-0 text-[10px] font-black text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30 italic">
-                                        S{String(activeSeason?.season_number).padStart(2, '0')}E{String(focusedEpNum).padStart(2, '0')}
+                                        Season {activeSeason?.season_number} — EP {focusedEpNum}
                                     </span>
                                 </>
                             ) : (
                                 <>
                                     <h4 className="text-xl font-black text-white uppercase tracking-wide">Episode {focusedEpNum}</h4>
                                     <span className="shrink-0 text-[10px] font-black text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 italic">
-                                        S{String(activeSeason?.season_number).padStart(2, '0')}E{String(focusedEpNum).padStart(2, '0')}
+                                        Season {activeSeason?.season_number} — EP {focusedEpNum}
                                     </span>
                                 </>
                             )}

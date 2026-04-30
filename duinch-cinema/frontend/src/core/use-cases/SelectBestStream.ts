@@ -26,6 +26,7 @@ export class SelectBestStream {
     const pinnedType = userSettings?.preferred_type;
     const pinnedProvider = userSettings?.preferred_provider;
     const pinnedAudio = userSettings?.preferred_audio;
+    const pinnedServerName = userSettings?.preferred_server;
 
     const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
     const targetSeasonNum = currentSeason?.season_number;
@@ -60,27 +61,35 @@ export class SelectBestStream {
 
             servers.forEach((server, srvIdx) => {
                 // Chỉ xét server có chứa tập hiện tại
+                const globalEpNum = activeEpisodeIdx + 1;
                 const hasEpisode = (server.server_data || []).some((e: any) => {
                     const epNum = extractNum(e.name);
                     const isCorrectSeason = (!e.season && !server.season) || 
                                            (Number(e.season) === targetSeasonNum) || 
                                            (Number(server.season) === targetSeasonNum);
-                    return epNum !== null && epNum === localEpNum && isCorrectSeason;
+                    
+                    // Khớp số tập: Thử cả số tuyệt đối (517) và tương đối (1)
+                    return epNum !== null && (epNum === globalEpNum || epNum === localEpNum) && isCorrectSeason;
                 });
 
                 if (!hasEpisode) return;
 
                 let score = 0;
 
-                // 1. Khớp thông tin Pinned (Mỗi cái +1000)
+                // 1. Khớp thông tin Pinned (Trọng số cực cao)
                 if (pinnedType === type) score += 1000;
-                if (pinnedProvider === provider) score += 1000;
-                if (pinnedAudio === server.audio_type) score += 1000;
+                if (pinnedProvider === provider) score += 2000; 
+                if (pinnedAudio === server.audio_type) score += 1500;
+                if (pinnedServerName === server.server_name) score += 3000; 
 
                 // 2. Ưu tiên HLS (+500)
                 if (type === 'HLS') score += 500;
+                
+                // 3. Ưu tiên thứ tự mặc định HLS > EMBED (+ một chút điểm để phân tách)
+                if (type === 'HLS') score += 50;
+                else if (type === 'EMBED') score += 10;
 
-                // 3. Giữ nguyên lựa chọn hiện tại (+100)
+                // 4. Giữ nguyên lựa chọn hiện tại (+100)
                 if (currentSelection && 
                     currentSelection.type === type && 
                     currentSelection.provider === provider && 

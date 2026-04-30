@@ -18,16 +18,20 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     } = useMediaDetail();
 
     // ── Player-level server switcher ─────────────────────────────────────
-    const savePreferred = async (serverName: string, audioType?: string) => {
+    const savePreferredSource = async (type: string, provider: string, audio?: string, serverName?: string) => {
         const next = { 
             ...(userSettings || {}), 
-            preferred_server: serverName,
-            preferred_audio_type: audioType
+            preferred_type: type,
+            preferred_provider: provider,
+            preferred_audio: audio,
+            preferred_server: serverName
         };
         setUserSettings(next);
         try { await api.post('/user/settings', { 
-            preferred_server: serverName,
-            preferred_audio_type: audioType
+            preferred_type: type,
+            preferred_provider: provider,
+            preferred_audio: audio,
+            preferred_server: serverName
         }); } catch {}
     };
 
@@ -46,7 +50,7 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
         setActiveProvider(provider);
         setActiveServerIdx(srvIdx);
         setActiveEmbed(link);
-        savePreferred(server.server_name, server.audio_type);
+        // Temporary for current ep: DO NOT call savePreferredSource here
         setOverlayOpen(false);
     };
 
@@ -263,27 +267,51 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                                                     </div>
                                                     {servers.map(({ srvIdx, server }) => {
                                                         const isActive = activeType === type && activeProvider === provider && activeServerIdx === srvIdx;
-                                                        const isPinned = preferredServer === server.server_name;
+                                                        
+                                                        const preferredType = (userSettings as any)?.preferred_type;
+                                                        const preferredProvider = (userSettings as any)?.preferred_provider;
+                                                        const preferredAudio = (userSettings as any)?.preferred_audio;
+                                                        const preferredServerName = (userSettings as any)?.preferred_server;
+
+                                                        const isPinned = preferredType === type && preferredProvider === provider 
+                                                                        && preferredAudio === server.audio_type && preferredServerName === server.server_name;
+
                                                         return (
-                                                            <button
-                                                                key={`${type}-${provider}-${srvIdx}`}                                                                onClick={() => switchServer(type, provider, srvIdx, server)}
-                                                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left transition-all ${
-                                                                    isActive
-                                                                        ? 'bg-blue-600/15 border border-blue-500/30 text-blue-300'
-                                                                        : 'text-gray-400 hover:bg-white/5 border border-transparent hover:text-white'
-                                                                }`}
-                                                            >
-                                                                <div className="flex flex-col min-w-0 flex-1">
-                                                                    <span className="text-[9px] font-black uppercase tracking-wider truncate">{server.server_name}</span>
-                                                                    {server.audio_type && (
-                                                                        <span className="text-[7px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{server.audio_type}</span>
-                                                                    )}
-                                                                </div>                                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                                    <span className="text-[7px] text-gray-600">{server.server_data?.length ?? 0} eps</span>
-                                                                    {isPinned && <Pin className="w-2.5 h-2.5 text-amber-400" />}
-                                                                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6]" />}
-                                                                </div>
-                                                            </button>
+                                                            <div key={`${type}-${provider}-${srvIdx}`} className="flex items-center gap-1 group/item pr-2">
+                                                                <button
+                                                                    onClick={() => switchServer(type, provider, srvIdx, server)}
+                                                                    className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left transition-all ${
+                                                                        isActive
+                                                                            ? 'bg-blue-600/15 border border-blue-500/30 text-blue-300'
+                                                                            : 'text-gray-400 hover:bg-white/5 border border-transparent hover:text-white'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex flex-col min-w-0 flex-1">
+                                                                        <span className="text-[9px] font-black uppercase tracking-wider truncate">{server.server_name}</span>
+                                                                        {server.audio_type && (
+                                                                            <span className="text-[7px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{server.audio_type}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                        <span className="text-[7px] text-gray-600">{server.server_data?.length ?? 0} eps</span>
+                                                                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6]" />}
+                                                                    </div>
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        savePreferredSource(type, provider, server.audio_type, server.server_name);
+                                                                    }}
+                                                                    className={`p-2 rounded-lg transition-all border ${
+                                                                        isPinned 
+                                                                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' 
+                                                                        : 'bg-white/5 border-white/5 text-gray-600 hover:text-amber-400 hover:border-amber-500/30 opacity-0 group-hover/item:opacity-100'
+                                                                    }`}
+                                                                    title={isPinned ? 'Đã ghim' : 'Ghim làm mặc định'}
+                                                                >
+                                                                    <Pin className={`w-2.5 h-2.5 ${isPinned ? 'fill-current' : ''}`} />
+                                                                </button>
+                                                            </div>
                                                         );
                                                     })}
                                                 </div>

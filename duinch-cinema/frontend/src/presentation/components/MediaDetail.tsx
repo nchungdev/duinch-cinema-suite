@@ -27,6 +27,11 @@ const DetailContent = () => {
 
   const currentSeason = mediaType === 'tv' ? seasonBoundaries[activeSeasonIdx]?.season_number : undefined;
 
+  // NEW: Calculate absolute initial episode for discovery
+  const initialAbsoluteEp = mediaType === 'tv' && seasonBoundaries.length > 0 && initialSeason
+    ? (seasonBoundaries.find(s => s.season_number === initialSeason)?.start || 0) + (initialEpisode || 1)
+    : initialEpisode;
+
   return (
     <div className="fixed inset-0 bg-[#0a0a0c] text-white overflow-hidden flex flex-col z-40 animate-in fade-in duration-700">
       <div className="absolute inset-0 overflow-y-auto no-scrollbar">
@@ -57,14 +62,14 @@ const DetailContent = () => {
                     <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
                 </div>
                 <DiscoveryPipeline
-                    key={slug}
+                    key={`${slug}-${currentSeason || 'default'}`}
                     tmdbId={Number(media?.id || 0)}
                     title={media?.title || ''}
                     localizeTitle={media?.originTitle}
                     year={media?.year}
                     mediaType={mediaType}
                     initialSeason={mediaType === 'tv' ? initialSeason : undefined}
-                    initialEpisode={mediaType === 'tv' ? initialEpisode : undefined}
+                    initialEpisode={initialAbsoluteEp}
                     season={currentSeason}
                     onStreamingReady={handleStreamingReady}
                 />
