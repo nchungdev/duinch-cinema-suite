@@ -64,18 +64,9 @@ export const MovieGallery = () => {
         Object.entries(sources).forEach(([type, providers]) => {
             Object.entries(providers as any).forEach(([provider, rawList]) => {
                 const items = rawList as any[];
-                let servers: any[] = [];
-
-                // Support both nested collections and flat server lists
-                if (items.length > 0 && 'servers' in items[0]) {
-                    items.forEach((col: any) => {
-                        (col.servers || []).forEach((srv: any) => {
-                            servers.push({ ...srv, server_data: srv.episodes || srv.server_data || [] });
-                        });
-                    });
-                } else {
-                    servers = items;
-                }
+                // streamableSources cho movie là flat server list từ ViewModel
+                // (mỗi item = { server_name, audio_type, season, server_data: [...] })
+                const servers = items;
 
                 servers.forEach((srv: any, srvIdx: number) => {
                     // Movie: take the first available episode entry
@@ -109,7 +100,6 @@ export const MovieGallery = () => {
             for (const node of nodes) {
                 const epSig = sig(node.resolvedLink);
                 if (activeSig && epSig && activeSig === epSig) return `${type}:${node.provider}:${node.srvIdx}`;
-                // Fallback: match by preferred server name
                 if (preferredServer && node.server.server_name === preferredServer &&
                     preferredType === type && preferredProvider === node.provider)
                     return `${type}:${node.provider}:${node.srvIdx}`;
