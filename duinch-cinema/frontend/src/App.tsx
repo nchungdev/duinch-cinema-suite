@@ -205,8 +205,8 @@ function App() {
                <Play className="w-5 h-5 text-white fill-white" />
             </div>
             <div className="flex flex-col">
-               <span className="text-lg font-black tracking-tighter uppercase italic leading-none">JD DASH</span>
-               <span className="text-[8px] font-bold tracking-[0.3em] text-blue-500 uppercase">OMV Protocol</span>
+               <span className="text-lg font-black tracking-tighter uppercase italic leading-none">DUINCH</span>
+               <span className="text-[8px] font-bold tracking-[0.3em] text-blue-500 uppercase">Cinema Engine</span>
             </div>
           </div>
 
@@ -340,7 +340,7 @@ function App() {
             <StatPill label="Storage" value="84% Free" color="text-yellow-500" />
          </div>
          <div className="flex items-center gap-4 text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">
-            <span>© 2024 OMV Unified Interface</span>
+            <span>© 2026 Duinch Cinema Engine</span>
             <div className="w-1 h-1 rounded-full bg-white/10" />
             <span>v4.2.0-stable</span>
          </div>
