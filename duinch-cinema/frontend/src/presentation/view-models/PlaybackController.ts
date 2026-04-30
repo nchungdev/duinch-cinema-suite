@@ -10,9 +10,9 @@ import { useMediaDetail, PlaybackState } from '../context/MediaDetailContext';
 export const usePlaybackController = () => {
   const { 
     videoRef,
-    activeEmbed, activeType, setIsPlayerReady, setPlayerError, 
+    activeEmbed, activeType, setIsPlayerReady, setPlayerError,
     setPlaybackState,
-    slug, mediaType, activeEpisodeIdx, activeProvider 
+    slug, mediaType, activeEpisodeIdx,
   } = useMediaDetail();
   
   const hlsRef = useRef<Hls | null>(null);
@@ -45,11 +45,10 @@ export const usePlaybackController = () => {
     const onCanPlay = () => {
         setIsPlayerReady(true);
         
-        // Progress Sync Logic
-        const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}_${activeProvider}`;
-        const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
+        // Progress Sync Logic — key per-episode, shared across all providers/servers
+        const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
         const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
-        const saved = progressStore[progressKey] || progressStore[commonKey];
+        const saved = progressStore[progressKey];
 
         if (saved && saved.time > 0) {
             if (Math.abs(video.currentTime - saved.time) > 2) {
@@ -105,7 +104,7 @@ export const usePlaybackController = () => {
       video.removeEventListener('ended', onEnded);
       if (hlsRef.current) hlsRef.current.destroy();
     };
-  }, [activeEmbed, activeType, videoRef, setIsPlayerReady, setPlayerError, slug, mediaType, activeEpisodeIdx, activeProvider]);
+  }, [activeEmbed, activeType, videoRef, setIsPlayerReady, setPlayerError, slug, mediaType, activeEpisodeIdx]);
 
   return { hlsRef };
 };

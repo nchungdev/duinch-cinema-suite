@@ -79,20 +79,15 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
     // Definite Switch based on stream type
     const isEmbedMode = activeType !== 'HLS';
 
-    // Unique key for this video content
-    const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}_${activeProvider}`;
-    // Common key for episode (shared across providers for cross-source sync)
-    const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
+    // Progress key: per-episode, shared across all providers/servers
+    const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
 
     // Attempt to inject time into iframe URL and enable Dailymotion API
     const getFinalEmbedUrl = () => {
         if (!activeEmbed || !isEmbedMode) return activeEmbed;
         try {
             const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
-            
-            // First try provider-specific progress, then fallback to common episode progress
-            const saved = progressStore[progressKey] || progressStore[commonKey];
-            
+            const saved = progressStore[progressKey];
             const url = new URL(activeEmbed);
             
             // Inject start time if available
@@ -156,14 +151,9 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
             const time = data.value;
             if (typeof time !== 'number') return;
 
-            // Save progress (both provider-specific and common)
             try {
                 const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
-                const progressKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}_${activeProvider}`;
-                const commonKey = `${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`;
-                const progress = { time, updated_at: Date.now() };
-                progressStore[progressKey] = progress;
-                progressStore[commonKey] = progress;
+                progressStore[`${slug}_${mediaType === 'tv' ? activeEpisodeIdx : 'movie'}`] = { time, updated_at: Date.now() };
                 localStorage.setItem('omv_watch_progress', JSON.stringify(progressStore));
             } catch (e) {
                 console.warn('[EmbedSync] Failed to save progress:', e);
@@ -220,11 +210,8 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
         if (video.currentTime > 5) {
             const progressStore = JSON.parse(localStorage.getItem('omv_watch_progress') || '{}');
             const current = progressStore[progressKey] || {};
-            
             if (Math.abs((current.time || 0) - video.currentTime) > 5) {
-                const progress = { time: video.currentTime, updated_at: Date.now() };
-                progressStore[progressKey] = progress;
-                progressStore[commonKey] = progress;
+                progressStore[progressKey] = { time: video.currentTime, updated_at: Date.now() };
                 localStorage.setItem('omv_watch_progress', JSON.stringify(progressStore));
             }
         }
