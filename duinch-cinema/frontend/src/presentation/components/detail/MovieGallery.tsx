@@ -86,9 +86,9 @@ export const MovieGallery = () => {
                         ? (ep.m3u8 || ep.link_m3u8 || ep.url)
                         : (ep.embed || ep.link_embed || ep.url || ep.m3u8);
                     if (!link) return;
-
                     if (!groups[type]) groups[type] = [];
-                    groups[type].push({ type, provider, server: srv, episode: ep, srvIdx });
+                    // Lưu link trực tiếp vào node — tránh srvIdx mismatch khi nested collection
+                    groups[type].push({ type, provider, server: srv, episode: ep, srvIdx, resolvedLink: link });
                 });
             });
         });
@@ -109,8 +109,7 @@ export const MovieGallery = () => {
 
         for (const [type, nodes] of Object.entries(groupedNodes)) {
             for (const node of nodes) {
-                const ep = node.episode;
-                const epSig = sig(ep?.m3u8 || ep?.link_m3u8 || ep?.embed || ep?.url);
+                const epSig = sig(node.resolvedLink);
                 if (activeSig && epSig && activeSig === epSig) return `${type}:${node.provider}:${node.srvIdx}`;
                 // Fallback: match by preferred server name
                 if (preferredServer && node.server.server_name === preferredServer &&
@@ -182,11 +181,8 @@ export const MovieGallery = () => {
                                                             setActiveProvider(node.provider);
                                                             setActiveServerIdx(node.srvIdx);
                                                             setActiveEpisodeIdx(0);
-                                                            const ep = node.episode;
-                                                            const link = node.type === 'HLS'
-                                                                ? (ep.m3u8 || ep.link_m3u8 || ep.url)
-                                                                : (ep.embed || ep.link_embed || ep.url || ep.m3u8);
-                                                            if (link) setActiveEmbed(link);
+                                                            // Dùng resolvedLink đã tính sẵn trong useMemo — tránh re-derive sai
+                                                            if (node.resolvedLink) setActiveEmbed(node.resolvedLink);
                                                         }}
                                                         className={`group flex items-center justify-between p-3 rounded-2xl transition-all border cursor-pointer ${
                                                             isSelected
