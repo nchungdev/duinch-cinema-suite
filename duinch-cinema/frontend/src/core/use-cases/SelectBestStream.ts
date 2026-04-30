@@ -7,57 +7,97 @@
 export interface StreamSelectionResult {
   type: string;
   provider: string;
+  serverIdx: number;
 }
 
 export class SelectBestStream {
   /**
-   * Thực thi logic chọn nguồn
-   * @param streamableSources Dữ liệu nguồn từ Registry
-   * @param preferredSource Cấu hình ưu tiên của người dùng
-   * @param currentType Loại hiện tại (để giữ nguyên nếu hợp lệ)
+   * Tính toán điểm số cho từng server để tìm nguồn khớp nhất
    */
   execute(
     streamableSources: Record<string, Record<string, any[]>>,
-    preferredSource: string = 'auto',
-    currentType?: string,
-    currentProvider?: string
+    activeEpisodeIdx: number,
+    seasonBoundaries: any[],
+    userSettings: any,
+    currentSelection?: { type: string; provider: string; serverIdx: number }
   ): StreamSelectionResult | null {
     if (Object.keys(streamableSources).length === 0) return null;
 
-    // HLS first: native player with backend ad-proxy → no third-party trackers.
-    // EMBED is a fallback for streams that only have an iframe link.
-    const typesOrder = ['HLS', 'EMBED'];
+    const pinnedType = userSettings?.preferred_type;
+    const pinnedProvider = userSettings?.preferred_provider;
+    const pinnedAudio = userSettings?.preferred_audio;
 
-    // 1. Nếu người dùng chọn đích danh 1 Provider (ví dụ: KKPHIM)
-    if (preferredSource !== 'auto') {
-      for (const type of typesOrder) {
-        if (streamableSources[type]?.[preferredSource]) {
-          return { type, provider: preferredSource };
-        }
-      }
+    const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
+    const targetSeasonNum = currentSeason?.season_number;
+    
+    const extractNum = (name: string) => { 
+        const d = name?.toString().replace(/\D/g, ''); 
+        return d ? parseInt(d) : null; 
+    };
+    const localEpNum = currentSeason ? activeEpisodeIdx - currentSeason.start + 1 : activeEpisodeIdx + 1;
+
+    interface ScoredServer extends StreamSelectionResult {
+        score: number;
     }
 
-    // 2. ƯU TIÊN: Nếu đang có type và provider đang chọn, hãy giữ nguyên nó
-    if (currentType && currentProvider && streamableSources[currentType]?.[currentProvider]) {
-        return { type: currentType, provider: currentProvider };
-    }
+    const candidates: ScoredServer[] = [];
 
-    // 3. Nếu đã có type đang chọn, ưu tiên tìm provider trong type đó
-    if (currentType && streamableSources[currentType]) {
-      const providers = Object.keys(streamableSources[currentType]);
-      if (providers.length > 0) {
-        return { type: currentType, provider: providers[0] };
-      }
-    }
+    // Duyệt qua toàn bộ giỏ dữ liệu
+    Object.entries(streamableSources).forEach(([type, providers]) => {
+        Object.entries(providers as any).forEach(([provider, rawList]) => {
+            const items = rawList as any[];
+            let servers: any[] = [];
+            
+            if (items.length > 0 && 'servers' in items[0]) {
+                items.forEach((col: any) => {
+                    (col.servers || []).forEach((srv: any) => {
+                        servers.push({ ...srv, season: col.order });
+                    });
+                });
+            } else {
+                servers = items;
+            }
 
-    // 3. Fallback mặc định: Tìm provider đầu tiên theo thứ tự HLS -> EMBED
-    for (const type of typesOrder) {
-      const providers = Object.keys(streamableSources[type] || {});
-      if (providers.length > 0) {
-        return { type, provider: providers[0] };
-      }
-    }
+            servers.forEach((server, srvIdx) => {
+                // Chỉ xét server có chứa tập hiện tại
+                const hasEpisode = (server.server_data || []).some((e: any) => {
+                    const epNum = extractNum(e.name);
+                    const isCorrectSeason = (!e.season && !server.season) || 
+                                           (Number(e.season) === targetSeasonNum) || 
+                                           (Number(server.season) === targetSeasonNum);
+                    return epNum !== null && epNum === localEpNum && isCorrectSeason;
+                });
 
-    return null;
+                if (!hasEpisode) return;
+
+                let score = 0;
+
+                // 1. Khớp thông tin Pinned (Mỗi cái +1000)
+                if (pinnedType === type) score += 1000;
+                if (pinnedProvider === provider) score += 1000;
+                if (pinnedAudio === server.audio_type) score += 1000;
+
+                // 2. Ưu tiên HLS (+500)
+                if (type === 'HLS') score += 500;
+
+                // 3. Giữ nguyên lựa chọn hiện tại (+100)
+                if (currentSelection && 
+                    currentSelection.type === type && 
+                    currentSelection.provider === provider && 
+                    currentSelection.serverIdx === srvIdx) {
+                    score += 100;
+                }
+
+                candidates.push({ type, provider, serverIdx: srvIdx, score });
+            });
+        });
+    });
+
+    if (candidates.length === 0) return null;
+
+    // Sắp xếp theo điểm số giảm dần
+    candidates.sort((a, b) => b.score - a.score);
+    
+    return candidates[0];
   }
 }

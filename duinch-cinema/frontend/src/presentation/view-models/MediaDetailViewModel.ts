@@ -119,18 +119,18 @@ export const useMediaDetailViewModel = () => {
     const selector = new SelectBestStream();
     const result = selector.execute(
         streamableSources, 
-        userSettings?.preferred_source || 'auto',
-        activeType,
-        activeProvider
+        activeEpisodeIdx,
+        seasonBoundaries,
+        userSettings,
+        { type: activeType, provider: activeProvider, serverIdx: activeServerIdx }
     );
 
     if (result) {
         if (result.type !== activeType) setActiveType(result.type);
         if (result.provider !== activeProvider) setActiveProvider(result.provider);
+        if (result.serverIdx !== activeServerIdx) setActiveServerIdx(result.serverIdx);
         
         const rawData = streamableSources[result.type]?.[result.provider] || [];
-        
-        // Support both legacy flat servers and new nested collections
         let servers: any[] = [];
         if (rawData.length > 0 && 'servers' in rawData[0]) {
             rawData.forEach((col: any) => {
@@ -146,65 +146,21 @@ export const useMediaDetailViewModel = () => {
             servers = rawData;
         }
 
-        if (!servers.length) return;
+        const server = servers[result.serverIdx];
+        if (!server?.server_data) return;
 
         const currentSeason = seasonBoundaries.find(s => activeEpisodeIdx >= s.start && activeEpisodeIdx < s.end);
         const targetSeasonNum = currentSeason?.season_number;
-
-        const preferredServerName = userSettings?.preferred_server as string | undefined;
-        const preferredAudioType = userSettings?.preferred_audio_type as string | undefined;
-        let serverIdx = -1;
-
-        console.log(`[Player] Season: ${targetSeasonNum}, Preferred: ${preferredServerName} (${preferredAudioType})`);
-
-        // 1. Try to find preferred server (matching name, audio type, and season)
-        if (preferredServerName) {
-            serverIdx = servers.findIndex((s: any) => 
-                s.server_name === preferredServerName && 
-                (mediaType !== 'tv' || !s.season || Number(s.season) === targetSeasonNum) &&
-                (!preferredAudioType || s.audio_type === preferredAudioType)
-            );
-            if (serverIdx >= 0) console.log(`[Player] Selected preferred server: ${servers[serverIdx].server_name} (${servers[serverIdx].audio_type})`);
-        }
-
-        // 2. Fallback: match by name and season only (if audio type mismatch)
-        if (serverIdx < 0 && preferredServerName) {
-            serverIdx = servers.findIndex((s: any) => 
-                s.server_name === preferredServerName && 
-                (mediaType !== 'tv' || !s.season || Number(s.season) === targetSeasonNum)
-            );
-        }
-
-        // 3. Fallback: pick any server in the current season
-        if (serverIdx < 0) {
-            serverIdx = servers.findIndex((s: any) => 
-                mediaType !== 'tv' || !s.season || Number(s.season) === targetSeasonNum
-            );
-            if (serverIdx >= 0) console.log(`[Player] Selected first available season server: ${servers[serverIdx].server_name}`);
-        }
-
-        // 3. Final fallback
-        if (serverIdx < 0) {
-            serverIdx = Math.min(activeServerIdx, servers.length - 1);
-            console.log(`[Player] Fallback to activeServerIdx: ${serverIdx}`);
-        }
-
-        const server = servers[serverIdx];
-        if (!server?.server_data) return;
         const localEpNum = currentSeason ? (activeEpisodeIdx - currentSeason.start + 1) : (activeEpisodeIdx + 1);
         
         const extractNum = (name: string) => { 
             if (!name) return null;
-            // Match "Tập X", "Ep X", "Episode X" or just a number if it's the only one
-            const m = name.match(/(?:Tập|Episode|Ep|E)\s*(\d+)/i) || name.match(/(\d+)/);
-            return m ? parseInt(m[1]) : null; 
+            const digits = name.toString().replace(/\D/g, ''); 
+            return digits ? parseInt(digits) : null; 
         };
-
-        console.log(`[Player] Selected Server: ${server.server_name} (S${server.season}), Local Ep: ${localEpNum}`);
         
         let ep = (server.server_data || []).find((item: any) => {
             const itemSeason = item.season || server.season;
-            // Strict season matching for TV
             const isMatchSeason = mediaType !== 'tv' || Number(itemSeason) === targetSeasonNum;
             if (!isMatchSeason) return false;
 
@@ -212,46 +168,20 @@ export const useMediaDetailViewModel = () => {
             return num !== null && num === localEpNum;
         });
 
-        // Fallback for movies or if season matching is too strict
-        if (!ep && mediaType !== 'tv') {
-            ep = server.server_data.find((item: any) => extractNum(item.name) === localEpNum);
-        }
-        
-        // DANGEROUS: Remove the index-based fallback for TV shows to prevent picking wrong season links
-        // if (!ep) ep = server.server_data[activeEpisodeIdx];
+        if (!ep) ep = server.server_data[0];
 
         if (ep) {
-            console.log(`[Player] Match Found: ${ep.name} -> ${ep.m3u8 || ep.embed}`);
             const link = new StreamLink(ep);
-            const targetUrl = activeType === 'HLS' ? link.hlsUrl : link.embedUrl;
+            const targetUrl = result.type === 'HLS' ? link.hlsUrl : link.embedUrl;
             const finalUrl = targetUrl || link.bestUrl;
             
             if (finalUrl && finalUrl !== activeEmbed) {
-                console.log(`[Player] S${currentSeason?.season_number ?? '?'}E${localEpNum} → ${finalUrl}`);
-                
-                // Print the full list of episodes for the current season in this server
-                const seasonEps = (server.server_data || []).filter((item: any) => {
-                    const itemSeason = item.season || server.season;
-                    return mediaType !== 'tv' || !itemSeason || Number(itemSeason) === currentSeason?.season_number;
-                });
-                
-                if (seasonEps.length > 0) {
-                    console.log(`[Season Links] Season ${currentSeason?.season_number ?? '?'}:`);
-                    console.table(seasonEps.map((e: any) => ({
-                        Episode: e.name,
-                        M3U8: e.m3u8 || 'N/A',
-                        Embed: e.embed || 'N/A'
-                    })));
-                }
-
+                console.log(`[Player] S${targetSeasonNum ?? '?'}E${localEpNum} Selection Updated -> ${finalUrl}`);
                 setActiveEmbed(finalUrl);
             }
         }
-        
-        setStreamingLinks(servers);
-        if (serverIdx !== activeServerIdx) setActiveServerIdx(serverIdx);
     }
-  }, [streamableSources, userSettings, activeType, activeProvider, activeServerIdx, activeEpisodeIdx, seasonBoundaries, setActiveType, setActiveProvider, setStreamingLinks, setActiveServerIdx, setActiveEmbed, activeEmbed, isInitialized]);
+  }, [isInitialized, streamableSources, activeEpisodeIdx, userSettings]);
 
   // Logic: URL Synchronization
   useEffect(() => {

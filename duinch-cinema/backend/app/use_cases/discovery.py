@@ -93,10 +93,20 @@ class DiscoveryUseCase:
                         m_info = MediaInfo(id=str(tmdb_id), name=clean_name)
 
                     m_name = (r.movie_name or "").lower()
+                    
+                    # 1. Year Guard: Prevent 2023 matching 1999
+                    r_year = int(getattr(r, 'year', 0) or 0)
+                    if r_year > 0 and series_start > 0 and abs(r_year - series_start) > 2:
+                        # If year is wildly different, check if it might match a later season
+                        matches_any_season = any(abs(r_year - y) <= 1 for y in tmdb_info.season_years.values() if y > 0)
+                        if not matches_any_season:
+                            continue
+                    
+                    # 2. Keyword Guard: Prevent 'Live Action' leaking into Anime search
                     if is_anime_search and "live action" in m_name:
                         continue
 
-                    # 1. Determine Collection (Season for TV, "Bản Chính" for Movie)
+                    # 3. Determine Collection (Season for TV, "Bản Chính" for Movie)
                     is_tv = media_type == "tv"
                     sn = r.season
                     

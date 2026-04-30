@@ -28,12 +28,26 @@ export const TVGallery = () => {
         setActiveServerIdx, userSettings, setUserSettings
     } = useMediaDetail();
 
-    const preferredServer = (userSettings as any)?.preferred_server as string | undefined;
+    const preferredType = (userSettings as any)?.preferred_type as string | undefined;
+    const preferredProvider = (userSettings as any)?.preferred_provider as string | undefined;
+    const preferredAudio = (userSettings as any)?.preferred_audio_type as string | undefined;
 
-    const savePreferredServer = async (serverName: string) => {
-        const newSettings = { ...(userSettings || {}), preferred_server: serverName };
+    const savePreferredSource = async (type: string, provider: string, audio?: string) => {
+        const newSettings = { 
+            ...(userSettings || {}), 
+            preferred_type: type,
+            preferred_provider: provider,
+            preferred_audio: audio
+        };
         setUserSettings(newSettings);
-        try { await api.post('/user/settings', { preferred_server: serverName }); } catch {}
+        try { 
+            await api.post('/user/settings', { 
+                preferred_type: type,
+                preferred_provider: provider,
+                preferred_audio: audio
+            }); 
+            showToast('Đã ghi nhớ ưu tiên nguồn phát cho các tập sau', 'success');
+        } catch {}
     };
 
     const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
@@ -251,31 +265,40 @@ export const TVGallery = () => {
                                 onMouseEnter={() => setFocusedIdx(globalIdx)}
                                 onClick={() => setActiveEpisodeIdx(globalIdx)}
                                 className={`relative shrink-0 w-52 aspect-video rounded-2xl overflow-hidden cursor-pointer transition-all duration-500 border-2 ${
-                                    isBoth        ? 'border-blue-500 scale-110 z-20 shadow-[0_30px_60px_rgba(37,99,235,0.5)] ring-[3px] ring-blue-600 ring-offset-[4px] ring-offset-[#0a0a0c]'
-                                    : isPlayingOnly ? 'border-blue-600/60 opacity-90 z-10 ring-[3px] ring-blue-600 ring-offset-[4px] ring-offset-[#0a0a0c] shadow-[0_0_30px_rgba(37,99,235,0.3)]'
-                                    : isFocusedOnly ? 'border-amber-400/70 scale-110 z-20 shadow-[0_30px_60px_rgba(251,191,36,0.25)]'
+                                    isBoth        ? 'border-blue-500 scale-110 z-20 shadow-[0_30px_60px_rgba(37,99,235,0.5)]'
+                                    : isPlayingOnly ? 'border-blue-600/60 opacity-90 z-10 shadow-[0_0_30px_rgba(37,99,235,0.3)]'
+                                    : isFocusedOnly ? 'border-white/40 scale-110 z-20 shadow-[0_30px_60px_rgba(255,255,255,0.1)]'
                                     : 'border-white/5 opacity-30 hover:opacity-80 hover:border-white/20'
                                 }`}
                             >
                                 <img src={epThumb} className="w-full h-full object-cover" alt="" loading="lazy" />
+                                
+                                {/* Overlay for playing episode */}
+                                {isPlaying && <div className="absolute inset-0 bg-black/60 z-10" />}
+                                
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-transparent to-transparent z-10" />
+                                
+                                {/* Central Wave Bar for playing episode */}
+                                {isPlaying && (
+                                    <div className="absolute inset-0 flex items-center justify-center z-20">
+                                        <div className={`flex items-end gap-[3px] h-6 px-3 py-2 bg-blue-500/80 backdrop-blur-md rounded-xl shadow-[0_0_30px_rgba(59,130,246,0.4)] transition-all duration-500 ${playbackState === 'buffering' ? 'animate-pulse opacity-50' : 'opacity-100'}`}>
+                                            <div className="w-[3px] bg-white animate-[wave_0.8s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '100%' : '30%' }} />
+                                            <div className="w-[3px] bg-white animate-[wave_0.5s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '60%' : '20%' }} />
+                                            <div className="w-[3px] bg-white animate-[wave_1.1s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '80%' : '40%' }} />
+                                            <div className="w-[3px] bg-white animate-[wave_0.7s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '90%' : '25%' }} />
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-20">
                                     <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border transition-colors ${
                                         isBoth         ? 'bg-blue-600 border-blue-400 text-white shadow-lg'
                                         : isPlayingOnly ? 'bg-blue-600/70 border-blue-500/50 text-white'
-                                        : isFocusedOnly ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
+                                        : isFocusedOnly ? 'bg-white/10 border-white/20 text-white'
                                         : 'bg-black/60 backdrop-blur-md border-white/10 text-white/90'
                                     }`}>
                                         EP {epNum}
                                     </span>
-                                    {isPlaying && (
-                                        <div className={`flex items-end gap-[2px] h-3 px-2 py-1 bg-blue-500/90 backdrop-blur-md rounded-lg shadow-[0_0_20px_rgba(59,130,246,0.6)] transition-all duration-300 ${playbackState === 'buffering' ? 'animate-pulse opacity-50' : 'opacity-100'}`}>
-                                            <div className="w-[2px] bg-white animate-[wave_0.8s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '100%' : '30%' }} />
-                                            <div className="w-[2px] bg-white animate-[wave_0.5s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '50%' : '20%' }} />
-                                            <div className="w-[2px] bg-white animate-[wave_1.1s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '75%' : '40%' }} />
-                                            <div className="w-[2px] bg-white animate-[wave_0.7s_ease-in-out_infinite]" style={{ animationPlayState: playbackState === 'playing' ? 'running' : 'paused', height: playbackState === 'playing' ? '90%' : '25%' }} />
-                                        </div>
-                                    )}
                                 </div>
                             </div>
                         );
@@ -343,39 +366,23 @@ export const TVGallery = () => {
                                                                          node.type === 'P2P' ? <Magnet className="w-3.5 h-3.5" /> :
                                                                          node.type === 'DIRECT' ? <Box className="w-3.5 h-3.5" /> : <Layout className="w-3.5 h-3.5" />}
                                                                     </div>
-                                                                    <div className="flex flex-col min-w-0">
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isSelected ? 'text-blue-400' : 'text-white'}`}>{node.server.server_name}</span>
-                                                                            {preferredServer === node.server.server_name && (
-                                                                                <span className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[6px] font-black uppercase tracking-widest">
-                                                                                    <Pin className="w-2 h-2" /> default
+                                                                    <div className="flex flex-col min-w-0 flex-1">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className={`text-[11px] font-black uppercase tracking-wider truncate ${isSelected ? 'text-blue-400' : 'text-white'}`}>{node.server.server_name}</span>
+                                                                            {node.server.audio_type && (
+                                                                                <span className="shrink-0 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-gray-400 text-[7px] font-black uppercase tracking-widest">
+                                                                                    {'{'}{node.server.audio_type}{'}'}
                                                                                 </span>
                                                                             )}
                                                                         </div>
-                                                                        <span className="text-[7px] font-bold text-gray-600 uppercase tracking-[0.2em]">{node.provider}</span>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
-                                                                    {/* Pin button: mark this server as default */}
-                                                                    {isSelected && (
-                                                                        <button
-                                                                            title={preferredServer === node.server.server_name ? 'Server mặc định' : 'Đặt làm server mặc định'}
-                                                                            onClick={() => savePreferredServer(node.server.server_name)}
-                                                                            className={`p-2 rounded-xl transition-all border ${
-                                                                                preferredServer === node.server.server_name
-                                                                                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                                                                                    : 'bg-white/5 border-white/10 text-gray-600 hover:text-amber-400 hover:border-amber-500/30'
-                                                                            }`}
-                                                                        >
-                                                                            <Pin className="w-3 h-3" />
-                                                                        </button>
-                                                                    )}
                                                                     <button onClick={() => {
                                                                         setActiveType(node.type);
                                                                         setActiveProvider(node.provider);
                                                                         setActiveServerIdx(node.srvIdx);
                                                                         setActiveEpisodeIdx(focusedGlobalIdx);
-                                                                        savePreferredServer(node.server.server_name);
 
                                                                         const link = node.type === 'HLS'
                                                                             ? (node.episode.m3u8 || node.episode.url)
@@ -389,6 +396,27 @@ export const TVGallery = () => {
                                                                     }`}>
                                                                         <Play className={`w-3.5 h-3.5 ${isSelected ? 'fill-current' : ''}`} />
                                                                     </button>
+
+                                                                    <button
+                                                                        title={preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type ? 'Đã ghim nguồn này' : 'Ghim nguồn này cho các tập sau'}
+                                                                        onClick={() => savePreferredSource(node.type, node.provider, node.server.audio_type)}
+                                                                        className={`p-2.5 rounded-xl transition-all border ${
+                                                                            preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type
+                                                                                ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                                                                                : 'bg-white/5 border-white/10 text-gray-500 hover:text-amber-400 hover:border-amber-500/30'
+                                                                        }`}
+                                                                    >
+                                                                        <Pin className={`w-3.5 h-3.5 ${preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type ? 'fill-current' : ''}`} />
+                                                                    </button>
+
+                                                                    <CloudButtons targets={cloudTargets} compact={true}
+                                                                        onDeviceAction={() => {
+                                                                            const link = node.episode.m3u8 || node.episode.link_m3u8 || node.episode.url || node.episode.magnet;
+                                                                            const name = node.episode.name || node.server.server_name;
+                                                                            if (link) handleDownloadRequest(link, name);
+                                                                        }}
+                                                                        onCloudAction={(target) => handleCloudAction(node, target)} />
+                                                                </div>
                                                                     <CloudButtons targets={cloudTargets} compact={true}
                                                                         onDeviceAction={() => {
                                                                             const link = node.episode.m3u8 || node.episode.link_m3u8 || node.episode.url || node.episode.magnet;

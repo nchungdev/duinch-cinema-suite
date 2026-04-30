@@ -50,26 +50,16 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
         setOverlayOpen(false);
     };
 
-    // Flat list: [{type, provider, srvIdx, server}]
+    // Filtered list: Only servers containing the current episode
     const allServers = Object.entries(streamableSources).flatMap(([type, providers]) =>
         Object.entries(providers as any).flatMap(([provider, rawList]) => {
             const items = rawList as any[];
-            // If it's a list of Collections, flatten them
-            if (items.length > 0 && 'servers' in items[0]) {
-                const flatServers: any[] = [];
-                items.forEach((col: any) => {
-                    (col.servers || []).forEach((srv: any) => {
-                        flatServers.push({
-                            ...srv,
-                            server_data: srv.episodes || srv.server_data || [],
-                            season: col.order
-                        });
-                    });
+            return items
+                .map((server, srvIdx) => ({ type, provider, srvIdx, server }))
+                .filter(({ server }) => {
+                    // Match current episode (same strict logic as TVGallery)
+                    return (server.server_data || []).some((e: any) => extractNum(e.name) === localEpNum);
                 });
-                return flatServers.map((server, srvIdx) => ({ type, provider, srvIdx, server }));
-            }
-            // Otherwise it's already a flat list of servers
-            return items.map((server, srvIdx) => ({ type, provider, srvIdx, server }));
         })
     );
     const preferredServer = (userSettings as any)?.preferred_server as string | undefined;
@@ -272,21 +262,23 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                                                         <span className="text-[7px] font-black text-gray-600 uppercase tracking-widest">{type} · {provider}</span>
                                                     </div>
                                                     {servers.map(({ srvIdx, server }) => {
-                                                        const isActive = activeType === type && activeProvider === provider
-                                                            && (preferredServer === server.server_name || currentServerName === server.server_name);
+                                                        const isActive = activeType === type && activeProvider === provider && activeServerIdx === srvIdx;
                                                         const isPinned = preferredServer === server.server_name;
                                                         return (
                                                             <button
-                                                                key={srvIdx}
-                                                                onClick={() => switchServer(type, provider, srvIdx, server)}
+                                                                key={`${type}-${provider}-${srvIdx}`}                                                                onClick={() => switchServer(type, provider, srvIdx, server)}
                                                                 className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left transition-all ${
                                                                     isActive
                                                                         ? 'bg-blue-600/15 border border-blue-500/30 text-blue-300'
                                                                         : 'text-gray-400 hover:bg-white/5 border border-transparent hover:text-white'
                                                                 }`}
                                                             >
-                                                                <span className="text-[9px] font-black uppercase tracking-wider truncate">{server.server_name}</span>
-                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                <div className="flex flex-col min-w-0 flex-1">
+                                                                    <span className="text-[9px] font-black uppercase tracking-wider truncate">{server.server_name}</span>
+                                                                    {server.audio_type && (
+                                                                        <span className="text-[7px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{server.audio_type}</span>
+                                                                    )}
+                                                                </div>                                                                <div className="flex items-center gap-1.5 shrink-0">
                                                                     <span className="text-[7px] text-gray-600">{server.server_data?.length ?? 0} eps</span>
                                                                     {isPinned && <Pin className="w-2.5 h-2.5 text-amber-400" />}
                                                                     {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6]" />}

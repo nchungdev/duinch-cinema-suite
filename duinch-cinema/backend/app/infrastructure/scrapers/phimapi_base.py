@@ -260,6 +260,15 @@ class PhimAPIBase:
                                     num = val
                                     break
                             
+                            # NEW: Auto-map absolute episode number to TMDB Season if the number is large
+                            # or if we are in "Global search mode" (req_season is None)
+                            if media_type == 'tv' and tmdb_info.tmdb_seasons:
+                                # If the episode number is higher than the total episodes in the current detected season
+                                # or if we're not sure about the season, map it using TMDB metadata.
+                                mapped_s = self._get_season_from_episode(num, tmdb_info.tmdb_seasons)
+                                if mapped_s:
+                                    rs = mapped_s
+
                             # Final guard: only filter if a specific season was requested
                             if media_type == 'tv' and req_season is not None and rs is not None and rs != req_season:
                                 continue
