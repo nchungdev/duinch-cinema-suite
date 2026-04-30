@@ -39,8 +39,9 @@ class DiscoveryUseCase:
                     results=cached_data
                 )
         else:
-            # Clear both global and specific caches to be safe
+            # Clear all relevant cache keys
             cache_manager.clear_discovery(tmdb_id, 0)
+            cache_manager.clear_discovery(tmdb_id, 1)
             if season: cache_manager.clear_discovery(tmdb_id, season)
 
         clean_title = re.sub(r'\(.*?\)', '', title).strip()

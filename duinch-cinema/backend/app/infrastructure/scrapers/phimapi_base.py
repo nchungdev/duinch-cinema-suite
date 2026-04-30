@@ -137,14 +137,33 @@ class PhimAPIBase:
         if not item: return -1000
         n_name, n_origin = str(item.get("name") or "").lower().strip(), str(item.get("origin_name") or "").lower().strip()
         s_type = str(item.get("type") or "").lower()
-        if (media_type == "tv") != (s_type in ["series", "tvshows", "hoathinh", "tv"]): return -3000
-        
-        # 1. TMDB ID MATCH (Strict Hard-Skip)
+
+        # 1. TMDB ID MATCH (Strict Hard-Skip) — kiểm tra trước type check
         src_tmdb = item.get("tmdb") or {}
         item_tmdb_id = str(src_tmdb.get("id")) if src_tmdb.get("id") else None
+        tmdb_matched = False
         if tmdb_id and item_tmdb_id and item_tmdb_id not in ["0", "null", "None"]:
-            if item_tmdb_id == str(tmdb_id): score += 3000
-            else: return -5000 # DIFFERENT ID = REJECT IMMEDIATELY
+            if item_tmdb_id == str(tmdb_id):
+                score += 3000
+                tmdb_matched = True
+            else:
+                return -5000  # DIFFERENT ID = REJECT IMMEDIATELY
+
+        # 2. TYPE CHECK
+        # Priority: TMDB ID match > explicit type > inferred type from episode data
+        if not tmdb_matched:
+            CLEAR_MOVIE_TYPES = {"single", "movie"}
+            CLEAR_TV_TYPES    = {"series", "tvshows", "tv"}
+            if media_type == "movie" and s_type in CLEAR_TV_TYPES:   return -3000
+            if media_type == "tv"    and s_type in CLEAR_MOVIE_TYPES: return -3000
+            # Ambiguous type (hoathinh, unknown...): infer from episode_current / episode_total
+            if s_type not in CLEAR_MOVIE_TYPES | CLEAR_TV_TYPES:
+                ep_current   = str(item.get("episode_current") or "").strip().lower()
+                ep_total     = int(item.get("episode_total") or 0)
+                is_movie_like = (ep_current in ("full", "1") or ep_total == 1)
+                is_tv_like    = not is_movie_like and (ep_total > 1 or (ep_current and ep_current not in ("full", "1")))
+                if media_type == "movie" and is_tv_like:   return -3000
+                if media_type == "tv"    and is_movie_like: return -3000
 
         # 2. SMART YEAR MATCH
         s_year = int(item.get("year") or 0)

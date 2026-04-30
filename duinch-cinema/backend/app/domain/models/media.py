@@ -12,7 +12,7 @@ class ScraperEpisode(BaseModel):
     name: str
     m3u8: Optional[str] = None
     embed: Optional[str] = None
-    season: int = 1
+    season: Optional[int] = None
     movie_name: Optional[str] = None
     slug: Optional[str] = None
     year: Optional[int] = None
