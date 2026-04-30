@@ -30,21 +30,24 @@ export const TVGallery = () => {
 
     const preferredType = (userSettings as any)?.preferred_type as string | undefined;
     const preferredProvider = (userSettings as any)?.preferred_provider as string | undefined;
-    const preferredAudio = (userSettings as any)?.preferred_audio_type as string | undefined;
+    const preferredAudio = (userSettings as any)?.preferred_audio as string | undefined;
+    const preferredServer = (userSettings as any)?.preferred_server as string | undefined;
 
-    const savePreferredSource = async (type: string, provider: string, audio?: string) => {
+    const savePreferredSource = async (type: string, provider: string, audio?: string, serverName?: string) => {
         const newSettings = { 
             ...(userSettings || {}), 
             preferred_type: type,
             preferred_provider: provider,
-            preferred_audio: audio
+            preferred_audio: audio,
+            preferred_server: serverName
         };
         setUserSettings(newSettings);
         try { 
             await api.post('/user/settings', { 
                 preferred_type: type,
                 preferred_provider: provider,
-                preferred_audio: audio
+                preferred_audio: audio,
+                preferred_server: serverName
             }); 
             showToast('Đã ghi nhớ ưu tiên nguồn phát cho các tập sau', 'success');
         } catch {}
@@ -383,6 +386,7 @@ export const TVGallery = () => {
                                                                         setActiveProvider(node.provider);
                                                                         setActiveServerIdx(node.srvIdx);
                                                                         setActiveEpisodeIdx(focusedGlobalIdx);
+                                                                        savePreferredSource(node.type, node.provider, node.server.audio_type, node.server.server_name);
 
                                                                         const link = node.type === 'HLS'
                                                                             ? (node.episode.m3u8 || node.episode.url)
@@ -399,7 +403,7 @@ export const TVGallery = () => {
 
                                                                     <button
                                                                         title={preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type ? 'Đã ghim nguồn này' : 'Ghim nguồn này cho các tập sau'}
-                                                                        onClick={() => savePreferredSource(node.type, node.provider, node.server.audio_type)}
+                                                                        onClick={() => savePreferredSource(node.type, node.provider, node.server.audio_type, node.server.server_name)}
                                                                         className={`p-2.5 rounded-xl transition-all border ${
                                                                             preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type
                                                                                 ? 'bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
