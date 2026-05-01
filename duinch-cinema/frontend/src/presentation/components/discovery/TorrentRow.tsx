@@ -66,7 +66,7 @@ export const TorrentRow: React.FC<{
     setLoadingFiles(true);
     try {
       const res = await api.get(`/media/expand-folder?url=${encodeURIComponent(link.url || link.info_hash || '')}&provider=torrent`);
-      setFiles(res.data?.data?.results || []);
+      setFiles(res.data?.results || []);
     } catch { 
       setFiles([]); 
     }
