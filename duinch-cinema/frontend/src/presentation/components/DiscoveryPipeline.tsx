@@ -130,7 +130,7 @@ export const DiscoveryPipeline = ({
       setDoneKeys(prev    => { const n = new Set(prev); n.add(key);    return n; });
     };
 
-    const targetEpisode = isTV ? initialEpisode : undefined;
+    const targetEpisode = isTV ? undefined : initialEpisode;
 
     MediaRepository.discoverSourcesStream(
       {
