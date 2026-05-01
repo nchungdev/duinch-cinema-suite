@@ -29,79 +29,84 @@ export function DiscoveryGrid({
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  // Dùng ref để tránh stale closure — không trigger re-render
-  const pageRef = useRef(1);
-  const loadingRef = useRef(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const loaderRef = useRef<HTMLDivElement>(null);
+  const pageRef      = useRef(1);
+  const loadingRef   = useRef(false);
+  const hasMoreRef   = useRef(true);
+  const abortRef     = useRef<AbortController | null>(null);
+  const loaderRef    = useRef<HTMLDivElement>(null);
+  // Mutable params — không tạo closure mới khi thay đổi
+  const paramsRef    = useRef({ category, mediaType, searchQuery });
+  paramsRef.current  = { category, mediaType, searchQuery };
 
   const fetchPage = useCallback(async (pageNum: number, replace: boolean) => {
-    // Single-flight: chỉ 1 request tại một thời điểm
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
 
-    if (abortControllerRef.current) abortControllerRef.current.abort();
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
+    const { category: cat, mediaType: mt, searchQuery: sq } = paramsRef.current;
 
     try {
       let newItems: any[] = [];
 
-      if (category === 'phim-le') {
+      if (cat === 'phim-le') {
         const res = await api.get(`/movies?category=popular&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
-      } else if (category === 'phim-bo') {
+      } else if (cat === 'phim-bo') {
         const res = await api.get(`/tvs?category=popular&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
-      } else if (category === 'search' && searchQuery) {
-        const res = await api.get(`/search?q=${encodeURIComponent(searchQuery)}&media_type=${mediaType}&page=${pageNum}`, { signal });
+      } else if (cat === 'search' && sq) {
+        const res = await api.get(`/search?q=${encodeURIComponent(sq)}&media_type=${mt}&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
       } else {
-        newItems = await MediaRepository.getTrending(mediaType, pageNum);
+        newItems = await MediaRepository.getTrending(mt, pageNum);
       }
 
-      const normalized = newItems.map(item => ({
+      const normalized = newItems.map((item: any) => ({
         ...item,
         tmdb_id: item.tmdb_id || item.id,
         slug: item.slug || item.tmdb_id?.toString() || item.id?.toString(),
-        media_type: item.media_type || (category === 'phim-bo' ? 'tv' : 'movie')
+        media_type: item.media_type || (cat === 'phim-bo' ? 'tv' : 'movie')
       }));
 
+      const more = newItems.length >= 8;
       setItems(prev => replace ? normalized : [...prev, ...normalized]);
-      setHasMore(newItems.length >= 8);
+      setHasMore(more);
+      hasMoreRef.current = more;
       pageRef.current = pageNum;
 
     } catch (err: any) {
-      if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
+      if (err.name !== 'CanceledError' && err.name !== 'AbortError')
         console.error('Discovery fetch failed:', err);
-      }
     } finally {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [category, mediaType, searchQuery]);
+  }, []); // stable — đọc params qua ref
 
-  // Reset + initial load khi category/mediaType/searchQuery thay đổi
+  // Reset + initial fetch khi params thay đổi
   useEffect(() => {
-    pageRef.current = 1;
+    pageRef.current    = 1;
+    hasMoreRef.current = true;
+    loadingRef.current = false;
     setItems([]);
     setHasMore(true);
-    loadingRef.current = false; // reset lock
     fetchPage(1, true);
-  }, [category, mediaType, searchQuery]);
+  }, [category, mediaType, searchQuery]); // fetchPage stable nên không cần
 
-  // Infinite scroll observer
+  // Infinite scroll — observer stable, không re-attach khi hasMore thay đổi
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasMore && !loadingRef.current) {
+      if (entries[0].isIntersecting && hasMoreRef.current && !loadingRef.current) {
         fetchPage(pageRef.current + 1, false);
       }
     }, { threshold: 0.1 });
 
     if (loaderRef.current) observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasMore, fetchPage]);
+  }, []); // mount/unmount only — đọc state qua ref
 
   return (
     <div className="space-y-12">
