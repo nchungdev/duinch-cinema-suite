@@ -52,8 +52,13 @@ class FshareClient:
         folder_id = folder_url.strip('/').split('/')[-1]
         url = f"{FSHARE_BASE}/files/folder"
         params = {"linkcode": folder_id, "sort": "name"}
-        
-        headers = self.headers.copy()
+        if self.app_key:
+            params["app_key"] = self.app_key
+
+        headers = {
+            "User-Agent": self.headers.get("User-Agent") or "Mozilla/5.0",
+            "Accept": "application/json",
+        }
         if token:
             headers["Authorization"] = f"Bearer {token}"
             
@@ -65,10 +70,18 @@ class FshareClient:
                     return []
                 
                 data = resp.json()
+                # API trả về { "items": [...] } hoặc array trực tiếp
+                items = data.get("items", data) if isinstance(data, dict) else data
                 results = []
-                for item in data:
-                    is_folder = item.get("type") == "folder"
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    # type: 0=folder, 1=file (số nguyên) hoặc string "folder"/"file"
+                    raw_type = item.get("type")
+                    is_folder = (raw_type == 0) or (raw_type == "folder")
                     linkcode = item.get("linkcode")
+                    if not linkcode:
+                        continue
                     results.append({
                         "name": item.get("name"),
                         "url": f"https://www.fshare.vn/{'folder' if is_folder else 'file'}/{linkcode}",

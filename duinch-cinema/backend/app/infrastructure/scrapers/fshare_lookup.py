@@ -92,5 +92,12 @@ async def lookup_timfshare(query: str, year: int = None, filter_title: str = Non
             
     return all_links
 
-async def resolve_fshare_url(url: str, client: httpx.AsyncClient) -> List[Dict[Any, Any]]:
-    return []
+async def resolve_fshare_url(url: str, client: httpx.AsyncClient, token: Optional[str] = None) -> List[Dict[Any, Any]]:
+    """List files inside an Fshare folder URL. Token optional — public folders work without it."""
+    from app.infrastructure.clients.fshare_client import fshare_client
+    try:
+        results = await fshare_client.get_folder_list(url, token=token)
+        return results
+    except Exception as e:
+        print(f"[resolve_fshare_url] Error: {e}")
+        return []
