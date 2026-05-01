@@ -45,8 +45,9 @@ export const DeepRow: React.FC<DeepRowProps> = ({
       else if (link.url?.includes('drive.google.com')) provider = 'gdrive';
       else if (isExpandableMagnet) provider = 'torrent';
 
+
       const res = await api.get(`/media/expand-folder?url=${encodeURIComponent(link.url || '')}&provider=${provider}`);
-      setFiles(res.data?.data?.results || []);
+      setFiles(res.data?.results || []);
     } catch {
       setFiles([]);
     }
