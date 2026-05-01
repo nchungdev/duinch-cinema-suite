@@ -27,77 +27,81 @@ export function DiscoveryGrid({
 }) {
   const [items, setItems] = useState<DiscoveryItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  
-  const loaderRef = useRef<HTMLDivElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const fetchItems = useCallback(async (isInitial = false) => {
-    if (loading || (!hasMore && !isInitial)) return;
-    
+  // Dùng ref để tránh stale closure — không trigger re-render
+  const pageRef = useRef(1);
+  const loadingRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const loaderRef = useRef<HTMLDivElement>(null);
+
+  const fetchPage = useCallback(async (pageNum: number, replace: boolean) => {
+    // Single-flight: chỉ 1 request tại một thời điểm
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
+
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
-    
+    const signal = abortControllerRef.current.signal;
+
     try {
       let newItems: any[] = [];
-      const currentPage = isInitial ? 1 : page;
 
       if (category === 'phim-le') {
-        const res = await api.get(`/movies?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        const res = await api.get(`/movies?category=popular&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
       } else if (category === 'phim-bo') {
-        const res = await api.get(`/tvs?category=popular&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        const res = await api.get(`/tvs?category=popular&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
       } else if (category === 'search' && searchQuery) {
-        const res = await api.get(`/search?q=${encodeURIComponent(searchQuery)}&media_type=${mediaType}&page=${currentPage}`, { signal: abortControllerRef.current.signal });
+        const res = await api.get(`/search?q=${encodeURIComponent(searchQuery)}&media_type=${mediaType}&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
       } else {
-        newItems = await MediaRepository.getTrending(mediaType, currentPage);
+        newItems = await MediaRepository.getTrending(mediaType, pageNum);
       }
-      
-      // Normalize items: Ensure slug and tmdb_id exist
-      const normalizedItems = newItems.map(item => ({
+
+      const normalized = newItems.map(item => ({
         ...item,
         tmdb_id: item.tmdb_id || item.id,
         slug: item.slug || item.tmdb_id?.toString() || item.id?.toString(),
         media_type: item.media_type || (category === 'phim-bo' ? 'tv' : 'movie')
       }));
 
-      setItems(prev => isInitial ? normalizedItems : [...prev, ...normalizedItems]);
+      setItems(prev => replace ? normalized : [...prev, ...normalized]);
       setHasMore(newItems.length >= 8);
+      pageRef.current = pageNum;
 
     } catch (err: any) {
-      if (err.name !== 'CanceledError') console.error('Discovery fetch failed:', err);
+      if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
+        console.error('Discovery fetch failed:', err);
+      }
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
-  }, [category, mediaType, page, hasMore, searchQuery]);
-
-  // RESET logic
-  useEffect(() => {
-    setItems([]);
-    setPage(1);
-    setHasMore(true);
-    fetchItems(true);
   }, [category, mediaType, searchQuery]);
 
-  // Infinite scroll
+  // Reset + initial load khi category/mediaType/searchQuery thay đổi
+  useEffect(() => {
+    pageRef.current = 1;
+    setItems([]);
+    setHasMore(true);
+    loadingRef.current = false; // reset lock
+    fetchPage(1, true);
+  }, [category, mediaType, searchQuery]);
+
+  // Infinite scroll observer
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasMore && !loading) {
-        setPage(prev => prev + 1);
+      if (entries[0].isIntersecting && hasMore && !loadingRef.current) {
+        fetchPage(pageRef.current + 1, false);
       }
     }, { threshold: 0.1 });
 
     if (loaderRef.current) observer.observe(loaderRef.current);
     return () => observer.disconnect();
-  }, [hasMore, loading]);
-
-  useEffect(() => {
-    if (page > 1) fetchItems();
-  }, [page]);
+  }, [hasMore, fetchPage]);
 
   return (
     <div className="space-y-12">
