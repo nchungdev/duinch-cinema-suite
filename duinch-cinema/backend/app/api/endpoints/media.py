@@ -176,11 +176,15 @@ async def discovery_fetch(
 
 @router.get("/media/expand-folder")
 async def folder_expand(request: Request, url: str, provider: str = "fshare"):
-    """List all files within an FShare folder."""
+    """List all files within a folder or torrent."""
     try:
         client = request.app.state.http_client
         if provider == "fshare":
             files = await resolve_fshare_url(url, client)
+            return wrap_response({"results": files})
+        if provider == "torrent":
+            from app.infrastructure.clients.torrent_client import torrent_client
+            files = await torrent_client.get_files(url)
             return wrap_response({"results": files})
         return wrap_response(error_code=400, error_message="Not supported")
     except Exception as e:
