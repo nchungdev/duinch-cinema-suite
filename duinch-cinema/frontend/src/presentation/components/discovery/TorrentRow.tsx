@@ -56,8 +56,10 @@ export const TorrentRow: React.FC<{
 
   const isMagnet = !!link.url?.startsWith('magnet:');
   const canExpand = isMagnet || (link.num_files ?? 0) > 1 || !!link.info_hash;
+  console.log('[TorrentRow] name=', link.name?.slice(0,30), 'url=', link.url?.slice(0,20), 'isMagnet=', isMagnet, 'canExpand=', canExpand);
 
   const toggleFiles = async () => {
+    console.log('[TorrentRow] toggleFiles called, canExpand=', canExpand);
     if (!canExpand) return;
     if (expanded) { setExpanded(false); return; }
     setExpanded(true);
@@ -66,6 +68,7 @@ export const TorrentRow: React.FC<{
     setLoadingFiles(true);
     try {
       const res = await api.get(`/media/expand-folder?url=${encodeURIComponent(link.url || link.info_hash || '')}&provider=torrent`);
+      console.log('[TorrentRow] results=', res.data?.results?.length);
       setFiles(res.data?.results || []);
     } catch { 
       setFiles([]); 

@@ -62,7 +62,7 @@ const DetailContent = () => {
                     <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent" />
                 </div>
                 <DiscoveryPipeline
-                    key={`${slug}-${currentSeason || 'default'}`}
+                    key={slug}
                     tmdbId={Number(media?.id || 0)}
                     title={media?.title || ''}
                     localizeTitle={media?.originTitle}
