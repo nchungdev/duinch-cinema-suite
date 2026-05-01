@@ -55,7 +55,8 @@ export const TorrentRow: React.FC<{
   const [files, setFiles] = useState<any[] | null>(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
 
-  const canExpand = (link.num_files ?? 0) > 1 || !!link.info_hash;
+  const isMagnet = !!link.url?.startsWith('magnet:');
+  const canExpand = isMagnet || (link.num_files ?? 0) > 1 || !!link.info_hash;
 
   const toggleFiles = async () => {
     if (!canExpand) return;
