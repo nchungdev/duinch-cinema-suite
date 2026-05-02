@@ -34,14 +34,22 @@ export function DiscoveryGrid({
   const hasMoreRef   = useRef(true);
   const abortRef     = useRef<AbortController | null>(null);
   const loaderRef    = useRef<HTMLDivElement>(null);
+  
+  // Track requested pages to avoid duplicates
+  const requestedPagesRef = useRef<Set<number>>(new Set());
+
   // Mutable params — không tạo closure mới khi thay đổi
   const paramsRef    = useRef({ category, mediaType, searchQuery });
   paramsRef.current  = { category, mediaType, searchQuery };
 
   const fetchPage = useCallback(async (pageNum: number, replace: boolean) => {
+    // Avoid redundant requests
     if (loadingRef.current) return;
+    if (!replace && requestedPagesRef.current.has(pageNum)) return;
+    
     loadingRef.current = true;
     setLoading(true);
+    if (!replace) requestedPagesRef.current.add(pageNum);
 
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
@@ -51,16 +59,19 @@ export function DiscoveryGrid({
     try {
       let newItems: any[] = [];
 
-      if (cat === 'phim-le') {
-        const res = await api.get(`/movies?category=popular&page=${pageNum}`, { signal });
+      if (cat === 'movies' || cat === 'series' || cat === 'popular' || cat === 'top_rated' || cat === 'releases') {
+        const endpoint = (mt === 'tv' || cat === 'series') ? '/tvs' : '/movies';
+        const tmdbCategory = cat === 'series' ? 'popular' : cat === 'movies' ? 'popular' : cat;
+        const res = await api.get(`${endpoint}?category=${tmdbCategory}&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
-      } else if (cat === 'phim-bo') {
-        const res = await api.get(`/tvs?category=popular&page=${pageNum}`, { signal });
+      } else if (cat === 'animation') {
+        const res = await api.get(`/tvs?category=animation&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
       } else if (cat === 'search' && sq) {
         const res = await api.get(`/search?q=${encodeURIComponent(sq)}&media_type=${mt}&page=${pageNum}`, { signal });
         newItems = res.data?.results || [];
       } else {
+        // Default to trending
         newItems = await MediaRepository.getTrending(mt, pageNum);
       }
 
@@ -68,7 +79,7 @@ export function DiscoveryGrid({
         ...item,
         tmdb_id: item.tmdb_id || item.id,
         slug: item.slug || item.tmdb_id?.toString() || item.id?.toString(),
-        media_type: item.media_type || (cat === 'phim-bo' ? 'tv' : 'movie')
+        media_type: item.media_type || (mt === 'tv' || cat === 'series' || cat === 'animation' ? 'tv' : 'movie')
       }));
 
       const more = newItems.length >= 8;
@@ -80,6 +91,8 @@ export function DiscoveryGrid({
     } catch (err: any) {
       if (err.name !== 'CanceledError' && err.name !== 'AbortError')
         console.error('Discovery fetch failed:', err);
+      // Remove from set if failed so it can be retried
+      if (!replace) requestedPagesRef.current.delete(pageNum);
     } finally {
       loadingRef.current = false;
       setLoading(false);
@@ -91,6 +104,7 @@ export function DiscoveryGrid({
     pageRef.current    = 1;
     hasMoreRef.current = true;
     loadingRef.current = false;
+    requestedPagesRef.current.clear();
     setItems([]);
     setHasMore(true);
     fetchPage(1, true);

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from './api/config';
 import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
 import { MediaDetail } from './presentation/components/MediaDetail';
-import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw } from 'lucide-react';
+import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw, Heart, Star, Calendar } from 'lucide-react';
 import { useDownloaderContext } from './presentation/context/DownloaderContext';
 
 type SearchTab = 'movie' | 'tv';
@@ -39,16 +39,16 @@ interface JdTaskPackage {
 }
 
 const CATEGORIES = [
-  { id: 'new', label: 'Recommended', icon: <Compass className="w-4 h-4" /> },
-  { id: 'phim-le', label: 'Movies', icon: <Film className="w-4 h-4" /> },
-  { id: 'phim-bo', label: 'Series', icon: <Tv className="w-4 h-4" /> },
-  { id: 'hoat-hinh', label: 'Animation', icon: <MonitorIcon className="w-4 h-4" /> },
-  { id: 'phim-chieu-rap', label: 'Theatre', icon: <Clapperboard className="w-4 h-4" /> },
+  { id: 'trending', label: 'Trending', icon: <Compass className="w-4 h-4" /> },
+  { id: 'popular', label: 'Popular', icon: <Heart className="w-4 h-4" /> },
+  { id: 'top_rated', label: 'Top Rated', icon: <Star className="w-4 h-4" /> },
+  { id: 'releases', label: 'New Release', icon: <Calendar className="w-4 h-4" /> },
+  { id: 'animation', label: 'Animation', icon: <MonitorIcon className="w-4 h-4" /> },
 ];
 
 function App() {
   const getInit = () => {
-    const hash = window.location.hash || '#/new';
+    const hash = window.location.hash || '#/trending';
     const [fullPath, queryPart] = hash.split('?');
     const params = new URLSearchParams(queryPart || '');
     const parts = fullPath.split('/').filter(p => p && p !== '#');
@@ -57,7 +57,7 @@ function App() {
     if (parts.length >= 3) {
       return { view: 'detail' as const, category: parts[0], mediaType: parts[1], slug: parts[2], searchQuery: q };
     }
-    return { view: 'discovery' as const, category: parts[0] || 'new', mediaType: 'movie', slug: null, searchQuery: q };
+    return { view: 'discovery' as const, category: parts[0] || 'trending', mediaType: 'movie', slug: null, searchQuery: q };
   };
 
   const init = getInit();
@@ -134,7 +134,7 @@ function App() {
 
   useEffect(() => {
     const handleUrlSync = () => {
-      const hash = window.location.hash || '#/new';
+      const hash = window.location.hash || '#/trending';
       const [fullPath, queryPart] = hash.split('?');
       const params = new URLSearchParams(queryPart || '');
       
@@ -143,8 +143,24 @@ function App() {
       const q = params.get('q') || undefined;
       setUrlParams({ s, e, q });
 
-      const parts = fullPath.split('/').filter(p => p && p !== '#');
+      let parts = fullPath.split('/').filter(p => p && p !== '#');
       
+      // Legacy slug mapping
+      const slugMap: Record<string, string> = {
+        'new': 'trending',
+        'phim-le': 'movies',
+        'phim-bo': 'series',
+        'hoat-hinh': 'animation',
+        'phim-chieu-rap': 'theatre'
+      };
+      
+      if (parts.length > 0 && slugMap[parts[0]]) {
+        parts[0] = slugMap[parts[0]];
+        const newHash = `#/${parts.join('/')}${queryPart ? '?' + queryPart : ''}`;
+        window.location.hash = newHash;
+        return; // handleUrlSync will be called again by hashchange
+      }
+
       if (parts.length >= 3) {
         setCategory(parts[0]);
         setMediaType(parts[1]);
@@ -200,7 +216,7 @@ function App() {
         scrolled || view === 'detail' ? 'bg-black/80 backdrop-blur-2xl border-white/10' : 'bg-transparent border-transparent'
       }`}>
         <div className="flex items-center gap-16">
-          <div onClick={() => navToDiscoveryClear('new')} className="flex items-center gap-3 cursor-pointer group">
+          <div onClick={() => navToDiscoveryClear('trending')} className="flex items-center gap-3 cursor-pointer group">
             <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)] group-hover:scale-110 transition-transform duration-500">
                <Play className="w-5 h-5 text-white fill-white" />
             </div>
@@ -307,7 +323,7 @@ function App() {
                  </div>
                  ) : (
                  <div className="space-y-8">
-                 {category === 'new' && (
+                 {CATEGORIES.some(c => c.id === category) && (
                      <div className="flex items-center gap-6 border-b border-white/5 pb-6">
                          <button onClick={() => setMediaType('movie')} className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all ${mediaType === 'movie' ? 'text-blue-500 border-b-2 border-blue-500 pb-2' : 'text-gray-600 hover:text-gray-400'}`}>Movies</button>
                          <button onClick={() => setMediaType('tv')} className={`text-[10px] font-black uppercase tracking-[0.3em] transition-all ${mediaType === 'tv' ? 'text-blue-500 border-b-2 border-blue-500 pb-2' : 'text-gray-600 hover:text-gray-400'}`}>TV Shows</button>

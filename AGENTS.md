@@ -65,5 +65,16 @@ S11 User confirmed: "dùng jd account mới được à?" — answered yes, new 
 44 " 🔄 DownloaderContext.tsx Expanded with Typed Status, Email, and updateConfig
 45 " 🟣 JDownloader Settings Modal and Footer Refactor in App.tsx
 
-Access 349k tokens of past work via get_observations([IDs]) or mem-search skill.
-</claude-mem-context>
+## Agent skills
+
+### Issue tracker
+
+Chúng ta theo dõi công việc qua **GitHub Issues**. Xem chi tiết tại `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Sử dụng hệ thống nhãn mặc định: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. Xem chi tiết tại `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Dự án sử dụng cấu trúc **Multi-context** với file `CONTEXT-MAP.md` tại gốc dự án để điều hướng. Xem chi tiết tại `docs/agents/domain.md`.

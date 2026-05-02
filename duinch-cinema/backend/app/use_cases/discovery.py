@@ -14,6 +14,7 @@ from app.infrastructure.scrapers.gdrive_lookup import lookup_gdrive
 from app.infrastructure.scrapers.forum_scrapers import lookup_all_forums
 from app.infrastructure.persistence.fshare_repo import fshare_repo
 from app.infrastructure.cache.redis_cache import cache_manager
+from app.core.text_utils import check_identity_leakage
 
 class DiscoveryUseCase:
     def __init__(self, http_client):
@@ -83,7 +84,7 @@ class DiscoveryUseCase:
                 collections_map = {}
                 
                 series_start = tmdb_info.series_year if tmdb_info else (int(year) if year else 0)
-                is_anime_search = series_start > 0 and series_start < 2010
+                # is_anime_search = series_start > 0 and series_start < 2010
 
                 for r in results:
                     # Basic metadata for the whole task (taken from first valid result)
@@ -93,23 +94,24 @@ class DiscoveryUseCase:
                             clean_name = tmdb_info.title
                         m_info = MediaInfo(id=str(tmdb_id), name=clean_name)
 
-                    m_name = (r.movie_name or "").lower()
+                    m_name = (r.movie_name or "")
+                    r_year = int(getattr(r, 'year', 0) or 0)
+                    sn = r.season
                     
                     # 1. Year Guard: Prevent 2023 matching 1999
-                    r_year = int(getattr(r, 'year', 0) or 0)
                     if r_year > 0 and series_start > 0 and abs(r_year - series_start) > 2:
                         # If year is wildly different, check if it might match a later season
                         matches_any_season = any(abs(r_year - y) <= 1 for y in tmdb_info.season_years.values() if y > 0)
                         if not matches_any_season:
                             continue
                     
-                    # 2. Keyword Guard: Prevent 'Live Action' leaking into Anime search
-                    if is_anime_search and "live action" in m_name:
+                    # 2. Identity Guard (General check)
+                    # Using the utility to avoid hardcoded keywords
+                    if check_identity_leakage(m_name, title, ignore_year=r_year, ignore_season=sn):
                         continue
 
                     # 3. Determine Collection (Season for TV, "Bản Chính" for Movie)
                     is_tv = media_type == "tv"
-                    sn = r.season
                     
                     if is_tv:
                         # For TV, prioritize detected season, fallback to 1 only if we're sure it's a series result
