@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw, Heart, Star, Calendar, Pin } from 'lucide-react';
+import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw, Heart, Star, Calendar, Pin, HardDrive } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api, getProxiedImageUrl } from './api/config';
 import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
@@ -221,8 +221,8 @@ function App() {
                <Play className="w-5 h-5 text-white fill-white" />
             </div>
             <div className="flex flex-col">
-               <span className="text-lg font-black tracking-tighter uppercase italic leading-none">DUINCH</span>
-               <span className="text-[8px] font-bold tracking-[0.3em] text-blue-500 uppercase">Cinema</span>
+               <span className="text-xl font-black tracking-tighter uppercase italic leading-none">DUINCH</span>
+               <span className="text-[10px] font-bold tracking-[0.4em] text-blue-500 uppercase mt-0.5">Cinema</span>
             </div>
           </div>
 
@@ -280,64 +280,92 @@ function App() {
 
                 {/* Account Dropdown Menu */}
                 {showAccountMenu && (
-                  <div className="absolute top-full right-0 mt-4 w-72 bg-[#080808]/95 backdrop-blur-3xl border border-white/10 rounded-[2rem] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[110] animate-cinema-fade">
-                    <div className="p-6 space-y-6">
-                      {/* Identity Section */}
-                      <div className="flex items-center gap-4 pb-6 border-b border-white/5">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)]">
-                          <User className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-widest text-white">Administrator</p>
-                          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-tighter mt-1">Full System Access</p>
-                        </div>
-                      </div>
+                  <div className="absolute top-full right-0 mt-3 w-80 bg-[#0a0a0c]/98 backdrop-blur-3xl border border-white/8 rounded-3xl shadow-[0_24px_64px_rgba(0,0,0,0.6)] z-[110] animate-cinema-fade overflow-hidden">
 
-                      {/* Actions Section */}
-                      <div className="space-y-2">
-                        <p className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 mb-3 ml-2">General Settings</p>
-                        <button 
-                          onClick={() => { setShowAccountMenu(false); setShowSettings(true); }}
-                          className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-white/5 transition-all text-gray-400 hover:text-white group/btn"
-                        >
-                          <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center group-hover/btn:bg-blue-500/20 transition-all">
-                            <Settings className="w-4 h-4 group-hover/btn:text-blue-400" />
+                    {/* Header — identity */}
+                    <div className="px-5 pt-5 pb-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="relative shrink-0">
+                          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.35)]">
+                            <User className="w-5 h-5 text-white" />
                           </div>
-                          <span className="text-[10px] font-black uppercase tracking-widest">Downloader Settings</span>
-                        </button>
-
-                        {hasCredentials && (
-                          <button 
-                            onClick={() => { setShowAccountMenu(false); setShowTasks(true); }}
-                            className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-white/5 transition-all text-gray-400 hover:text-white group/btn"
-                          >
-                            <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center group-hover/btn:bg-blue-500/20 transition-all">
-                              <FolderTree className="w-4 h-4 group-hover/btn:text-blue-400" />
-                            </div>
-                            <div className="flex items-center justify-between flex-1">
-                              <span className="text-[10px] font-black uppercase tracking-widest">Active Downloads</span>
-                              {tasksCount > 0 && (
-                                <span className="bg-blue-600 px-1.5 py-0.5 rounded text-[8px] font-black text-white">{tasksCount}</span>
-                              )}
-                            </div>
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Footer Info (Moved inside) */}
-                      <div className="pt-6 border-t border-white/5 space-y-4">
-                        <div className="flex items-center justify-between px-2">
-                           <StatPill label="Storage" value="84% Free" color="text-yellow-500" />
-                           <span className="text-[7px] font-black text-gray-700 uppercase tracking-widest">v4.2.0-stable</span>
+                          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-[#0a0a0c]" />
                         </div>
-                        <div className="px-2">
-                           <DeviceSelector insideMenu={true} />
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-black text-white leading-tight tracking-tight">Administrator</p>
+                          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">Full System Access</p>
                         </div>
-                        <div className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 text-center pt-2">
-                           © 2026 Duinch Cinema
+                        <div className="ml-auto shrink-0 px-2 py-1 rounded-lg bg-green-500/10 border border-green-500/20">
+                          <span className="text-[8px] font-black text-green-400 uppercase tracking-widest">Active</span>
                         </div>
                       </div>
                     </div>
+
+                    <div className="h-px bg-white/5 mx-5" />
+
+                    {/* Actions */}
+                    <div className="px-3 py-3 space-y-0.5">
+                      <p className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 px-2 pb-2">Settings</p>
+
+                      <button
+                        onClick={() => { setShowAccountMenu(false); setShowSettings(true); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors group/btn text-left"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center group-hover/btn:bg-blue-500/15 group-hover/btn:border-blue-500/20 transition-all shrink-0">
+                          <Settings className="w-3.5 h-3.5 text-gray-500 group-hover/btn:text-blue-400 transition-colors" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-bold text-gray-300 group-hover/btn:text-white transition-colors">Downloader Settings</p>
+                          <p className="text-[9px] text-gray-600">JDownloader & cloud config</p>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-gray-700 group-hover/btn:text-gray-400 transition-colors shrink-0" />
+                      </button>
+
+                      {hasCredentials && (
+                        <button
+                          onClick={() => { setShowAccountMenu(false); setShowTasks(true); }}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors group/btn text-left"
+                        >
+                          <div className="w-8 h-8 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center group-hover/btn:bg-blue-500/15 group-hover/btn:border-blue-500/20 transition-all shrink-0">
+                            <FolderTree className="w-3.5 h-3.5 text-gray-500 group-hover/btn:text-blue-400 transition-colors" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-bold text-gray-300 group-hover/btn:text-white transition-colors">Active Downloads</p>
+                            <p className="text-[9px] text-gray-600">JDownloader queue</p>
+                          </div>
+                          {tasksCount > 0
+                            ? <span className="shrink-0 min-w-[20px] text-center bg-blue-600 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white">{tasksCount}</span>
+                            : <ChevronRight className="w-3.5 h-3.5 text-gray-700 group-hover/btn:text-gray-400 transition-colors shrink-0" />
+                          }
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="h-px bg-white/5 mx-5" />
+
+                    {/* System info */}
+                    <div className="px-5 py-4 space-y-3">
+                      <p className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">System</p>
+
+                      {/* JD Node status */}
+                      <DeviceSelector insideMenu={true} />
+
+                      {/* Storage + version row */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <HardDrive className="w-3 h-3 text-gray-600" />
+                          <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">Storage</span>
+                          <span className="text-[9px] font-black text-yellow-400">84% Free</span>
+                        </div>
+                        <span className="text-[8px] font-mono text-gray-700">v4.2.0</span>
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-5 py-3 bg-white/[0.02] border-t border-white/5">
+                      <p className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-700 text-center">© 2026 Duinch Cinema Engine</p>
+                    </div>
+
                   </div>
                 )}
               </div>
@@ -565,41 +593,47 @@ function DeviceSelector({ insideMenu = false }: { insideMenu?: boolean }) {
   const { isJdOnline, isChecking, devices, activeDevice, setActiveDevice } = useDownloaderContext();
   const [showList, setShowList] = useState(false);
 
-  const nodeLabel = isChecking ? 'Checking…' : isJdOnline ? (activeDevice || 'Online') : 'Offline';
-  const nodeTone = isJdOnline ? 'text-blue-500' : 'text-red-500';
-
   if (!insideMenu) return null;
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-[7px] font-black text-gray-600 uppercase tracking-widest">Active Node</span>
-          <span className={`text-[10px] font-black uppercase tracking-wider ${nodeTone}`}>{nodeLabel}</span>
-        </div>
-        <button 
-          onClick={() => setShowList(!showList)}
-          className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-500 hover:text-white transition-all"
-        >
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showList ? 'rotate-180' : ''}`} />
-        </button>
-      </div>
+  const statusColor = isChecking ? 'bg-yellow-500' : isJdOnline ? 'bg-green-500' : 'bg-red-500';
+  const statusLabel = isChecking ? 'Checking…' : isJdOnline ? (activeDevice || 'Connected') : 'Offline';
+  const statusText  = isChecking ? 'text-yellow-400' : isJdOnline ? 'text-green-400' : 'text-red-400';
 
-      {showList && (
-        <div className="space-y-1 py-2 border-t border-white/5 mt-2 max-h-40 overflow-y-auto custom-scrollbar">
-          {devices.map((d: any) => (
-            <button
-              key={d.name}
-              onClick={() => {
-                setActiveDevice(d.name);
-                setShowList(false);
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left hover:bg-white/5 transition-all ${activeDevice === d.name ? 'bg-blue-600/10' : ''}`}
-            >
-              <span className={`text-[9px] font-black uppercase tracking-widest ${activeDevice === d.name ? 'text-blue-400' : 'text-gray-500'}`}>{d.name}</span>
-              <div className={`w-1.5 h-1.5 rounded-full ${d.status === 'ONLINE' ? 'bg-green-500' : 'bg-red-900/50'}`} />
-            </button>
-          ))}
+  return (
+    <div className="space-y-2">
+      {/* Current node row */}
+      <button
+        onClick={() => devices.length > 0 && setShowList(v => !v)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all group"
+      >
+        <div className={`w-2 h-2 rounded-full shrink-0 ${statusColor} shadow-[0_0_6px_currentColor]`} />
+        <div className="flex-1 min-w-0 text-left">
+          <p className="text-[10px] font-bold text-gray-300 truncate">{statusLabel}</p>
+          <p className="text-[8px] text-gray-600 uppercase tracking-widest">JDownloader Node</p>
+        </div>
+        {devices.length > 0 && (
+          <ChevronDown className={`w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-all shrink-0 ${showList ? 'rotate-180' : ''}`} />
+        )}
+      </button>
+
+      {/* Device list */}
+      {showList && devices.length > 0 && (
+        <div className="rounded-xl border border-white/5 overflow-hidden divide-y divide-white/5">
+          {devices.map((d: any) => {
+            const isActive = activeDevice === d.name;
+            const online   = d.status === 'ONLINE';
+            return (
+              <button
+                key={d.name}
+                onClick={() => { setActiveDevice(d.name); setShowList(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-all ${isActive ? 'bg-blue-600/10' : 'hover:bg-white/5'}`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${online ? 'bg-green-500' : 'bg-gray-700'}`} />
+                <span className={`text-[9px] font-bold uppercase tracking-widest flex-1 truncate ${isActive ? 'text-blue-400' : 'text-gray-500'}`}>{d.name}</span>
+                {isActive && <div className="w-1 h-1 rounded-full bg-blue-500 shrink-0" />}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
