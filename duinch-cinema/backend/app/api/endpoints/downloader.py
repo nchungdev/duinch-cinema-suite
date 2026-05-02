@@ -2,43 +2,51 @@ from fastapi import APIRouter, HTTPException, Query, Body
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
 import httpx
+import asyncio
 from app.use_cases.downloader import DownloaderUseCase
+from app.infrastructure.clients.jd_client import jd_direct_client
 from app.core import config
 
 router = APIRouter()
 downloader_use_case = DownloaderUseCase()
 
 @router.get("/health")
-async def jd_health():
+async def jd_health(device: Optional[str] = Query(None)):
     """Check if JDownloader service is online."""
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{config.DOWNLOADER_URL}/health")
-            if resp.status_code == 200:
-                return resp.json()
-            return {"status": "disconnected"}
-    except Exception:
-        return {"status": "offline"}
+        cfg = jd_direct_client.config
+        local_online = await jd_direct_client.local.is_alive()
+
+        if not cfg.get("email"):
+            return {
+                "status": "healthy" if local_online else "no_credentials",
+                "local_online": local_online,
+                "devices": [],
+                "email": None,
+            }
+
+        # Use asyncio.to_thread for blocking SDK calls
+        current_device = await asyncio.to_thread(jd_direct_client.get_device, device)
+        devices = await asyncio.to_thread(jd_direct_client.list_devices)
+        
+        return {
+            "status": "healthy" if (current_device or local_online) else "no_devices",
+            "local_online": local_online,
+            "current_device": current_device.name if current_device else None,
+            "devices": devices,
+            "email": cfg.get("email")
+        }
+    except Exception as e:
+        return {"status": "disconnected", "detail": str(e)}
 
 @router.post("/config")
 async def jd_config(email: str = Body(...), password: str = Body(...)):
-    """Update MyJDownloader credentials via downloader service."""
+    """Update MyJDownloader credentials directly."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{config.DOWNLOADER_URL}/config",
-                json={"email": email, "password": password},
-            )
-            if resp.status_code == 200:
-                return resp.json()
-
-            detail = "Unable to update JDownloader credentials"
-            try:
-                payload = resp.json()
-                detail = payload.get("detail") or detail
-            except Exception:
-                pass
-            raise HTTPException(status_code=resp.status_code, detail=detail)
+        success = await asyncio.to_thread(jd_direct_client.update_credentials, email, password)
+        if not success:
+            raise HTTPException(status_code=401, detail="Invalid MyJDownloader credentials")
+        return {"status": "success"}
     except HTTPException:
         raise
     except Exception as e:
@@ -47,22 +55,10 @@ async def jd_config(email: str = Body(...), password: str = Body(...)):
 @router.post("/logout")
 async def jd_logout():
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{config.DOWNLOADER_URL}/logout")
-            if resp.status_code == 200:
-                return resp.json()
-
-            detail = "Unable to logout from JDownloader"
-            try:
-                payload = resp.json()
-                detail = payload.get("detail") or detail
-            except Exception:
-                pass
-            raise HTTPException(status_code=resp.status_code, detail=detail)
-    except HTTPException:
-        raise
+        await asyncio.to_thread(jd_direct_client.logout)
+        return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/list")
 async def jd_list(device: Optional[str] = Query(None)):
@@ -98,18 +94,13 @@ async def jd_download(
     year: Optional[str] = Body(None),
     season: Optional[int] = Body(None)
 ):
-    """Add a new download task to JDownloader via microservice."""
+    """Add a new download task directly to JDownloader."""
     try:
-        # If package_name is not provided, use title or name
-        final_package = package_name or title or name
         result = await downloader_use_case.add_download(
             url=url, name=name, title=title or name, 
             year=year, media_type=media_type, season=season
         )
-        # We might need to override the calculated folder if provided
-        if folder:
-            result['path'] = folder
-            
+        if folder: result['path'] = folder
         return {"data": result, "error_code": 0, "error_msg": ""}
     except Exception as e:
         return {"data": None, "error_code": 500, "error_msg": str(e)}

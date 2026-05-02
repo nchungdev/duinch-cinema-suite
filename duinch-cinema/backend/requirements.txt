@@ -8,3 +8,5 @@ python-dotenv
 redis
 apscheduler
 psycopg2-binary
+myjdapi
+cryptography
