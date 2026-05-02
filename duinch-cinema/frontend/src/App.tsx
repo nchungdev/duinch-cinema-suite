@@ -259,24 +259,34 @@ function App() {
                 />
               </form>
            </div>
-           <div className="flex items-center gap-4">
+           <div className="flex items-center gap-3">
               <ToolIcon icon={<Bell className="w-4 h-4" />} />
-              <div className="w-px h-6 bg-white/10 mx-2" />
-              
+              <div className="w-px h-5 bg-white/10" />
+
               {/* Account / Profile Section */}
               <div className="relative" ref={accountMenuRef}>
-                <div 
+                <button
                   onClick={() => setShowAccountMenu(!showAccountMenu)}
-                  className={`flex items-center gap-3 pl-2 cursor-pointer group transition-all ${showAccountMenu ? 'opacity-100' : 'opacity-80 hover:opacity-100'}`}
+                  className={`flex items-center gap-2.5 px-2.5 py-2 rounded-2xl border transition-all cursor-pointer ${
+                    showAccountMenu
+                      ? 'bg-blue-500/10 border-blue-500/40'
+                      : 'bg-white/[0.04] border-white/8 hover:bg-white/[0.07] hover:border-white/15'
+                  }`}
                 >
-                    <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-black uppercase tracking-tighter leading-none">Admin Node</span>
-                        <span className="text-[8px] font-bold text-green-500 uppercase tracking-widest">Active</span>
+                  {/* Avatar */}
+                  <div className="relative shrink-0">
+                    <div className={`w-7 h-7 rounded-xl flex items-center justify-center transition-all ${showAccountMenu ? 'bg-blue-600' : 'bg-white/10'}`}>
+                      <User className={`w-3.5 h-3.5 ${showAccountMenu ? 'text-white' : 'text-gray-400'}`} />
                     </div>
-                    <div className={`w-10 h-10 rounded-2xl bg-white/5 border transition-all flex items-center justify-center ${showAccountMenu ? 'border-blue-500 bg-blue-500/10' : 'border-white/10 group-hover:border-blue-500/50'}`}>
-                        <User className={`w-5 h-5 ${showAccountMenu ? 'text-blue-400' : 'text-gray-400'}`} />
-                    </div>
-                </div>
+                    <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 border border-[#0a0a0c]" />
+                  </div>
+                  {/* Label */}
+                  <div className="hidden sm:flex flex-col items-start leading-none">
+                    <span className="text-[10px] font-black text-white tracking-tight">Admin</span>
+                    <span className="text-[8px] font-bold text-green-400 tracking-widest uppercase mt-0.5">Active</span>
+                  </div>
+                  <ChevronDown className={`w-3 h-3 text-gray-500 transition-transform hidden sm:block ${showAccountMenu ? 'rotate-180' : ''}`} />
+                </button>
 
                 {/* Account Dropdown Menu */}
                 {showAccountMenu && (
