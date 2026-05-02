@@ -249,7 +249,7 @@ class PhimAPIBase:
                             # 1. Clean ename from year and season numbers
                             clean_ename = normalize_text(ename)
                             if s_year > 0: clean_ename = clean_ename.replace(str(s_year), "")
-                            if rs: clean_ename = clean_ename.replace(f"phan {rs}", "").replace(f"p{rs}", "").replace(f"s{rs}", "")
+                            if rs: clean_ename = clean_ename.replace(f"mua {rs}", "").replace(f"p{rs}", "").replace(f"s{rs}", "")
                             epm = re.search(r'(?:tap|episode|ep|e|t)\s*(\d+)', clean_ename, re.IGNORECASE)
                             num = int(epm.group(1)) if epm else int(re.search(r'(\d+)', clean_ename).group(1)) if re.search(r'(\d+)', clean_ename) else 1
                             
@@ -263,7 +263,7 @@ class PhimAPIBase:
                                         rs = mapped_s
                                     else:
                                         # Case 2: Explicit season in title, but number is too large 
-                                        # (e.g. "Phần 1" but "Tập 100") -> It's an absolute number
+                                        # (e.g. "Mùa 1" but "Tập 100") -> It's an absolute number
                                         detected_s_info = next((s for s in tmdb_info.tmdb_seasons if s.season_number == current_s), None)
                                         if detected_s_info and num > detected_s_info.episode_count:
                                             rs = mapped_s

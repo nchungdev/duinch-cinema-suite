@@ -41,5 +41,5 @@ Replace the existing top-level navigation with four curated discovery categories
 - Personalized recommendations based on user history (remains generic TMDB-based for now).
 
 ## Further Notes
-- This change aligns with the "DUINCH Cinema Engine" branding by providing a more "cinematic" discovery flow.
+- This change aligns with the "DUINCH Cinema" branding by providing a more "cinematic" discovery flow.
 - Legacy slugs like `phim-le` or `phim-bo` will be completely removed as part of this overhaul.

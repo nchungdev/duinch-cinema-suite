@@ -117,7 +117,7 @@ class DiscoveryUseCase:
                         # For TV, prioritize detected season, fallback to 1 only if we're sure it's a series result
                         effective_sn = sn if sn is not None else 1
                         c_id = f"col_{effective_sn}"
-                        c_name = f"Phần {effective_sn}"
+                        c_name = f"Mùa {effective_sn}"
                         c_order = effective_sn
                     else:
                         c_id = "col_movie_1"

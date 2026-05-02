@@ -473,14 +473,14 @@ export const TVGallery = () => {
                                         Preview — Ep {focusedEpNum}
                                     </h4>
                                     <span className="shrink-0 text-[10px] font-black text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/30 italic">
-                                        Season {activeSeason?.season_number} — EP {focusedEpNum}
+                                        Mùa {activeSeason?.season_number} — EP {focusedEpNum}
                                     </span>
                                 </>
                             ) : (
                                 <>
                                     <h4 className="text-xl font-black text-white uppercase tracking-wide">Episode {focusedEpNum}</h4>
                                     <span className="shrink-0 text-[10px] font-black text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 italic">
-                                        Season {activeSeason?.season_number} — EP {focusedEpNum}
+                                        Mùa {activeSeason?.season_number} — EP {focusedEpNum}
                                     </span>
                                 </>
                             )}

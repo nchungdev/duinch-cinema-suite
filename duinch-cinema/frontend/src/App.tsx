@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { api } from './api/config';
+import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw, Heart, Star, Calendar, Pin } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { api, getProxiedImageUrl } from './api/config';
 import { DiscoveryGrid } from './presentation/components/DiscoveryGrid';
 import { MediaDetail } from './presentation/components/MediaDetail';
-import { Search, Play, Settings, Bell, Compass, Film, Tv, Monitor as MonitorIcon, Clapperboard, User, Loader2, ChevronDown, ChevronRight, X, ShieldCheck, PlugZap, FolderTree, Pause, Trash2, RefreshCw, Heart, Star, Calendar } from 'lucide-react';
-import { useDownloaderContext } from './presentation/context/DownloaderContext';
+import { useDownloaderContext, type JdTaskPackage } from './presentation/context/DownloaderContext';
 
 type SearchTab = 'movie' | 'tv';
 
@@ -17,25 +18,7 @@ interface JdTaskLink {
   speed: number;
   eta: number;
   running: boolean;
-  enabled: boolean;
   finished: boolean;
-  url?: string;
-}
-
-interface JdTaskPackage {
-  uuid: string;
-  name: string;
-  bytesLoaded: number;
-  bytesTotal: number;
-  speed: number;
-  eta: number;
-  status: string;
-  running: boolean;
-  enabled: boolean;
-  finished: boolean;
-  saveTo?: string;
-  childCount: number;
-  links: JdTaskLink[];
 }
 
 const CATEGORIES = [
@@ -75,6 +58,14 @@ function App() {
   const [, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [urlParams,     setUrlParams]     = useState<{ s?: number, e?: number, q?: string }>({});
+
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
+  const [tasksCount, setTasksCount] = useState(0);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  const { hasCredentials } = useDownloaderContext();
 
   const lastSearchQuery = useRef<string | null>(null);
   const syncLock        = useRef(false);
@@ -132,6 +123,17 @@ function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Close account menu on click outside
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setShowAccountMenu(false);
+      }
+    };
+    if (showAccountMenu) window.addEventListener('mousedown', handle);
+    return () => window.removeEventListener('mousedown', handle);
+  }, [showAccountMenu]);
+
   useEffect(() => {
     const handleUrlSync = () => {
       const hash = window.location.hash || '#/trending';
@@ -166,17 +168,15 @@ function App() {
         setMediaType(parts[1]);
         setSlug(parts[2]);
         setView('detail');
-        if (parts[0] === 'search' && q && !searchActive) executeSearch(q, 'movie', 1, true);
-      } else if (parts.length >= 1) {
-        setCategory(parts[0]);
+      } else {
         setView('discovery');
         setSlug(null);
-        if (parts[0] === 'search') {
-            setSearchActive(true);
-            if (q && lastSearchQuery.current !== q) executeSearch(q, 'movie', 1);
-        } else {
+        setCategory(parts[0] || 'trending');
+        if (q && q !== lastSearchQuery.current) {
+            executeSearch(q, searchTab, 1);
+        } else if (!q) {
             setSearchActive(false);
-            setSearchResults([]);
+            setSearchQuery('');
             setSearchTab('movie');
             lastSearchQuery.current = null;
         }
@@ -186,7 +186,7 @@ function App() {
     handleUrlSync();
     window.addEventListener('hashchange', handleUrlSync);
     return () => window.removeEventListener('hashchange', handleUrlSync);
-  }, [searchActive, executeSearch]);
+  }, [searchActive, executeSearch, searchTab]);
 
   const handleMovieClick = (clickedSlug: string, mType: string = 'movie') => {
     const currentCat = searchActive ? 'search' : category;
@@ -222,7 +222,7 @@ function App() {
             </div>
             <div className="flex flex-col">
                <span className="text-lg font-black tracking-tighter uppercase italic leading-none">DUINCH</span>
-               <span className="text-[8px] font-bold tracking-[0.3em] text-blue-500 uppercase">Cinema Engine</span>
+               <span className="text-[8px] font-bold tracking-[0.3em] text-blue-500 uppercase">Cinema</span>
             </div>
           </div>
 
@@ -240,7 +240,7 @@ function App() {
                 <div className={`transition-colors ${category === cat.id && !searchActive ? 'text-blue-500' : 'group-hover:text-blue-400'}`}>
                   {cat.icon}
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-widest">{cat.label}</span>
+                <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{cat.label}</span>
               </button>
             ))}
           </div>
@@ -261,22 +261,91 @@ function App() {
            </div>
            <div className="flex items-center gap-4">
               <ToolIcon icon={<Bell className="w-4 h-4" />} />
-              <ToolIcon icon={<Settings className="w-4 h-4" />} />
               <div className="w-px h-6 bg-white/10 mx-2" />
-              <div className="flex items-center gap-3 pl-2 cursor-pointer group">
-                  <div className="flex flex-col items-end">
-                      <span className="text-[10px] font-black uppercase tracking-tighter leading-none">Admin Node</span>
-                      <span className="text-[8px] font-bold text-green-500 uppercase tracking-widest">Active</span>
+              
+              {/* Account / Profile Section */}
+              <div className="relative" ref={accountMenuRef}>
+                <div 
+                  onClick={() => setShowAccountMenu(!showAccountMenu)}
+                  className={`flex items-center gap-3 pl-2 cursor-pointer group transition-all ${showAccountMenu ? 'opacity-100' : 'opacity-80 hover:opacity-100'}`}
+                >
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-black uppercase tracking-tighter leading-none">Admin Node</span>
+                        <span className="text-[8px] font-bold text-green-500 uppercase tracking-widest">Active</span>
+                    </div>
+                    <div className={`w-10 h-10 rounded-2xl bg-white/5 border transition-all flex items-center justify-center ${showAccountMenu ? 'border-blue-500 bg-blue-500/10' : 'border-white/10 group-hover:border-blue-500/50'}`}>
+                        <User className={`w-5 h-5 ${showAccountMenu ? 'text-blue-400' : 'text-gray-400'}`} />
+                    </div>
+                </div>
+
+                {/* Account Dropdown Menu */}
+                {showAccountMenu && (
+                  <div className="absolute top-full right-0 mt-4 w-72 bg-[#080808]/95 backdrop-blur-3xl border border-white/10 rounded-[2rem] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[110] animate-cinema-fade">
+                    <div className="p-6 space-y-6">
+                      {/* Identity Section */}
+                      <div className="flex items-center gap-4 pb-6 border-b border-white/5">
+                        <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.4)]">
+                          <User className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-widest text-white">Administrator</p>
+                          <p className="text-[9px] font-bold text-gray-500 uppercase tracking-tighter mt-1">Full System Access</p>
+                        </div>
+                      </div>
+
+                      {/* Actions Section */}
+                      <div className="space-y-2">
+                        <p className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 mb-3 ml-2">General Settings</p>
+                        <button 
+                          onClick={() => { setShowAccountMenu(false); setShowSettings(true); }}
+                          className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-white/5 transition-all text-gray-400 hover:text-white group/btn"
+                        >
+                          <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center group-hover/btn:bg-blue-500/20 transition-all">
+                            <Settings className="w-4 h-4 group-hover/btn:text-blue-400" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-widest">Downloader Settings</span>
+                        </button>
+
+                        {hasCredentials && (
+                          <button 
+                            onClick={() => { setShowAccountMenu(false); setShowTasks(true); }}
+                            className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-white/5 transition-all text-gray-400 hover:text-white group/btn"
+                          >
+                            <div className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center group-hover/btn:bg-blue-500/20 transition-all">
+                              <FolderTree className="w-4 h-4 group-hover/btn:text-blue-400" />
+                            </div>
+                            <div className="flex items-center justify-between flex-1">
+                              <span className="text-[10px] font-black uppercase tracking-widest">Active Downloads</span>
+                              {tasksCount > 0 && (
+                                <span className="bg-blue-600 px-1.5 py-0.5 rounded text-[8px] font-black text-white">{tasksCount}</span>
+                              )}
+                            </div>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Footer Info (Moved inside) */}
+                      <div className="pt-6 border-t border-white/5 space-y-4">
+                        <div className="flex items-center justify-between px-2">
+                           <StatPill label="Storage" value="84% Free" color="text-yellow-500" />
+                           <span className="text-[7px] font-black text-gray-700 uppercase tracking-widest">v4.2.0-stable</span>
+                        </div>
+                        <div className="px-2">
+                           <DeviceSelector insideMenu={true} />
+                        </div>
+                        <div className="text-[8px] font-black uppercase tracking-[0.3em] text-gray-600 text-center pt-2">
+                           © 2026 Duinch Cinema
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center group-hover:border-blue-500/50 transition-all">
-                      <User className="w-5 h-5 text-gray-400" />
-                  </div>
+                )}
               </div>
            </div>
         </div>
       </nav>
 
-      <main className="pt-32 pb-20 px-10">
+      <main className="pt-32 pb-10 px-10">
          {view === 'discovery' ? (
             <div className="max-w-screen-2xl mx-auto space-y-12">
             {searchActive ? (
@@ -350,52 +419,42 @@ function App() {
          ) : null}
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 h-12 bg-black/40 backdrop-blur-xl border-t border-white/5 px-10 flex items-center justify-between z-[90]">
-         <div className="flex items-center gap-6">
-            <DeviceSelector />
-            <StatPill label="Storage" value="84% Free" color="text-yellow-500" />
-         </div>
-         <div className="flex items-center gap-4 text-[8px] font-black uppercase tracking-[0.3em] text-gray-600">
-            <span>© 2026 Duinch Cinema Engine</span>
-            <div className="w-1 h-1 rounded-full bg-white/10" />
-            <span>v4.2.0-stable</span>
-         </div>
-      </footer>
+      <JDownloaderModals 
+        showSettings={showSettings} 
+        setShowSettings={setShowSettings}
+        showTasks={showTasks}
+        setShowTasks={setShowTasks}
+        setTasksCount={setTasksCount}
+      />
     </div>
   );
 }
 
-function ToolIcon({ icon }: { icon: any }) {
-  return (
-    <button className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:border-white/20 transition-all">
-      {icon}
-    </button>
-  );
-}
-
-function DeviceSelector() {
+function JDownloaderModals({ 
+  showSettings, 
+  setShowSettings,
+  showTasks,
+  setShowTasks,
+  setTasksCount
+}: { 
+  showSettings: boolean; 
+  setShowSettings: (v: boolean) => void;
+  showTasks: boolean;
+  setShowTasks: (v: boolean) => void;
+  setTasksCount: (v: number) => void;
+}) {
   const { isJdOnline, isChecking, status, devices, activeDevice, accountEmail, hasCredentials, setActiveDevice, refreshStatus, updateConfig, logout } = useDownloaderContext();
-  const [showList, setShowList] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showConnectForm, setShowConnectForm] = useState(false);
-  const [showTasks, setShowTasks] = useState(false);
-  const [tasks, setTasks] = useState<JdTaskPackage[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
   const [expandedPackages, setExpandedPackages] = useState<Record<string, boolean>>({});
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
 
-  // Close when clicking outside
-  useEffect(() => {
-    if (!showList) return;
-    const handle = () => setShowList(false);
-    window.addEventListener('click', handle);
-    return () => window.removeEventListener('click', handle);
-  }, [showList]);
-
   const loadTasks = useCallback(async (background = false) => {
     if (!hasCredentials) {
       setTasks([]);
+      setTasksCount(0);
       return;
     }
 
@@ -403,13 +462,14 @@ function DeviceSelector() {
     setTasksError(null);
     try {
       const query = activeDevice ? `?device=${encodeURIComponent(activeDevice)}` : '';
-      const res = await api.get<JdTaskPackage[]>(`/downloader/list${query}`);
+      const res = await api.get<any[]>(`/downloader/list${query}`);
       const nextTasks = Array.isArray(res.data) ? res.data : [];
       setTasks(nextTasks);
+      setTasksCount(nextTasks.length);
       setExpandedPackages((prev) => {
         const next = { ...prev };
         nextTasks.forEach((pkg) => {
-          if (pkg.childCount <= 1) delete next[pkg.uuid];
+          if ((pkg.links || []).length <= 1) delete next[pkg.uuid];
         });
         return next;
       });
@@ -418,7 +478,7 @@ function DeviceSelector() {
     } finally {
       if (!background) setLoadingTasks(false);
     }
-  }, [activeDevice, hasCredentials]);
+  }, [activeDevice, hasCredentials, setTasksCount]);
 
   useEffect(() => {
     if (!showTasks || !hasCredentials) return;
@@ -443,111 +503,12 @@ function DeviceSelector() {
     }
   }, [activeDevice, loadTasks]);
 
-  const nodeLabel = isChecking ? 'Checking…' : isJdOnline ? (activeDevice || 'Online') : 'Offline';
-  const nodeTone = isJdOnline ? 'text-blue-500' : 'text-red-500';
   return (
     <>
-      <div className="relative flex items-center gap-2" onClick={e => e.stopPropagation()}>
-        {!hasCredentials && (
-          <button
-            type="button"
-            onClick={() => {
-              setShowConnectForm((prev) => !prev);
-              setShowList(false);
-              setShowTasks(false);
-              setShowSettings(false);
-            }}
-            className="h-8 px-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.24em] transition-all flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-500"
-          >
-            <PlugZap className="w-4 h-4" />
-            Connect JDownloader
-          </button>
-        )}
-
-        {hasCredentials && (
-          <>
-            <button
-              type="button"
-              onClick={() => devices.length > 0 && setShowList(!showList)}
-              className={`h-8 px-3 rounded-2xl border border-white/10 bg-white/5 flex items-center gap-2 transition-all ${devices.length > 0 ? 'hover:bg-white/10 hover:border-white/20' : ''}`}
-            >
-              <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">JD Node</span>
-              <span className={`text-[11px] font-black uppercase tracking-[0.18em] ${nodeTone}`}>
-                {nodeLabel}
-              </span>
-              {devices.length > 0 && <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showList ? 'rotate-180 text-white' : 'text-gray-600'}`} />}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowTasks((prev) => !prev);
-                if (!showTasks) void loadTasks();
-              }}
-              className={`h-8 px-3 rounded-2xl border flex items-center gap-2 transition-all ${showTasks ? 'border-blue-500/40 bg-blue-500/10 text-white' : 'border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 hover:border-white/20'}`}
-            >
-              <FolderTree className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-[0.22em]">Tasks</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowSettings(true)}
-              className="w-7 h-7 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:border-blue-500/40 hover:bg-blue-500/10 transition-all"
-              title="JDownloader Settings"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-
-            {showList && (
-              <div className="absolute bottom-full mb-3 left-0 min-w-[240px] bg-black/90 backdrop-blur-3xl border border-white/10 rounded-2xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[100] animate-cinema-fade border-b-blue-500/50">
-                <div className="px-4 py-3 border-b border-white/5 bg-white/5">
-                  <span className="text-[8px] font-black uppercase tracking-[0.25em] text-blue-400">Available JDownloader Nodes</span>
-                </div>
-                <div className="py-1 max-h-60 overflow-y-auto custom-scrollbar">
-                  {devices.length > 0 ? (
-                    devices.map((d: any) => (
-                      <button
-                        key={d.id || d.name}
-                        onClick={() => {
-                          setActiveDevice(d.name);
-                          setShowList(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/5 transition-all group ${activeDevice === d.name ? 'bg-blue-600/10' : ''}`}
-                      >
-                        <div className="flex flex-col">
-                          <span className={`text-[10px] font-black uppercase tracking-widest ${activeDevice === d.name ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'}`}>
-                            {d.name}
-                          </span>
-                          <span className="text-[7px] font-bold text-gray-600 uppercase tracking-tighter">
-                            {d.status === 'ONLINE' ? 'Ready for transmission' : 'Node is unreachable'}
-                          </span>
-                        </div>
-                        <div className={`w-2 h-2 rounded-full ${d.status === 'ONLINE' ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-red-900/50'}`} />
-                      </button>
-                    ))
-                  ) : (
-                    <div className="px-4 py-6 text-center">
-                      <span className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">No devices found</span>
-                    </div>
-                  )}
-                </div>
-                {isChecking && (
-                  <div className="px-4 py-2 bg-blue-600/5 border-t border-white/5 flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-                    <span className="text-[7px] font-black uppercase tracking-widest text-blue-500/60">Refreshing grid...</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
       {showConnectForm && (
         <JDownloaderConnectPanel
           isChecking={isChecking}
-          status={status}
+          status={status as any}
           onClose={() => setShowConnectForm(false)}
           onRefresh={refreshStatus}
           onSave={updateConfig}
@@ -578,7 +539,7 @@ function DeviceSelector() {
       <JDownloaderSettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        status={status}
+        status={status as any}
         accountEmail={accountEmail}
         hasCredentials={hasCredentials}
         activeDevice={activeDevice}
@@ -589,6 +550,59 @@ function DeviceSelector() {
         onLogout={logout}
       />
     </>
+  );
+}
+
+function ToolIcon({ icon }: { icon: any }) {
+  return (
+    <button className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 hover:text-white hover:border-white/20 transition-all">
+      {icon}
+    </button>
+  );
+}
+
+function DeviceSelector({ insideMenu = false }: { insideMenu?: boolean }) {
+  const { isJdOnline, isChecking, devices, activeDevice, setActiveDevice } = useDownloaderContext();
+  const [showList, setShowList] = useState(false);
+
+  const nodeLabel = isChecking ? 'Checking…' : isJdOnline ? (activeDevice || 'Online') : 'Offline';
+  const nodeTone = isJdOnline ? 'text-blue-500' : 'text-red-500';
+
+  if (!insideMenu) return null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col">
+          <span className="text-[7px] font-black text-gray-600 uppercase tracking-widest">Active Node</span>
+          <span className={`text-[10px] font-black uppercase tracking-wider ${nodeTone}`}>{nodeLabel}</span>
+        </div>
+        <button 
+          onClick={() => setShowList(!showList)}
+          className="w-8 h-8 rounded-xl bg-white/5 flex items-center justify-center text-gray-500 hover:text-white transition-all"
+        >
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showList ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {showList && (
+        <div className="space-y-1 py-2 border-t border-white/5 mt-2 max-h-40 overflow-y-auto custom-scrollbar">
+          {devices.map((d: any) => (
+            <button
+              key={d.name}
+              onClick={() => {
+                setActiveDevice(d.name);
+                setShowList(false);
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left hover:bg-white/5 transition-all ${activeDevice === d.name ? 'bg-blue-600/10' : ''}`}
+            >
+              <span className={`text-[9px] font-black uppercase tracking-widest ${activeDevice === d.name ? 'text-blue-400' : 'text-gray-500'}`}>{d.name}</span>
+              <div className={`w-1.5 h-1.5 rounded-full ${d.status === 'ONLINE' ? 'bg-green-500' : 'bg-red-900/50'}`} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -609,7 +623,7 @@ function JDownloaderConnectPanel({
 }) {
   return (
     <div className="fixed left-0 right-0 bottom-12 z-[110] px-6 pb-4">
-      <div className="mx-auto w-full max-w-lg rounded-[2rem] border border-blue-500/20 bg-black/95 backdrop-blur-3xl shadow-[0_-20px_60px_rgba(0,0,0,0.6)] overflow-hidden animate-cinema-fade">
+      <div className="mx-auto w-full max-lg rounded-[2rem] border border-blue-500/20 bg-black/95 backdrop-blur-3xl shadow-[0_-20px_60px_rgba(0,0,0,0.6)] overflow-hidden animate-cinema-fade">
         <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-white/5 bg-blue-500/10">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-400">Connect MyJDownloader</p>
@@ -757,7 +771,7 @@ function JDownloaderTaskPanel({
   onPackageAction,
   onLinkAction,
 }: {
-  tasks: JdTaskPackage[];
+  tasks: any[];
   loading: boolean;
   error: string | null;
   activeDevice: string | null;
@@ -767,12 +781,12 @@ function JDownloaderTaskPanel({
   onClose: () => void;
   onRefresh: () => void;
   onTogglePackage: (uuid: string) => void;
-  onPackageAction: (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', task: JdTaskPackage) => void;
-  onLinkAction: (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', link: JdTaskLink) => void;
+  onPackageAction: (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', task: any) => void;
+  onLinkAction: (action: 'START' | 'STOP_JOB' | 'REMOVE_JOB', link: any) => void;
 }) {
   return (
-    <div className="fixed left-0 right-0 bottom-12 z-[95] px-6 pb-4">
-      <div className="mx-auto max-w-screen-2xl rounded-[2rem] border border-white/10 bg-[#040404]/95 backdrop-blur-3xl shadow-[0_-20px_80px_rgba(0,0,0,0.55)] overflow-hidden">
+    <div className="fixed inset-0 z-[140] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="w-full max-w-screen-2xl rounded-[2rem] border border-white/10 bg-[#040404]/95 backdrop-blur-3xl shadow-[0_20px_80px_rgba(0,0,0,0.55)] overflow-hidden animate-cinema-fade">
         <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-white/5 bg-white/[0.03]">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
@@ -812,7 +826,7 @@ function JDownloaderTaskPanel({
           </div>
         )}
 
-        <div className="max-h-[55vh] overflow-auto custom-scrollbar">
+        <div className="max-h-[70vh] overflow-auto custom-scrollbar">
           <table className="w-full text-left">
             <thead className="sticky top-0 z-10 bg-[#080808]/95 backdrop-blur-xl">
               <tr className="text-[9px] font-black uppercase tracking-[0.24em] text-gray-500">
@@ -840,7 +854,7 @@ function JDownloaderTaskPanel({
               ) : (
                 tasks.map((task) => {
                   const isExpanded = expandedPackages[task.uuid];
-                  const canExpand = task.links.length > 1;
+                  const canExpand = (task.links || []).length > 1;
                   return (
                     <React.Fragment key={task.uuid}>
                       <tr className="border-t border-white/5 align-top">
@@ -899,7 +913,7 @@ function JDownloaderTaskPanel({
                           </div>
                         </td>
                       </tr>
-                      {isExpanded && task.links.map((link) => (
+                      {isExpanded && (task.links || []).map((link: any) => (
                         <tr key={link.uuid} className="border-t border-white/5 bg-white/[0.02]">
                           <td className="px-6 py-3">
                             <div className="pl-9">
@@ -1087,8 +1101,8 @@ function JDownloaderSettingsModal({
             : 'Service offline';
 
   return (
-    <div className="fixed left-0 right-0 bottom-12 z-[110] px-6 pb-4">
-      <div className="mx-auto w-full max-w-lg rounded-[2rem] border border-white/10 bg-[#060606]/95 backdrop-blur-3xl shadow-[0_-20px_60px_rgba(0,0,0,0.6)] overflow-hidden animate-cinema-fade">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-[#060606]/95 backdrop-blur-3xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] overflow-hidden animate-cinema-fade">
         <div className="flex items-start justify-between gap-4 px-7 py-5 border-b border-white/5 bg-white/[0.03]">
           <div className="flex items-start gap-4">
             <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/20 flex items-center justify-center">
@@ -1097,9 +1111,6 @@ function JDownloaderSettingsModal({
             <div className="space-y-2">
               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">JDownloader Settings</p>
               <h3 className="text-2xl font-black italic tracking-tight">Connect MyJDownloader</h3>
-              <p className="text-sm text-gray-400">
-                Đăng nhập tài khoản MyJDownloader để đồng bộ node và gửi download trực tiếp từ web.
-              </p>
             </div>
           </div>
           <button
@@ -1147,44 +1158,46 @@ function JDownloaderSettingsModal({
               </div>
             )}
 
-            {hasCredentials && (
-              <button
-                type="button"
-                onClick={async () => {
-                  setIsLoggingOut(true);
-                  setError(null);
-                  const result = await onLogout();
-                  setIsLoggingOut(false);
-                  if (result.success) {
-                    onClose();
-                    return;
-                  }
-                  setError(result.error || 'Logout failed.');
-                }}
-                disabled={isSaving || isLoggingOut}
-                className="w-full px-4 py-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-[11px] font-black uppercase tracking-[0.24em] text-red-300 hover:bg-red-500/15 transition-all disabled:opacity-50"
-              >
-                {isLoggingOut ? 'Logging Out...' : 'Logout'}
-              </button>
-            )}
-
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => void onRefresh()}
-                disabled={isChecking || isSaving}
-                className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5 text-[11px] font-black uppercase tracking-[0.24em] text-gray-300 hover:bg-white/10 transition-all disabled:opacity-50"
-              >
-                {isChecking ? 'Refreshing...' : 'Refresh Status'}
-              </button>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="min-w-[180px] px-5 py-3 rounded-2xl bg-blue-600 text-[11px] font-black uppercase tracking-[0.24em] text-white hover:bg-blue-500 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {isSaving ? 'Signing In...' : 'Save & Connect'}
-              </button>
+            <div className="flex flex-col gap-3 pt-2">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => void onRefresh()}
+                  disabled={isChecking || isSaving}
+                  className="px-4 py-3 rounded-2xl border border-white/10 bg-white/5 text-[11px] font-black uppercase tracking-[0.24em] text-gray-300 hover:bg-white/10 transition-all disabled:opacity-50"
+                >
+                  {isChecking ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="flex-1 px-5 py-3 rounded-2xl bg-blue-600 text-[11px] font-black uppercase tracking-[0.24em] text-white hover:bg-blue-500 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isSaving ? 'Connecting...' : 'Save & Connect'}
+                </button>
+              </div>
+              
+              {hasCredentials && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsLoggingOut(true);
+                    setError(null);
+                    const result = await onLogout();
+                    setIsLoggingOut(false);
+                    if (result.success) {
+                      onClose();
+                      return;
+                    }
+                    setError(result.error || 'Logout failed.');
+                  }}
+                  disabled={isSaving || isLoggingOut}
+                  className="w-full px-4 py-3 rounded-2xl border border-red-500/20 bg-red-500/10 text-[11px] font-black uppercase tracking-[0.24em] text-red-300 hover:bg-red-500/15 transition-all disabled:opacity-50"
+                >
+                  {isLoggingOut ? 'Logging Out...' : 'Logout MyJDownloader'}
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -1205,7 +1218,7 @@ function StatusTile({ label, value, tone }: { label: string; value: string; tone
   return (
     <div className={`rounded-2xl border px-4 py-3 ${toneClass}`}>
       <p className="text-[9px] font-black uppercase tracking-[0.24em] opacity-70">{label}</p>
-      <p className="mt-2 text-sm font-black break-all">{value}</p>
+      <p className="mt-2 text-[10px] font-black truncate">{value}</p>
     </div>
   );
 }
