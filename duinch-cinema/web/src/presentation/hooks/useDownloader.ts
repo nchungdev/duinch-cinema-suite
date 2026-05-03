@@ -1,0 +1,89 @@
+import { useState, useCallback } from 'react';
+import { api } from '@shared/api/config';
+
+export type DownloadPreference = 'jdownloader' | 'browser' | null;
+
+export const useDownloader = () => {
+    const [isChecking, setIsChecking] = useState(false);
+
+    const getPreference = useCallback((): DownloadPreference => {
+        return localStorage.getItem('duinch_download_pref_v2') as DownloadPreference;
+    }, []);
+
+    const setPreference = useCallback((pref: DownloadPreference, remember: boolean) => {
+        if (remember && pref) {
+            localStorage.setItem('duinch_download_pref_v2', pref);
+        }
+    }, []);
+
+    const checkJDStatus = async () => {
+        setIsChecking(true);
+        try {
+            const res = await api.get('/downloader/health');
+            const isHealthy = res.data?.status === 'healthy';
+            console.log('[Downloader] JD Health Status:', res.data?.status, '-> Healthy:', isHealthy);
+            setIsChecking(false);
+            return isHealthy;
+        } catch (err) {
+            console.error('[Downloader] Health check failed:', err);
+            setIsChecking(false);
+            return false;
+        }
+    };
+
+    const sendToJD = async (url: string, name: string, autostart: boolean = true, path?: string) => {
+        const activeDevice = localStorage.getItem('duinch_active_jd_device');
+        console.log('[Downloader] Sending to JD:', { url, name, path, device: activeDevice, autostart });
+        try {
+            // Backend endpoint is /download
+            await api.post(`/downloader/download${activeDevice ? `?device=${encodeURIComponent(activeDevice)}` : ''}`, {
+                urls: [url],
+                package_name: name,
+                folder: path,
+                autostart: autostart
+            });
+            return true;
+        } catch (err) {
+            console.error('[Downloader] Failed to send to JD:', err);
+            return false;
+        }
+    };
+
+    const [hlsToolData, setHlsToolData] = useState<{url: string; name: string} | null>(null);
+
+    const downloadInBrowser = (url: string, name: string) => {
+        console.log('[Downloader] Downloading in browser:', { url, name });
+        if (url.includes('.m3u8') || url.includes('.index')) {
+            // Point DIRECTLY to backend port 8086 for heavy streaming
+            const downloadUrl = `http://localhost:8086/api/media/download-m3u8?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(name.replace(/\s+/g, '_'))}.mp4`;
+            
+            console.log("🚀 Triggering Direct Backend Download:", downloadUrl);
+            
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            // Target blank giúp trình duyệt mở một luồng tải mới không ảnh hưởng trang hiện tại
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
+    return {
+        isChecking,
+        hlsToolData,
+        setHlsToolData,
+        checkJDStatus,
+        getPreference,
+        setPreference,
+        sendToJD,
+        downloadInBrowser
+    };
+};

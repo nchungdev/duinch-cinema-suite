@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- Duinch Cinema Launcher ---
+# --- Duinch Cinema Unified Launcher ---
 
 # Colors
 BLUE='\033[0;34m'
@@ -31,7 +31,6 @@ validate_env() {
 
     local missing=()
     for var in "${REQUIRED_VARS[@]}"; do
-        # Check if variable is set and not empty in .env (or exported)
         local value=$(grep "^$var=" "$env_file" | cut -d'=' -f2-)
         if [ -z "$value" ]; then
             missing+=("$var")
@@ -42,9 +41,7 @@ validate_env() {
         echo -e "${YELLOW}📋 Missing required configuration. Please enter details:${NC}"
         for var in "${missing[@]}"; do
             read -p "Enter $var: " input
-            # Update or append to .env
             if grep -q "^$var=" "$env_file"; then
-                # Use a different delimiter for sed to handle paths/special chars
                 sed -i.bak "s|^$var=.*|$var=$input|" "$env_file" && rm "${env_file}.bak"
             else
                 echo "$var=$input" >> "$env_file"
@@ -55,12 +52,25 @@ validate_env() {
 }
 
 init_environment() {
-    echo -e "${BLUE}📦 Initializing Environment...${NC}"
+    echo -e "${BLUE}📦 Initializing Environment & Config...${NC}"
+    
+    # Setup .env if not exists
+    if [ ! -f ".env" ]; then
+        if [ -f ".env.example" ]; then
+            cp ".env.example" ".env"
+            echo -e "${GREEN}✅ Created .env from example${NC}"
+        else
+            touch ".env"
+        fi
+    fi
+    validate_env
+
     if [ ! -d "venv" ]; then
         python3 -m venv venv
     fi
     source venv/bin/activate
     python3 -m pip install -q --upgrade pip
+    
     echo "[*] Installing Backend dependencies..."
     python3 -m pip install -q -r duinch-cinema/backend/requirements.txt
     
@@ -70,8 +80,14 @@ init_environment() {
     echo "[*] Installing Crawler dependencies..."
     python3 -m pip install -q -r duinch-crawler/miner/requirements.txt
     
-    echo "[*] Installing Frontend dependencies..."
-    cd duinch-cinema/frontend && npm install --silent && cd ../..
+    echo "[*] Installing Web dependencies..."
+    cd duinch-cinema/web && npm install --silent && cd ../..
+
+    echo "[*] Installing Shared dependencies..."
+    cd duinch-cinema/shared && npm install --silent && cd ../..
+
+    echo "[*] Installing Mobile dependencies..."
+    cd duinch-cinema/mobile && npm install --silent && cd ../..
 }
 
 clear
@@ -83,13 +99,15 @@ echo -e "${CYAN}======================================${NC}"
 validate_env
 
 echo -e "Choose a service to launch:"
-echo -e "  ${GREEN}1) Launch All${NC} (Frontend + Backend) [Default]"
-echo -e "  2) Crawler Miner (Start Mining)"
-echo -e "  3) Crawler Cooker (Process Raw Links)"
-echo -e "  4) Clear Cache"
-echo -e "  ${BLUE}5) Init Environment${NC} (Install dependencies)"
-echo -e "  ${CYAN}6) Setup .env${NC} (From example)"
-echo -e "  ${YELLOW}7) Exit${NC}"
+echo -e "  ${GREEN}1) Run Web${NC} (Frontend + Backend)"
+echo -e "  ${GREEN}2) Run Android${NC} (Mobile App)"
+echo -e "  ${GREEN}3) Run iOS${NC} (Mobile App)"
+echo -e "  ${GREEN}4) Run macOS${NC} (Desktop App)"
+echo -e "  ${BLUE}5) Init & Setup Env${NC} (Install deps + .env)"
+echo -e "  6) Clear Cache"
+echo -e "  7) Run Miner (Crawler)"
+echo -e "  8) Run Cooker (Crawler)"
+echo -e "  ${YELLOW}0) Exit${NC}"
 echo -e "${CYAN}--------------------------------------${NC}"
 
 read -p "Enter selection [1]: " choice
@@ -97,37 +115,38 @@ choice=${choice:-1}
 
 case $choice in
     1)
-        echo -e "${GREEN}🚀 Initializing and Launching Duinch Cinema Stack...${NC}"
-        init_environment --auto
+        echo -e "${GREEN}🚀 Launching Web version...${NC}"
         bash scripts/start_all.sh
         ;;
     2)
-        echo -e "${GREEN}⛏️ Starting Miner...${NC}"
-        bash scripts/start_miner.sh
+        echo -e "${GREEN}🤖 Launching Android App...${NC}"
+        cd duinch-cinema/mobile && npx expo run:android --variant debug
         ;;
     3)
-        echo -e "${GREEN}🍳 Starting Cooker...${NC}"
-        bash scripts/start_cooker.sh
+        echo -e "${GREEN}🍎 Launching iOS App...${NC}"
+        cd duinch-cinema/mobile && npx expo run:ios
         ;;
     4)
-        bash scripts/clear_cache.sh
+        echo -e "${GREEN}💻 Launching macOS Desktop...${NC}"
+        echo -e "${YELLOW}Note: macOS support requires react-native-macos or Catalyst.${NC}"
+        cd duinch-cinema/mobile && npx expo start --web
         ;;
     5)
         init_environment
-        echo -e "${GREEN}✅ Environment Initialized Successfully!${NC}"
+        echo -e "${GREEN}✅ Environment & Config Initialized Successfully!${NC}"
         ;;
     6)
-        echo -e "${CYAN}📝 Setting up .env files...${NC}"
-        if [ -f ".env.example" ]; then
-            cp ".env.example" ".env"
-            echo -e "${GREEN}✅ Created .env from example${NC}"
-            echo -e "${YELLOW}⚠️  Running validation to fill details...${NC}"
-            validate_env
-        else
-            echo -e "${RED}❌ Error: .env.example not found in root${NC}"
-        fi
+        bash scripts/clear_cache.sh
         ;;
     7)
+        echo -e "${GREEN}⛏️ Starting Miner...${NC}"
+        bash scripts/start_miner.sh
+        ;;
+    8)
+        echo -e "${GREEN}🍳 Starting Cooker...${NC}"
+        bash scripts/start_cooker.sh
+        ;;
+    0)
         echo "Goodbye!"
         exit 0
         ;;

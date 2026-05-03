@@ -41,20 +41,20 @@ uvicorn main:app --host 0.0.0.0 --port 8088 > ../duinch-cinema/backend/logs/down
 DOWNLOADER_PID=$!
 cd "$PROJECT_ROOT"
 
-# 4. Start Frontend
-echo "--- 4. Starting Frontend (Port 5173) ---"
-cd duinch-cinema/frontend
-# Ensure frontend dependencies are installed
+# 4. Start Web Frontend
+echo "--- 4. Starting Web Frontend (Port 5173) ---"
+cd duinch-cinema/web
+# Ensure web dependencies are installed
 npm install --silent
-npm run dev -- --host 0.0.0.0 > ../backend/logs/frontend.log 2>&1 &
-FRONTEND_PID=$!
+npm run dev -- --host 0.0.0.0 > ../backend/logs/web.log 2>&1 &
+WEB_PID=$!
 cd "$PROJECT_ROOT"
 
 echo "========================================="
 echo "🚀 SERVICES STARTED IN AUTO-RELOAD MODE"
 echo "Backend PID:    $BACKEND_PID"
 echo "Downloader PID: $DOWNLOADER_PID"
-echo "Frontend PID:   $FRONTEND_PID"
+echo "Web PID:        $WEB_PID"
 echo ""
 echo "📊 MONITORING LOGS (Press Ctrl+C to stop):"
 echo "-----------------------------------------"
@@ -64,7 +64,7 @@ cleanup() {
 🛑 Shutting down services..."
     kill $BACKEND_PID 2>/dev/null
     kill $DOWNLOADER_PID 2>/dev/null
-    kill $FRONTEND_PID 2>/dev/null
+    kill $WEB_PID 2>/dev/null
     echo "✅ Cleaned up."
     deactivate # Deactivate venv
     exit
@@ -73,4 +73,4 @@ cleanup() {
 trap cleanup SIGINT
 
 # Combined log stream for easy monitoring
-tail -f duinch-cinema/backend/logs/backend.log duinch-cinema/backend/logs/downloader.log duinch-cinema/backend/logs/frontend.log
+tail -f duinch-cinema/backend/logs/backend.log duinch-cinema/backend/logs/downloader.log duinch-cinema/backend/logs/web.log
