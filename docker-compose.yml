@@ -70,7 +70,7 @@ services:
 
   duinch-ui:
     build:
-      context: ./duinch-cinema/frontend
+      context: ./duinch-cinema/web
     container_name: duinch-ui
     restart: unless-stopped
     depends_on:
