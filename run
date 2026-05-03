@@ -92,7 +92,7 @@ init_environment() {
 
 clear
 echo -e "${CYAN}======================================${NC}"
-echo -e "${CYAN}🎬  DUINCH CINEMA - UNIFIED LAUNCHER  ${NC}"
+echo -e "${CYAN}🎬  DUINCH CINEMA SUITE - LAUNCHER   ${NC}"
 echo -e "${CYAN}======================================${NC}"
 
 # Run validation before showing menu

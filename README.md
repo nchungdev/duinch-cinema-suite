@@ -1,18 +1,15 @@
-# Duinch Cinema — Media Discovery & Downloader
+# Duinch Cinema Suite — The Ultimate Discovery, Fulfillment & Playback System
 
-Hệ thống Media Discovery Engine mạnh mẽ, tự động "vét cạn" link FShare từ API và Diễn đàn, tích hợp JDownloader Dashboard với kiến trúc Clean Architecture.
+Hệ thống Media Discovery Engine mạnh mẽ, tích hợp JDownloader Dashboard và trình phát phim cao cấp với kiến trúc Clean Architecture. Một bộ giải pháp toàn diện bao gồm Crawler, Downloader và Cinema Dashboard.
 
 ## 🏗️ Architecture & Structure
 
-Dự án được chia thành 2 thành phần chính:
-- **`duinch-cinema/`**: Ứng dụng web xem phim và quản lý tải về (bao gồm Frontend React và Backend FastAPI tích hợp sẵn JDownloader Client).
+Dự án được chia thành các thành phần chính theo mô hình Monorepo:
+- **`duinch-cinema/web`**: Ứng dụng web xem phim và quản lý tải về (Vite + React + Tailwind).
+- **`duinch-cinema/shared`**: Logic nghiệp vụ, Models và API Clients dùng chung.
+- **`duinch-cinema/backend`**: API phục vụ toàn bộ hệ thống, tích hợp logic tìm kiếm, điều phối và JDownloader Control (FastAPI).
 - **`duinch-crawler/`**: Hệ thống cào dữ liệu tự động (Miner, Cooker) để làm giàu cơ sở dữ liệu phim.
-
-### Directory Map
-- `duinch-cinema/frontend`: Giao diện người dùng (Vite + React + Tailwind).
-- `duinch-cinema/backend`: API phục vụ webapp, tích hợp logic tìm kiếm, điều phối và JDownloader Control.
-- `duinch-crawler/miner`: Thu thập link raw từ các nguồn forum, web.
-- `duinch-crawler/cooker`: Xử lý, phân loại và đồng bộ dữ liệu về database chính.
+- **`duinch-downloader/`**: Microservice chuyên biệt để tương tác với JDownloader API.
 - `data/`: Nơi lưu trữ tập trung cache, database (SQLite/Postgres) và cấu hình người dùng.
 
 ---

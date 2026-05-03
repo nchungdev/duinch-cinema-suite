@@ -1,7 +1,7 @@
 <claude-mem-context>
 # Memory Context
 
-# [omv-jdownloader-dashboard] recent context, 2026-04-28 12:21am GMT+7
+# [Duinch Cinema Suite] recent context, 2026-04-28 12:21am GMT+7
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

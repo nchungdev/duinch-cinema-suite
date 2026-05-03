@@ -242,7 +242,7 @@ function App() {
             </div>
             <div className="flex flex-col">
                <span className="text-xl font-black tracking-tighter uppercase italic leading-none">DUINCH</span>
-               <span className="text-[10px] font-bold tracking-[0.4em] text-blue-500 uppercase mt-0.5">Cinema</span>
+               <span className="text-[10px] font-bold tracking-[0.2em] text-blue-500 uppercase mt-0.5">Cinema Suite</span>
             </div>
           </div>
 
@@ -353,7 +353,7 @@ function App() {
                                 <HardDrive className="w-3.5 h-3.5 text-yellow-500" />
                               </div>
                               <div className="flex flex-col">
-                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Storage Status</span>
+                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Suite Health</span>
                                 <span className="text-[10px] font-black text-white uppercase tracking-wider">84% Capacity Free</span>
                               </div>
                             </div>

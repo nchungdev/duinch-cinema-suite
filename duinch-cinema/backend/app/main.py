@@ -16,7 +16,7 @@ async def lifespan(app: FastAPI):
     cache_manager.save_all_caches()
 
 app = FastAPI(
-    title="OMV Media Dashboard API",
+    title="Duinch Cinema Suite API",
     version="4.0.0",
     lifespan=lifespan
 )
