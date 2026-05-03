@@ -1,9 +1,9 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  // Use env var or default to /api for Web
-  baseURL: (typeof process !== 'undefined' && process.env?.API_URL) || 
-           (typeof process !== 'undefined' && process.env?.VITE_API_URL) || 
+  // Dynamic baseURL based on environment
+  baseURL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 
+           (typeof process !== 'undefined' && process.env?.API_URL) || 
            '/api',
 });
 
