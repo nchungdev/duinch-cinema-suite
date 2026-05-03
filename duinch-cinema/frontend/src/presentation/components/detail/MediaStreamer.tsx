@@ -299,40 +299,61 @@ export const MediaStreamer = forwardRef<HTMLDivElement>((_, containerRef) => {
                                                                         && preferredAudio === server.audio_type && preferredServerName === server.server_name;
 
                                                         return (
-                                                            <div key={`${type}-${provider}-${srvIdx}`} className="flex items-center gap-1 group/item pr-2">
-                                                                <button
-                                                                    onClick={() => switchServer(type, provider, srvIdx, server)}
-                                                                    className={`flex-1 flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-left transition-all ${
-                                                                        isActive
-                                                                            ? 'bg-blue-600/15 border border-blue-500/30 text-blue-300'
-                                                                            : 'text-gray-400 hover:bg-white/5 border border-transparent hover:text-white'
-                                                                    }`}
-                                                                >
-                                                                    <div className="flex flex-col min-w-0 flex-1">
-                                                                        <span className="text-[9px] font-black uppercase tracking-wider truncate">{server.server_name}</span>
-                                                                        {server.audio_type && (
-                                                                            <span className="text-[7px] font-bold text-gray-500 uppercase tracking-widest mt-0.5">{server.audio_type}</span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1.5 shrink-0">
-                                                                        <span className="text-[7px] text-gray-600">{server.server_data?.length ?? 0} eps</span>
-                                                                        {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_#3b82f6]" />}
-                                                                    </div>
-                                                                </button>
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        savePreferredSource(type, provider, server.audio_type, server.server_name);
-                                                                    }}
-                                                                    className={`p-2 rounded-lg transition-all border ${
-                                                                        isPinned 
-                                                                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' 
-                                                                        : 'bg-white/5 border-white/5 text-gray-600 hover:text-amber-400 hover:border-amber-500/30 opacity-0 group-hover/item:opacity-100'
-                                                                    }`}
-                                                                    title={isPinned ? 'Đã ghim' : 'Ghim làm mặc định'}
-                                                                >
-                                                                    <Pin className={`w-2.5 h-2.5 ${isPinned ? 'fill-current' : ''}`} />
-                                                                </button>
+                                                            <div key={`${type}-${provider}-${srvIdx}`} className="flex items-center gap-2 group/item pr-2">
+                                                                 <button
+                                                                     onClick={() => switchServer(type, provider, srvIdx, server)}
+                                                                     className={`flex-1 flex items-center gap-3 px-3 py-2.5 rounded-2xl transition-all border text-left ${
+                                                                         isActive
+                                                                             ? 'bg-blue-600/10 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)]'
+                                                                             : 'bg-black/20 border-transparent hover:border-white/10 hover:bg-white/[0.05]'
+                                                                     }`}
+                                                                 >
+                                                                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all border shrink-0 ${
+                                                                         isActive ? 'bg-blue-600 border-blue-500 shadow-lg text-white' : 'bg-white/5 border-white/5 text-gray-500 group-hover/item:text-blue-400'
+                                                                     }`}>
+                                                                         {type === 'HLS' ? <Zap className="w-4 h-4" /> : 
+                                                                          type === 'EMBED' ? <Layout className="w-4 h-4" /> : <Box className="w-4 h-4" />}
+                                                                     </div>
+                                                                     <div className="flex flex-col min-w-0 flex-1">
+                                                                         <div className="flex items-center gap-2">
+                                                                             <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isActive ? 'text-blue-400' : 'text-gray-300'}`}>
+                                                                                 {server.server_name}
+                                                                             </span>
+                                                                             {server.audio_type && (
+                                                                                 <span className={`shrink-0 px-1.5 py-0.5 rounded border text-[7px] font-black uppercase tracking-widest ${
+                                                                                     server.audio_type === 'Lồng Tiếng' 
+                                                                                         ? 'bg-pink-600/20 text-pink-400 border-pink-500/20' 
+                                                                                         : 'bg-green-600/20 text-green-400 border-green-500/20'
+                                                                                 }`}>
+                                                                                     {server.audio_type}
+                                                                                 </span>
+                                                                             )}
+                                                                         </div>
+                                                                         <div className="flex items-center gap-2 mt-0.5">
+                                                                             <span className="px-1.5 py-0.5 rounded bg-blue-600/20 border border-blue-500/20 text-blue-400 text-[6px] font-black uppercase tracking-widest">
+                                                                                 {provider.toUpperCase()}
+                                                                             </span>
+                                                                             <span className="text-[7px] font-bold text-gray-600 uppercase tracking-widest">
+                                                                                 {server.server_data?.length ?? 0} EPS
+                                                                             </span>
+                                                                         </div>
+                                                                     </div>
+                                                                     {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6] shrink-0" />}
+                                                                 </button>
+                                                                 <button
+                                                                     onClick={(e) => {
+                                                                         e.stopPropagation();
+                                                                         savePreferredSource(type, provider, server.audio_type, server.server_name);
+                                                                     }}
+                                                                     className={`p-2.5 rounded-xl transition-all border ${
+                                                                         isPinned 
+                                                                         ? 'bg-amber-500/20 border-amber-500/40 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.2)]' 
+                                                                         : 'bg-white/5 border-white/5 text-gray-600 hover:text-amber-400 hover:border-amber-500/30 opacity-0 group-hover/item:opacity-100'
+                                                                     }`}
+                                                                     title={isPinned ? 'Đã ghim' : 'Ghim làm mặc định'}
+                                                                 >
+                                                                     <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} />
+                                                                 </button>
                                                             </div>
                                                         );
                                                     })}

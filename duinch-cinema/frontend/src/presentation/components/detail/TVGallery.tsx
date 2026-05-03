@@ -522,24 +522,36 @@ export const TVGallery = () => {
                                                                 }} className={`group flex items-center justify-between p-3 rounded-2xl transition-all border cursor-pointer ${
                                                                 isSelected 
                                                                 ? 'bg-blue-600/10 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)]' 
-                                                                : 'bg-white/5 border-white/5 hover:border-blue-500/30 hover:bg-white/[0.07]'
+                                                                : 'bg-black/30 border-white/5 hover:border-white/10 hover:bg-white/[0.07]'
                                                             }`}>
                                                                 <div className="flex items-center gap-3 min-w-0">
-                                                                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-                                                                        isSelected ? 'bg-blue-600 text-white' : 'bg-black/40 text-blue-500 group-hover:text-white'
+                                                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all border ${
+                                                                        isSelected ? 'bg-blue-600 border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.4)] text-white' : 'bg-white/5 border-white/10 text-gray-400 group-hover:bg-white/10 group-hover:text-blue-400'
                                                                     }`}>
-                                                                        {node.type === 'HLS' ? <Zap className="w-3.5 h-3.5" /> : 
-                                                                         node.type === 'P2P' ? <Magnet className="w-3.5 h-3.5" /> :
-                                                                         node.type === 'DIRECT' ? <Box className="w-3.5 h-3.5" /> : <Layout className="w-3.5 h-3.5" />}
+                                                                        {node.type === 'HLS' ? <Zap className="w-5 h-5" /> : 
+                                                                         node.type === 'P2P' ? <Magnet className="w-5 h-5" /> :
+                                                                         node.type === 'DIRECT' ? <Box className="w-5 h-5" /> : <Layout className="w-5 h-5" />}
                                                                     </div>
                                                                     <div className="flex flex-col min-w-0 flex-1">
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className={`text-[11px] font-black uppercase tracking-wider truncate ${isSelected ? 'text-blue-400' : 'text-white'}`}>{node.server.server_name}</span>
+                                                                            <span className={`text-[10px] font-black uppercase tracking-widest truncate ${isSelected ? 'text-blue-400' : 'text-white'}`}>{node.server.server_name}</span>
                                                                             {node.server.audio_type && (
-                                                                                <span className="shrink-0 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-gray-400 text-[7px] font-black uppercase tracking-widest">
-                                                                                    {'{'}{node.server.audio_type}{'}'}
+                                                                                <span className={`shrink-0 px-1.5 py-0.5 rounded border text-[7px] font-black uppercase tracking-widest ${
+                                                                                    node.server.audio_type === 'Lồng Tiếng' 
+                                                                                        ? 'bg-pink-600/20 text-pink-400 border-pink-500/20' 
+                                                                                        : 'bg-green-600/20 text-green-400 border-green-500/20'
+                                                                                }`}>
+                                                                                    {node.server.audio_type}
                                                                                 </span>
                                                                             )}
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                                            <span className="px-1.5 py-0.5 rounded bg-blue-600/20 border border-blue-500/20 text-blue-400 text-[7px] font-black uppercase tracking-widest">
+                                                                                {node.provider.toUpperCase()}
+                                                                            </span>
+                                                                            <span className="text-[8px] font-bold text-gray-500 uppercase tracking-widest">
+                                                                                Node {idx + 1}
+                                                                            </span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -555,6 +567,8 @@ export const TVGallery = () => {
                                                                     >
                                                                         <Pin className={`w-3.5 h-3.5 ${preferredType === node.type && preferredProvider === node.provider && preferredAudio === node.server.audio_type ? 'fill-current' : ''}`} />
                                                                     </button>
+                                                                    
+                                                                    <div className="h-8 w-px bg-white/5 mx-1" />
 
                                                                     <CloudButtons targets={cloudTargets} compact={true}
                                                                         onDeviceAction={() => {

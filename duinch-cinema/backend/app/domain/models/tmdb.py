@@ -15,6 +15,7 @@ class TMDBInfo(BaseModel):
     total_episodes: int = 0
     total_seasons: int = 0
     title: Optional[str] = None
+    alternative_titles: List[str] = []
 
 class TMDBSearchResult(BaseModel):
     id: int # MANDATORY

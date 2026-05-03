@@ -51,15 +51,46 @@ async def tmdb_get_info(client: httpx.AsyncClient, media_type: str, tmdb_id: str
                 ))
                 season_years[s_num] = s_year
         
+        # Fetch Alternative Titles
+        alt_titles = []
+        try:
+            alt_url = f"https://api.themoviedb.org/3/{tmdb_type}/{tmdb_id}/alternative_titles"
+            alt_resp = await client.get(alt_url, headers=headers)
+            if alt_resp.status_code == 200:
+                alt_data = alt_resp.json()
+                alt_list = alt_data.get("results" if tmdb_type == "tv" else "titles", [])
+                alt_titles = [t.get("title") for t in alt_list if t.get("title")]
+        except Exception: pass
+
+        # Include original title and name in alternative titles for broader matching
+        main_title = data.get("name") or data.get("title")
+        orig_title = data.get("original_name") or data.get("original_title")
+        if main_title: alt_titles.append(main_title)
+        if orig_title: alt_titles.append(orig_title)
+        alt_titles = list(dict.fromkeys(alt_titles)) # Deduplicate
+
         return TMDBInfo(
             series_year=series_year,
             season_years=season_years,
             tmdb_seasons=seasons,
             total_episodes=data.get("number_of_episodes", 0),
             total_seasons=data.get("number_of_seasons", 0),
-            title=data.get("name") or data.get("title")
+            title=main_title,
+            alternative_titles=alt_titles
         )
     except Exception: return TMDBInfo()
+
+def safe_int(value: Any, default: int = 0) -> int:
+    """Safely convert value to int, extracting numeric part if it's a string."""
+    if value is None: return default
+    if isinstance(value, int): return value
+    try:
+        if isinstance(value, str):
+            match = re.search(r'\d+', value)
+            if match: return int(match.group())
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 class PhimAPIBase:
     def __init__(self, provider_name: str, base_url: str):
@@ -119,7 +150,7 @@ class PhimAPIBase:
         if not item: return -1000
         n_name, n_origin = normalize_text(item.get("name")), normalize_text(item.get("origin_name"))
         s_type = str(item.get("type") or "").lower()
-        s_year = int(item.get("year") or 0)
+        s_year = safe_int(item.get("year"))
 
         # 1. TMDB ID MATCH & REALITY CHECK
         src_tmdb = item.get("tmdb") or {}
@@ -128,8 +159,12 @@ class PhimAPIBase:
         if tmdb_id and item_tmdb_id and item_tmdb_id not in ["0", "null", "None"]:
             if item_tmdb_id == str(tmdb_id):
                 series_start = tmdb_info.series_year or year or 0
-                if series_start > 0 and s_year > 0 and abs(s_year - series_start) > 5:
-                    return -5000 
+                if series_start > 0 and s_year > 0:
+                    all_y = [series_start] + list(tmdb_info.season_years.values())
+                    # Allow 10 years gap for series start, OR if it matches any season year
+                    year_ok = abs(s_year - series_start) <= 10 or any(abs(s_year - y) <= 1 for y in all_y if y > 0)
+                    if not year_ok:
+                        return -5000 
                 score += 3000
                 tmdb_matched = True
             else:
@@ -143,7 +178,7 @@ class PhimAPIBase:
             if media_type == "tv"    and s_type in CLEAR_MOVIE_TYPES: return -3000
             if s_type not in CLEAR_MOVIE_TYPES | CLEAR_TV_TYPES:
                 ep_current   = str(item.get("episode_current") or "").strip().lower()
-                ep_total     = int(item.get("episode_total") or 0)
+                ep_total     = safe_int(item.get("episode_total"))
                 is_movie_like = (ep_current in ("full", "1") or ep_total == 1)
                 is_tv_like    = not is_movie_like and (ep_total > 1 or (ep_current and ep_current not in ("full", "1")))
                 if media_type == "movie" and is_tv_like:   return -3000
@@ -172,7 +207,7 @@ class PhimAPIBase:
                     else: return -3000
 
         # 4. SANITY CHECKS (EPISODES & SEASONS)
-        ep_total = int(item.get("episode_total") or 0)
+        ep_total = safe_int(item.get("episode_total"))
         if tmdb_info and tmdb_info.total_episodes > 0 and ep_total > 0:
             if ep_total > (tmdb_info.total_episodes * 1.3):
                 return -4500 
@@ -216,7 +251,7 @@ class PhimAPIBase:
             if not details: return
             movie = details.get("movie") or {}
             movie_name = movie.get("name") or movie.get("origin_name") or "Unknown"
-            s_year = int(movie.get("year") or 0)
+            s_year = safe_int(movie.get("year"))
             
             # Actual ep count check
             actual_ep_count = 0
@@ -280,13 +315,14 @@ class PhimAPIBase:
                                 ))
                                 seen_keys.add(key)
 
-        keywords = list(dict.fromkeys([q for q in [localize_title, title] if q and is_supported_lang(q)]))
+        keywords = [q for q in [localize_title, title, tmdb_info.title if tmdb_info else None] if q and is_supported_lang(q)]
+        keywords = list(dict.fromkeys(keywords))
         for kw in keywords:
             search_data = await self.api_call(client, "/v1/api/tim-kiem", params={"keyword": kw, "limit": 20})
             items = (search_data.get("data") or {}).get("items") or []
             for item in items:
                 if self._score_search_item(item, kw, tmdb_id, year, media_type, req_season, tmdb_info, is_search_phase=True) >= 400:
-                    s_year = int(item.get("year") or 0)
+                    s_year = safe_int(item.get("year"))
                     is_ = self._detect_season(item.get("name", ""), item.get("origin_name", ""), s_year, tmdb_info)
                     await _process_slug(item.get("slug"), is_)
                     await asyncio.sleep(0.05)
@@ -299,7 +335,7 @@ class PhimAPIBase:
                     details = await self.get_details(client, slug)
                     if details:
                         movie = details.get("movie") or {}
-                        s_year = int(movie.get("year") or 0)
+                        s_year = safe_int(movie.get("year"))
                         detected_s = self._detect_season(movie.get("name", ""), movie.get("origin_name", ""), s_year, tmdb_info)
                         await _process_slug(slug, detected_s or req_season)
         return all_results

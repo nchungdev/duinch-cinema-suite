@@ -5,7 +5,7 @@ import json
 
 from app.domain.models.media import DiscoveryTaskResult, StreamingCollection, StreamingServer, StreamingEpisode, DownloadableLink, MediaInfo, ScraperEpisode
 from app.domain.models.tmdb import TMDBInfo
-from app.infrastructure.scrapers.phimapi_base import tmdb_get_info
+from app.infrastructure.scrapers.phimapi_base import tmdb_get_info, safe_int
 from app.infrastructure.scrapers.kkphim_lookup import lookup_kkphim
 from app.infrastructure.scrapers.ophim_lookup import lookup_ophim
 from app.infrastructure.scrapers.fshare_lookup import lookup_timfshare
@@ -83,7 +83,7 @@ class DiscoveryUseCase:
                 # Intermediate storage: collection_id -> { meta, servers: { server_key -> [streams] } }
                 collections_map = {}
                 
-                series_start = tmdb_info.series_year if tmdb_info else (int(year) if year else 0)
+                series_start = tmdb_info.series_year if tmdb_info else safe_int(year)
                 # is_anime_search = series_start > 0 and series_start < 2010
 
                 for r in results:
@@ -95,7 +95,7 @@ class DiscoveryUseCase:
                         m_info = MediaInfo(id=str(tmdb_id), name=clean_name)
 
                     m_name = (r.movie_name or "")
-                    r_year = int(getattr(r, 'year', 0) or 0)
+                    r_year = safe_int(getattr(r, 'year', 0))
                     sn = r.season
                     
                     # 1. Year Guard: Prevent 2023 matching 1999
@@ -106,8 +106,19 @@ class DiscoveryUseCase:
                             continue
                     
                     # 2. Identity Guard (General check)
-                    # Using the utility to avoid hardcoded keywords
-                    if check_identity_leakage(m_name, title, ignore_year=r_year, ignore_season=sn):
+                    # Check against all known titles to avoid false positives (especially localized ones)
+                    titles_to_check = [title]
+                    if localize_title: titles_to_check.append(localize_title)
+                    if tmdb_info:
+                        titles_to_check.extend(tmdb_info.alternative_titles)
+                    
+                    is_match = False
+                    for t in titles_to_check:
+                        if t and not check_identity_leakage(m_name, t, ignore_year=r_year, ignore_season=sn):
+                            is_match = True
+                            break
+                    
+                    if not is_match:
                         continue
 
                     # 3. Determine Collection (Season for TV, "Bản Chính" for Movie)
